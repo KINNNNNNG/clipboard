@@ -1,0 +1,18 @@
+.superpowers/
+
+# .NET / WinUI
+bin/
+obj/
+AppPackages/
+*.user
+*.suo
+
+# Rust
+target/
+
+# Local application data and secrets
+data/
+*.log
+*.key
+*.secret
+.env
