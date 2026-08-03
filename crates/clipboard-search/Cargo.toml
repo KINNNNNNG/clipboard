@@ -8,4 +8,5 @@ rust-version.workspace = true
 [dependencies]
 clipboard-domain = { path = "../clipboard-domain" }
 regex.workspace = true
+serde.workspace = true
 thiserror.workspace = true
