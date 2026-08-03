@@ -8,6 +8,8 @@ pub enum StorageError {
     Serialization(#[from] serde_json::Error),
     #[error("SQLCipher is unavailable")]
     CipherUnavailable,
+    #[error("local-only clipboard items cannot enter the sync outbox")]
+    LocalOnly,
 }
 
 #[derive(Debug, Error)]
