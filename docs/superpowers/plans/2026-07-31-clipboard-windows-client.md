@@ -63,7 +63,6 @@ Expected: 工具链检查通过；不得把“已安装 Runtime”误当作项�
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PlatformTarget>x64</PlatformTarget>
     <UseWinUI>true</UseWinUI>
-    <UseWindowsForms>true</UseWindowsForms>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
     <Nullable>enable</Nullable>
@@ -465,7 +464,7 @@ git commit -m "feat(windows): add clipboard panel and settings state"
 
 - [ ] **Step 4: 实现设置窗口、托盘和启动项**
 
-设置窗口使用 NumberBox/ToggleSwitch/ComboBox：最大条数、天数、图片 GiB、Win+V 尝试、备用快捷键、开机启动和主题。托盘菜单为“打开剪贴板”“设置”“退出”；开机启动使用当前用户 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，值只包含带引号的 exe 路径。
+设置窗口使用 NumberBox/ToggleSwitch/ComboBox：最大条数、天数、图片 GiB、Win+V 尝试、备用快捷键、开机启动和主题。托盘通过 `Shell_NotifyIcon` 与 Win32 popup menu 实现，不引入 Windows Forms；菜单为“打开剪贴板”“设置”“退出”。开机启动使用当前用户 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，值只包含带引号的 exe 路径。
 
 - [ ] **Step 5: 适配系统主题和可访问性**
 
