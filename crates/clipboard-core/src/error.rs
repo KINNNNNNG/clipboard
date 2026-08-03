@@ -14,6 +14,12 @@ pub enum CoreError {
     Io(#[from] std::io::Error),
     #[error("clipboard item was not found: {0}")]
     ItemNotFound(uuid::Uuid),
+    #[error("clipboard item is not an image: {0}")]
+    NotImage(uuid::Uuid),
+    #[error("image payload is empty or its dimensions are invalid")]
+    InvalidImage,
+    #[error("image payload is {actual} bytes; maximum is {maximum} bytes")]
+    ImageTooLarge { actual: usize, maximum: usize },
     #[error("invalid command: {0}")]
     InvalidCommand(String),
 }

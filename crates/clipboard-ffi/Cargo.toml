@@ -12,9 +12,11 @@ crate-type = ["cdylib", "rlib"]
 clipboard-core = { path = "../clipboard-core" }
 clipboard-crypto = { path = "../clipboard-crypto" }
 clipboard-storage = { path = "../clipboard-storage" }
+serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+hex.workspace = true
 tempfile.workspace = true

@@ -34,4 +34,7 @@ pub struct SearchItem {
     pub source_app: String,
     pub last_used_ms: i64,
     pub favorite: bool,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub bytes: Option<u64>,
 }

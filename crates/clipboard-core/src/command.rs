@@ -39,6 +39,14 @@ pub struct IngestText {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct IngestImage {
+    pub width: u32,
+    pub height: u32,
+    pub source_app: String,
+    pub captured_ms: i64,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct SearchRequest {
     pub pattern: String,
     pub mode: SearchMode,

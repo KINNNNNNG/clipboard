@@ -2,6 +2,7 @@ use crate::{
     ApplyRetentionRequest, CoreCommand, CoreError, CoreResponse, DeleteRequest, IngestText,
     SearchFilters, SearchItem, SearchRequest, SetFavorite,
 };
+use crate::{IngestImage, object_store::ObjectStore};
 use clipboard_crypto::{KeyPurpose, VaultKey};
 use clipboard_domain::{
     ClipboardContent, ClipboardItem, DeleteState, FavoriteState, Hlc, RetentionCandidate,
@@ -12,20 +13,27 @@ use clipboard_storage::Database;
 use std::{path::Path, time::SystemTime};
 use uuid::Uuid;
 
+pub const MAX_IMAGE_BYTES: usize = 50 * 1024 * 1024;
+
 pub struct CoreService {
     database: Database,
     vault_id: Uuid,
     vault_key: VaultKey,
+    object_store: ObjectStore,
 }
 
 impl CoreService {
     pub fn open(data_dir: &Path, vault_id: Uuid, vault_key: &[u8; 32]) -> Result<Self, CoreError> {
         std::fs::create_dir_all(data_dir)?;
         let database = Database::open(&data_dir.join("history.db"), vault_key)?;
+        let vault_key = VaultKey::from_bytes(*vault_key);
+        let image_key = vault_key.derive(vault_id, KeyPurpose::Image)?;
+        let object_store = ObjectStore::open(data_dir, vault_id, image_key)?;
         Ok(Self {
             database,
             vault_id,
-            vault_key: VaultKey::from_bytes(*vault_key),
+            vault_key,
+            object_store,
         })
     }
 
@@ -72,6 +80,70 @@ impl CoreService {
         item.content_fingerprint = Some(fingerprint);
         self.database.items().insert_and_enqueue(&item)?;
         Ok(CoreResponse::Mutation { item_id: item.id })
+    }
+
+    pub fn ingest_image(
+        &self,
+        request: IngestImage,
+        png: &[u8],
+    ) -> Result<CoreResponse, CoreError> {
+        if png.is_empty() || request.width == 0 || request.height == 0 {
+            return Err(CoreError::InvalidImage);
+        }
+        if png.len() > MAX_IMAGE_BYTES {
+            return Err(CoreError::ImageTooLarge {
+                actual: png.len(),
+                maximum: MAX_IMAGE_BYTES,
+            });
+        }
+
+        let fingerprint = self
+            .vault_key
+            .derive(self.vault_id, KeyPurpose::Fingerprint)?
+            .keyed_hash(png);
+        let mut stored_items = self.database.items().list()?;
+        if let Some(latest) = stored_items
+            .iter_mut()
+            .find(|item| item.vault_id == self.vault_id)
+            && matches!(&latest.content, ClipboardContent::Image { .. })
+            && latest.content_fingerprint == Some(fingerprint)
+        {
+            if request.captured_ms >= latest.last_used_ms {
+                latest.last_used_ms = request.captured_ms;
+                latest.source_app = request.source_app;
+            }
+            self.database.items().update_and_enqueue(latest)?;
+            return Ok(CoreResponse::Mutation { item_id: latest.id });
+        }
+
+        let object_id = Uuid::now_v7();
+        let mut item = ClipboardItem::new(
+            Uuid::now_v7(),
+            self.vault_id,
+            ClipboardContent::Image {
+                object_id,
+                width: request.width,
+                height: request.height,
+                bytes: png.len() as u64,
+            },
+            request.source_app,
+            request.captured_ms,
+        );
+        item.content_fingerprint = Some(fingerprint);
+        self.object_store.store_image(object_id, png)?;
+        if let Err(error) = self.database.items().insert_and_enqueue(&item) {
+            let _ = self.object_store.remove_image(object_id);
+            return Err(error.into());
+        }
+        Ok(CoreResponse::Mutation { item_id: item.id })
+    }
+
+    pub fn read_image(&self, item_id: Uuid) -> Result<Vec<u8>, CoreError> {
+        let item = self.find_item(item_id)?;
+        let ClipboardContent::Image { object_id, .. } = item.content else {
+            return Err(CoreError::NotImage(item_id));
+        };
+        self.object_store.read_image(object_id)
     }
 
     fn search(&self, request: SearchRequest) -> Result<CoreResponse, CoreError> {
@@ -289,11 +361,20 @@ fn item_kind(item: &ClipboardItem) -> &'static str {
 }
 
 fn search_item(item: &ClipboardItem) -> SearchItem {
-    let (kind, preview) = match &item.content {
-        ClipboardContent::Text(text) => ("text", text.clone()),
-        ClipboardContent::Image { width, height, .. } => {
-            ("image", format!("image {width}x{height}"))
-        }
+    let (kind, preview, width, height, bytes) = match &item.content {
+        ClipboardContent::Text(text) => ("text", text.clone(), None, None, None),
+        ClipboardContent::Image {
+            width,
+            height,
+            bytes,
+            ..
+        } => (
+            "image",
+            format!("image {width}x{height}"),
+            Some(*width),
+            Some(*height),
+            Some(*bytes),
+        ),
         ClipboardContent::FileBundle(bundle) => (
             "file_bundle",
             bundle
@@ -302,6 +383,9 @@ fn search_item(item: &ClipboardItem) -> SearchItem {
                 .map(|entry| entry.path.as_str())
                 .collect::<Vec<_>>()
                 .join("\n"),
+            None,
+            None,
+            None,
         ),
     };
     SearchItem {
@@ -311,6 +395,9 @@ fn search_item(item: &ClipboardItem) -> SearchItem {
         source_app: item.source_app.clone(),
         last_used_ms: item.last_used_ms,
         favorite: is_favorite(item),
+        width,
+        height,
+        bytes,
     }
 }
 

@@ -8,7 +8,8 @@ mod status;
 
 pub use abi::{
     CoreHandle, clipboard_core_close, clipboard_core_execute, clipboard_core_free_buffer,
-    clipboard_core_open,
+    clipboard_core_ingest_image, clipboard_core_open, clipboard_core_open_v2,
+    clipboard_core_read_image,
 };
 pub use buffer::CoreBuffer;
 pub use status::CoreStatus;

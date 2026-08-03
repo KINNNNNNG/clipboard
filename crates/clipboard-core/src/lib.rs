@@ -4,15 +4,16 @@
 
 mod command;
 mod error;
+mod object_store;
 mod response;
 mod service;
 
 pub use command::{
-    ApiRequest, ApplyRetentionRequest, CoreCommand, DeleteRequest, IngestText, SearchFilters,
-    SearchRequest, SetFavorite,
+    ApiRequest, ApplyRetentionRequest, CoreCommand, DeleteRequest, IngestImage, IngestText,
+    SearchFilters, SearchRequest, SetFavorite,
 };
 pub use error::CoreError;
 pub use response::{CoreResponse, SearchItem};
-pub use service::CoreService;
+pub use service::{CoreService, MAX_IMAGE_BYTES};
 
 pub const CRATE_READY: bool = true;

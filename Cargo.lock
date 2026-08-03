@@ -216,6 +216,8 @@ dependencies = [
  "clipboard-core",
  "clipboard-crypto",
  "clipboard-storage",
+ "hex",
+ "serde",
  "serde_json",
  "tempfile",
  "uuid",
