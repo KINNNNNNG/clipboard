@@ -19,10 +19,22 @@ internal sealed class ClipboardSuppression
 
     public void RegisterImage(ReadOnlySpan<byte> png) => Register("image", SHA256.HashData(png));
 
+    public void DiscardText(string text) => Discard("text", HashText(text));
+
+    public void DiscardImage(ReadOnlySpan<byte> png) => Discard("image", SHA256.HashData(png));
+
     public bool TryConsumeText(string text) => TryConsume("text", HashText(text));
 
     public bool TryConsumeImage(ReadOnlySpan<byte> png) =>
         TryConsume("image", SHA256.HashData(png));
+
+    private void Discard(string kind, ReadOnlySpan<byte> hash)
+    {
+        lock (_sync)
+        {
+            _tokens.Remove(TokenKey(kind, hash));
+        }
+    }
 
     private void Register(string kind, ReadOnlySpan<byte> hash)
     {

@@ -3,10 +3,11 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Clipboard.Windows.Platform;
 
 namespace Clipboard.Windows.Core;
 
-internal sealed class ClipboardCoreClient : IDisposable, IClipboardCaptureSink
+internal sealed class ClipboardCoreClient : IDisposable, IClipboardCaptureSink, IClipboardItemContentReader
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private readonly IClipboardCoreNative _native;
