@@ -37,7 +37,10 @@ if (-not (Test-Path -LiteralPath $sdkResourceCompiler)) {
     throw "Windows SDK 26100 resource compiler was not found at $sdkResourceCompiler"
 }
 
-$perl = [Environment]::GetEnvironmentVariable('OPENSSL_SRC_PERL', 'User')
+$perl = [Environment]::GetEnvironmentVariable('OPENSSL_SRC_PERL', 'Process')
+if (-not $perl) {
+    $perl = [Environment]::GetEnvironmentVariable('OPENSSL_SRC_PERL', 'User')
+}
 if (-not $perl -or -not (Test-Path -LiteralPath $perl)) {
     throw 'OPENSSL_SRC_PERL must point to a complete Perl installation.'
 }
