@@ -1,0 +1,11 @@
+[package]
+name = "clipboard-search"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+clipboard-domain = { path = "../clipboard-domain" }
+regex.workspace = true
+thiserror.workspace = true
