@@ -3,6 +3,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::{cell::RefCell, path::Path};
 
 const INITIAL_SCHEMA_VERSION: i64 = 1;
+const MIGRATIONS: &[(i64, &str)] = &[(2, include_str!("../migrations/002_ui_state.sql"))];
+const LATEST_SCHEMA_VERSION: i64 = 2;
 
 pub struct Database {
     pub(crate) connection: RefCell<Connection>,
@@ -55,17 +57,57 @@ impl Database {
             [],
             |row| row.get(0),
         )?;
-        if has_migration_table {
-            return Ok(());
+        if !has_migration_table {
+            let transaction = connection.transaction()?;
+            transaction.execute_batch(include_str!("../migrations/001_initial.sql"))?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?1, CAST(strftime('%s', 'now') AS INTEGER) * 1000)",
+                params![INITIAL_SCHEMA_VERSION],
+            )?;
+            transaction.commit()?;
         }
 
-        let transaction = connection.transaction()?;
-        transaction.execute_batch(include_str!("../migrations/001_initial.sql"))?;
-        transaction.execute(
-            "INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?1, CAST(strftime('%s', 'now') AS INTEGER) * 1000)",
-            params![INITIAL_SCHEMA_VERSION],
-        )?;
-        transaction.commit()?;
+        let applied_versions = {
+            let mut statement =
+                connection.prepare("SELECT version FROM schema_migrations ORDER BY version")?;
+            statement
+                .query_map([], |row| row.get::<_, i64>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        if let Some(&found) = applied_versions.last()
+            && found > LATEST_SCHEMA_VERSION
+        {
+            return Err(StorageError::UnsupportedSchemaVersion {
+                found,
+                supported: LATEST_SCHEMA_VERSION,
+            });
+        }
+        if applied_versions.is_empty()
+            || applied_versions
+                .iter()
+                .copied()
+                .ne(1..=i64::try_from(applied_versions.len())
+                    .map_err(|_| StorageError::InvalidMigrationHistory)?)
+        {
+            return Err(StorageError::InvalidMigrationHistory);
+        }
+
+        let mut current_version = *applied_versions
+            .last()
+            .ok_or(StorageError::InvalidMigrationHistory)?;
+        for &(version, sql) in MIGRATIONS {
+            if version <= current_version {
+                continue;
+            }
+            let transaction = connection.transaction()?;
+            transaction.execute_batch(sql)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?1, CAST(strftime('%s', 'now') AS INTEGER) * 1000)",
+                params![version],
+            )?;
+            transaction.commit()?;
+            current_version = version;
+        }
         Ok(())
     }
 }

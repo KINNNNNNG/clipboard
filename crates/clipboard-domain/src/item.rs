@@ -1,4 +1,4 @@
-use crate::FileBundle;
+use crate::{DeleteState, FavoriteState, FileBundle};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -28,6 +28,9 @@ pub struct ClipboardItem {
     pub source_app: String,
     pub created_ms: i64,
     pub last_used_ms: i64,
+    pub content_fingerprint: Option<[u8; 32]>,
+    pub favorite_state: Option<FavoriteState>,
+    pub delete_state: Option<DeleteState>,
 }
 
 impl ClipboardItem {
@@ -45,6 +48,9 @@ impl ClipboardItem {
             source_app,
             created_ms,
             last_used_ms: created_ms,
+            content_fingerprint: None,
+            favorite_state: None,
+            delete_state: None,
         }
     }
 

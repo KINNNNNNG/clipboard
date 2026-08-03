@@ -46,6 +46,10 @@ impl VaultKey {
 pub struct DerivedKey([u8; 32]);
 
 impl DerivedKey {
+    pub fn keyed_hash(&self, content: &[u8]) -> [u8; 32] {
+        *blake3::keyed_hash(&self.0, content).as_bytes()
+    }
+
     pub(crate) fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }

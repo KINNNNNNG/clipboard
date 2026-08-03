@@ -33,4 +33,5 @@ pub struct SearchItem {
     pub preview: String,
     pub source_app: String,
     pub last_used_ms: i64,
+    pub favorite: bool,
 }

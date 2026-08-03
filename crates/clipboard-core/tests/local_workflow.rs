@@ -1,4 +1,4 @@
-use clipboard_core::{CoreCommand, CoreService, IngestText, SearchRequest};
+use clipboard_core::{CoreCommand, CoreService, IngestText, SearchFilters, SearchRequest};
 use clipboard_search::SearchMode;
 use tempfile::tempdir;
 use uuid::Uuid;
@@ -23,6 +23,7 @@ fn ingest_persist_reopen_and_search_text() {
         .execute(CoreCommand::Search(SearchRequest {
             pattern: "设备".into(),
             mode: SearchMode::Substring,
+            filters: SearchFilters::default(),
         }))
         .unwrap();
 
@@ -49,6 +50,7 @@ fn invalid_regex_is_returned_without_losing_persisted_history() {
         core.execute(CoreCommand::Search(SearchRequest {
             pattern: "[".into(),
             mode: SearchMode::Regex,
+            filters: SearchFilters::default(),
         }))
         .is_err()
     );
@@ -56,6 +58,7 @@ fn invalid_regex_is_returned_without_losing_persisted_history() {
         core.execute(CoreCommand::Search(SearchRequest {
             pattern: "clipboard".into(),
             mode: SearchMode::Substring,
+            filters: SearchFilters::default(),
         }))
         .unwrap()
         .search_items()

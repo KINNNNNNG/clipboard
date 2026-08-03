@@ -9,7 +9,7 @@ mod outbox;
 
 pub use database::Database;
 pub use error::{OutboxError, StorageError};
-pub use item_repository::ItemRepository;
+pub use item_repository::{CleanupResult, ItemRepository};
 pub use outbox::OutboxRepository;
 
 pub const CRATE_READY: bool = true;

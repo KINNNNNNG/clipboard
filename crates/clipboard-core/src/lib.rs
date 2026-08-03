@@ -7,7 +7,10 @@ mod error;
 mod response;
 mod service;
 
-pub use command::{ApiRequest, CoreCommand, DeleteRequest, IngestText, SearchRequest, SetFavorite};
+pub use command::{
+    ApiRequest, ApplyRetentionRequest, CoreCommand, DeleteRequest, IngestText, SearchFilters,
+    SearchRequest, SetFavorite,
+};
 pub use error::CoreError;
 pub use response::{CoreResponse, SearchItem};
 pub use service::CoreService;

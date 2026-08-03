@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -29,7 +30,7 @@ impl RetentionCandidate {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RetentionPolicy {
     pub max_regular_items: Option<usize>,
     pub max_age_days: Option<u32>,
