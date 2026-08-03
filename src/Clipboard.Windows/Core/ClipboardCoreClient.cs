@@ -7,7 +7,11 @@ using Clipboard.Windows.Platform;
 
 namespace Clipboard.Windows.Core;
 
-internal sealed class ClipboardCoreClient : IDisposable, IClipboardCaptureSink, IClipboardItemContentReader
+internal sealed class ClipboardCoreClient : IDisposable,
+    IClipboardCaptureSink,
+    IClipboardItemContentReader,
+    ISettingsRetentionService,
+    IClipboardPanelCore
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private readonly IClipboardCoreNative _native;

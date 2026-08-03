@@ -17,6 +17,20 @@ internal interface IClipboardCaptureSink
         CancellationToken cancellationToken = default);
 }
 
+internal interface IClipboardPanelCore
+{
+    Task<SearchResponseDto> SearchAsync(
+        SearchRequestDto request,
+        CancellationToken cancellationToken = default);
+}
+
+internal interface ISettingsRetentionService
+{
+    Task<RetentionResponseDto> ApplyRetentionAsync(
+        ApplyRetentionRequestDto request,
+        CancellationToken cancellationToken = default);
+}
+
 internal enum SearchModeDto
 {
     Substring,

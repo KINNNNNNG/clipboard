@@ -11,7 +11,15 @@ internal enum PasteResultKind
 
 internal sealed record PasteResult(PasteResultKind Kind, Guid ItemId);
 
-internal sealed class PasteCoordinator
+internal interface IClipboardItemPasteService
+{
+    Task<PasteResult> PasteAsync(
+        ClipboardItemDto item,
+        nint originalHwnd,
+        CancellationToken cancellationToken = default);
+}
+
+internal sealed class PasteCoordinator : IClipboardItemPasteService
 {
     private readonly IClipboardItemContentReader _contentReader;
     private readonly IClipboardWriter _clipboardWriter;

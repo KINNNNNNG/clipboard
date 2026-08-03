@@ -19,7 +19,12 @@ internal interface IGlobalShortcutBackend : IDisposable
     void Stop();
 }
 
-internal sealed class GlobalShortcutService : IDisposable
+internal interface IGlobalShortcutConfigurator
+{
+    GlobalShortcutState Configure(bool interceptWinV, HotkeyChord fallback);
+}
+
+internal sealed class GlobalShortcutService : IDisposable, IGlobalShortcutConfigurator
 {
     private readonly IGlobalShortcutBackend _backend;
     private int _disposed;
