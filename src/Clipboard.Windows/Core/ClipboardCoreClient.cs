@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 
 namespace Clipboard.Windows.Core;
 
-internal sealed class ClipboardCoreClient : IDisposable
+internal sealed class ClipboardCoreClient : IDisposable, IClipboardCaptureSink
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private readonly IClipboardCoreNative _native;

@@ -1,5 +1,22 @@
 namespace Clipboard.Windows.Core;
 
+internal static class ClipboardCoreLimits
+{
+    public const int MaxImageBytes = 50 * 1024 * 1024;
+}
+
+internal interface IClipboardCaptureSink
+{
+    Task<MutationResponseDto> IngestTextAsync(
+        IngestTextRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<MutationResponseDto> IngestImageAsync(
+        IngestImageRequestDto request,
+        ReadOnlyMemory<byte> png,
+        CancellationToken cancellationToken = default);
+}
+
 internal enum SearchModeDto
 {
     Substring,
