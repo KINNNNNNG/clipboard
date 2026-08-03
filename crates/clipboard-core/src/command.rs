@@ -1,6 +1,23 @@
+use crate::CoreError;
 use clipboard_search::SearchMode;
 use serde::Deserialize;
 use uuid::Uuid;
+
+#[derive(Debug, Deserialize)]
+pub struct ApiRequest {
+    pub api_version: u32,
+    #[serde(flatten)]
+    pub command: CoreCommand,
+}
+
+impl ApiRequest {
+    pub fn validate(self) -> Result<CoreCommand, CoreError> {
+        if self.api_version != 1 {
+            return Err(CoreError::UnsupportedApiVersion(self.api_version));
+        }
+        Ok(self.command)
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]

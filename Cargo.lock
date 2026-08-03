@@ -189,6 +189,8 @@ dependencies = [
  "clipboard-storage",
  "serde_json",
  "tempfile",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]
