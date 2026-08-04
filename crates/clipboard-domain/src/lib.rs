@@ -8,7 +8,9 @@ mod item;
 mod retention;
 mod state;
 
-pub use file_bundle::{FileBundle, FileBundleError, FileEntry, FileEntryKind};
+pub use file_bundle::{
+    FileBundle, FileBundleError, FileEntry, FileEntryKind, normalize_windows_path,
+};
 pub use hlc::Hlc;
 pub use item::{ClipboardContent, ClipboardItem, SyncScope};
 pub use retention::{RetentionCandidate, RetentionPlan, RetentionPolicy, plan_retention};

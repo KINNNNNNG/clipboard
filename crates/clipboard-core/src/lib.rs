@@ -9,8 +9,8 @@ mod response;
 mod service;
 
 pub use command::{
-    ApiRequest, ApplyRetentionRequest, CoreCommand, DeleteRequest, IngestImage, IngestText,
-    SearchFilters, SearchRequest, SetFavorite,
+    ApiRequest, ApplyRetentionRequest, CoreCommand, DeleteRequest, IngestFileBundle, IngestImage,
+    IngestText, ReadFileBundle, SearchFilters, SearchRequest, SetFavorite,
 };
 pub use error::CoreError;
 pub use response::{CoreResponse, SearchItem};

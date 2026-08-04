@@ -1,3 +1,4 @@
+use clipboard_domain::FileEntry;
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -9,6 +10,10 @@ pub enum CoreResponse {
     },
     Search {
         items: Vec<SearchItem>,
+    },
+    FileBundle {
+        item_id: Uuid,
+        entries: Vec<FileEntry>,
     },
     Retention {
         deleted_local: usize,

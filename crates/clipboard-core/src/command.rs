@@ -1,5 +1,5 @@
 use crate::CoreError;
-use clipboard_domain::{Hlc, RetentionPolicy};
+use clipboard_domain::{FileEntry, Hlc, RetentionPolicy};
 use clipboard_search::SearchMode;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -24,6 +24,8 @@ impl ApiRequest {
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum CoreCommand {
     IngestText(IngestText),
+    IngestFileBundle(IngestFileBundle),
+    ReadFileBundle(ReadFileBundle),
     Search(SearchRequest),
     SetFavorite(SetFavorite),
     Delete(DeleteRequest),
@@ -36,6 +38,18 @@ pub struct IngestText {
     pub text: String,
     pub source_app: String,
     pub captured_ms: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IngestFileBundle {
+    pub entries: Vec<FileEntry>,
+    pub source_app: String,
+    pub captured_ms: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReadFileBundle {
+    pub item_id: Uuid,
 }
 
 #[derive(Debug, Deserialize)]

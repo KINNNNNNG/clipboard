@@ -11,11 +11,15 @@ pub enum CoreError {
     #[error(transparent)]
     Crypto(#[from] clipboard_crypto::CryptoError),
     #[error(transparent)]
+    FileBundle(#[from] clipboard_domain::FileBundleError),
+    #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("clipboard item was not found: {0}")]
     ItemNotFound(uuid::Uuid),
     #[error("clipboard item is not an image: {0}")]
     NotImage(uuid::Uuid),
+    #[error("clipboard item is not a file bundle: {0}")]
+    NotFileBundle(uuid::Uuid),
     #[error("image payload is empty or its dimensions are invalid")]
     InvalidImage,
     #[error("image payload is {actual} bytes; maximum is {maximum} bytes")]

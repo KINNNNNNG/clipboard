@@ -16,13 +16,16 @@ fn local_file_item() -> ClipboardItem {
 #[test]
 fn local_file_bundle_cannot_enter_outbox() {
     let database = Database::open_in_memory(&[0x11; 32]).unwrap();
-    let item = local_file_item();
+    let mut item = local_file_item();
     database.items().insert(&item).unwrap();
+    item.last_used_ms = 2;
+    database.items().update(&item).unwrap();
 
     assert!(matches!(
         database.outbox().enqueue_item(&item),
         Err(OutboxError::LocalOnly)
     ));
+    assert_eq!(database.outbox().pending_count().unwrap(), 0);
 }
 
 #[test]
