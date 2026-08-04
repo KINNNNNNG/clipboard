@@ -37,6 +37,19 @@ fn file_bundle_request_deserializes_snake_case_entry_kind() {
 }
 
 #[test]
+fn file_bundle_request_deserializes_legacy_entry_kind() {
+    let request: ApiRequest = serde_json::from_str(
+        r#"{"api_version":1,"type":"ingest_file_bundle","payload":{"entries":[{"path":"C:\\Docs\\a.txt","kind":"File","size":42,"modified_ms":100}],"source_app":"explorer.exe","captured_ms":100}}"#,
+    )
+    .unwrap();
+
+    assert!(matches!(
+        request.validate().unwrap(),
+        CoreCommand::IngestFileBundle(_)
+    ));
+}
+
+#[test]
 fn unsupported_api_version_is_rejected() {
     let request: ApiRequest = serde_json::from_str(
         r#"{"api_version":2,"type":"search","payload":{"pattern":"x","mode":"substring"}}"#,

@@ -4,7 +4,9 @@ use thiserror::Error;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FileEntryKind {
+    #[serde(alias = "File")]
     File,
+    #[serde(alias = "Directory")]
     Directory,
 }
 
@@ -46,6 +48,8 @@ pub enum FileBundleError {
     RelativePath(String),
     #[error("file bundle contains duplicate path: {0}")]
     DuplicatePath(String),
+    #[error("file bundle path is invalid: {0}")]
+    InvalidPath(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,23 +81,69 @@ pub fn normalize_windows_path(path: &str) -> Result<String, FileBundleError> {
         return Err(FileBundleError::BlankPath);
     }
 
-    let mut normalized = path.replace('/', "\\").to_ascii_lowercase();
-    if !is_absolute_windows_path(&normalized) {
-        return Err(FileBundleError::RelativePath(path.into()));
+    let normalized = path.replace('/', "\\").to_ascii_lowercase();
+    if is_device_namespace(&normalized) {
+        return Err(FileBundleError::InvalidPath(path.into()));
     }
-
-    let root_len = if normalized.as_bytes().get(1) == Some(&b':') {
-        3
-    } else {
-        2
-    };
-    while normalized.len() > root_len && normalized.ends_with('\\') {
-        normalized.pop();
+    if matches!(normalized.as_bytes(), [drive, b':', b'\\', ..] if drive.is_ascii_alphabetic()) {
+        return normalize_from_root(&normalized[..3], &normalized[3..], path, false);
     }
-    Ok(normalized)
+    if let Some(unc_path) = normalized.strip_prefix("\\\\") {
+        return normalize_unc_path(unc_path, path);
+    }
+    Err(FileBundleError::RelativePath(path.into()))
 }
 
-fn is_absolute_windows_path(path: &str) -> bool {
-    matches!(path.as_bytes(), [drive, b':', b'\\', ..] if drive.is_ascii_alphabetic())
-        || path.starts_with("\\\\")
+fn is_device_namespace(path: &str) -> bool {
+    path.starts_with("\\\\?\\") || path.starts_with("\\\\.\\") || path.starts_with("\\\\??\\")
+}
+
+fn normalize_unc_path(path: &str, original: &str) -> Result<String, FileBundleError> {
+    let components = path
+        .split('\\')
+        .filter(|component| !component.is_empty())
+        .collect::<Vec<_>>();
+    let Some((server, remaining)) = components.split_first() else {
+        return Err(FileBundleError::InvalidPath(original.into()));
+    };
+    let Some((share, remaining)) = remaining.split_first() else {
+        return Err(FileBundleError::InvalidPath(original.into()));
+    };
+    if matches!(*server, "." | "..") || matches!(*share, "." | "..") {
+        return Err(FileBundleError::InvalidPath(original.into()));
+    }
+    normalize_from_root(
+        &format!("\\\\{server}\\{share}"),
+        &remaining.join("\\"),
+        original,
+        true,
+    )
+}
+
+fn normalize_from_root(
+    root: &str,
+    suffix: &str,
+    original: &str,
+    unc: bool,
+) -> Result<String, FileBundleError> {
+    let mut components = Vec::new();
+    for component in suffix.split('\\').filter(|component| !component.is_empty()) {
+        match component {
+            "." => {}
+            ".." => {
+                if components.pop().is_none() {
+                    return Err(FileBundleError::InvalidPath(original.into()));
+                }
+            }
+            _ => components.push(component),
+        }
+    }
+    if components.is_empty() {
+        return Ok(root.into());
+    }
+    if unc {
+        Ok(format!("{root}\\{}", components.join("\\")))
+    } else {
+        Ok(format!("{root}{}", components.join("\\")))
+    }
 }

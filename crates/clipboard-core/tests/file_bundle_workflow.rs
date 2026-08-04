@@ -1,6 +1,8 @@
 use clipboard_core::{CoreCommand, CoreResponse, CoreService, IngestFileBundle, ReadFileBundle};
-use clipboard_domain::{FileEntry, FileEntryKind};
+use clipboard_crypto::{KeyPurpose, VaultKey};
+use clipboard_domain::{ClipboardContent, ClipboardItem, FileBundle, FileEntry, FileEntryKind};
 use clipboard_storage::Database;
+use rusqlite::Connection;
 use tempfile::tempdir;
 use uuid::Uuid;
 
@@ -83,6 +85,68 @@ fn invalid_file_bundles_fail_before_storage() {
     let database = Database::open(&directory.path().join("history.db"), &KEY).unwrap();
     assert!(database.items().list().unwrap().is_empty());
     assert_eq!(database.outbox().pending_count().unwrap(), 0);
+}
+
+#[test]
+fn legacy_file_bundle_fingerprint_is_migrated_without_duplicate_item() {
+    let directory = tempdir().unwrap();
+    let database_path = directory.path().join("history.db");
+    let vault_id = Uuid::from_u128(203);
+    let item_id = Uuid::from_u128(204);
+    let legacy_fingerprint = VaultKey::from_bytes(KEY)
+        .derive(vault_id, KeyPurpose::Fingerprint)
+        .unwrap()
+        .keyed_hash(br#"[{"path":"c:\\docs\\a.txt","kind":"File","size":42,"modified_ms":100}]"#);
+    {
+        let database = Database::open(&database_path, &KEY).unwrap();
+        let mut item = ClipboardItem::new(
+            item_id,
+            vault_id,
+            ClipboardContent::FileBundle(
+                FileBundle::new(vec![FileEntry::file("C:\\Docs\\a.txt".into(), 42, 100)]).unwrap(),
+            ),
+            "explorer.exe".into(),
+            100,
+        );
+        item.content_fingerprint = Some(legacy_fingerprint);
+        database.items().insert(&item).unwrap();
+    }
+    let connection = Connection::open(&database_path).unwrap();
+    connection
+        .pragma_update(None, "key", format!("x'{}'", hex::encode(KEY)))
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE clipboard_items SET content_json = ?1 WHERE id = ?2",
+            rusqlite::params![
+                r#"{"FileBundle":{"entries":[{"path":"C:\\Docs\\a.txt","kind":"File","size":42,"modified_ms":100}]}}"#,
+                item_id,
+            ],
+        )
+        .unwrap();
+
+    let mut core = CoreService::open(directory.path(), vault_id, &KEY).unwrap();
+    let reused_id = mutation_id(
+        core.execute(CoreCommand::IngestFileBundle(IngestFileBundle {
+            entries: vec![FileEntry::file("c:/docs/a.txt/".into(), 42, 100)],
+            source_app: "explorer.exe".into(),
+            captured_ms: 200,
+        }))
+        .unwrap(),
+    );
+
+    assert_eq!(reused_id, item_id);
+    let expected_fingerprint = VaultKey::from_bytes(KEY)
+        .derive(vault_id, KeyPurpose::Fingerprint)
+        .unwrap()
+        .keyed_hash(br#"[{"path":"c:\\docs\\a.txt","kind":"file","size":42,"modified_ms":100}]"#);
+    let stored = Database::open(&database_path, &KEY)
+        .unwrap()
+        .items()
+        .list_all()
+        .unwrap();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].content_fingerprint, Some(expected_fingerprint));
 }
 
 fn mutation_id(response: CoreResponse) -> Uuid {

@@ -6,7 +6,7 @@ use crate::{IngestImage, object_store::ObjectStore};
 use clipboard_crypto::{KeyPurpose, VaultKey};
 use clipboard_domain::{
     ClipboardContent, ClipboardItem, DeleteState, FavoriteState, FileBundle, Hlc,
-    RetentionCandidate, normalize_windows_path, plan_retention,
+    RetentionCandidate, plan_retention,
 };
 use clipboard_search::SearchEngine;
 use clipboard_storage::Database;
@@ -86,20 +86,23 @@ impl CoreService {
 
     fn ingest_file_bundle(&self, request: IngestFileBundle) -> Result<CoreResponse, CoreError> {
         let mut bundle = FileBundle::new(request.entries)?;
-        bundle.entries.sort_by_cached_key(|entry| {
-            normalize_windows_path(&entry.path).expect("validated file bundle path")
-        });
+        bundle.entries.sort_by_key(|entry| entry.path.clone());
         let serialized = stable_file_bundle_bytes(&bundle)?;
-        let fingerprint = self
+        let legacy_serialized = legacy_file_bundle_bytes(&bundle)?;
+        let fingerprint_key = self
             .vault_key
-            .derive(self.vault_id, KeyPurpose::Fingerprint)?
-            .keyed_hash(&serialized);
+            .derive(self.vault_id, KeyPurpose::Fingerprint)?;
+        let fingerprint = fingerprint_key.keyed_hash(&serialized);
+        let legacy_fingerprint = fingerprint_key.keyed_hash(&legacy_serialized);
         let mut stored_items = self.database.items().list()?;
         if let Some(latest) = stored_items.iter_mut().find(|item| {
             item.vault_id == self.vault_id
                 && matches!(&item.content, ClipboardContent::FileBundle(_))
-                && item.content_fingerprint == Some(fingerprint)
+                && (item.content_fingerprint == Some(fingerprint)
+                    || item.content_fingerprint == Some(legacy_fingerprint))
         }) {
+            latest.content = ClipboardContent::FileBundle(bundle);
+            latest.content_fingerprint = Some(fingerprint);
             if request.captured_ms >= latest.last_used_ms {
                 latest.last_used_ms = request.captured_ms;
                 latest.source_app = request.source_app;
@@ -498,10 +501,15 @@ fn unix_time_ms() -> i64 {
 }
 
 fn stable_file_bundle_bytes(bundle: &FileBundle) -> Result<Vec<u8>, CoreError> {
+    Ok(serde_json::to_vec(&bundle.entries)
+        .map_err(|error| CoreError::InvalidCommand(error.to_string()))?)
+}
+
+fn legacy_file_bundle_bytes(bundle: &FileBundle) -> Result<Vec<u8>, CoreError> {
     #[derive(serde::Serialize)]
-    struct Entry<'a> {
-        path: String,
-        kind: &'a clipboard_domain::FileEntryKind,
+    struct LegacyEntry<'a> {
+        path: &'a str,
+        kind: &'static str,
         size: u64,
         modified_ms: i64,
     }
@@ -509,9 +517,12 @@ fn stable_file_bundle_bytes(bundle: &FileBundle) -> Result<Vec<u8>, CoreError> {
     let entries = bundle
         .entries
         .iter()
-        .map(|entry| Entry {
-            path: normalize_windows_path(&entry.path).expect("validated file bundle path"),
-            kind: &entry.kind,
+        .map(|entry| LegacyEntry {
+            path: &entry.path,
+            kind: match entry.kind {
+                clipboard_domain::FileEntryKind::File => "File",
+                clipboard_domain::FileEntryKind::Directory => "Directory",
+            },
             size: entry.size,
             modified_ms: entry.modified_ms,
         })
