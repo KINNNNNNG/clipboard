@@ -13,7 +13,7 @@ public sealed class HotkeyChordTests
         Assert.Equal(WinVKeyAction.Pass, interceptor.Handle(NativeMethods.VirtualKey.LeftWindows, keyDown: true, keyUp: false));
         Assert.Equal(WinVKeyAction.SuppressAndMarkChord, interceptor.Handle(NativeMethods.VirtualKey.V, keyDown: true, keyUp: false));
         Assert.Equal(WinVKeyAction.Suppress, interceptor.Handle(NativeMethods.VirtualKey.V, keyDown: false, keyUp: true));
-        Assert.Equal(WinVKeyAction.Pass, interceptor.Handle(NativeMethods.VirtualKey.LeftWindows, keyDown: false, keyUp: true));
+        Assert.Equal(WinVKeyAction.PassAndOpen, interceptor.Handle(NativeMethods.VirtualKey.LeftWindows, keyDown: false, keyUp: true));
     }
     [Fact]
     public void Parses_alt_v_as_a_valid_fallback_chord()

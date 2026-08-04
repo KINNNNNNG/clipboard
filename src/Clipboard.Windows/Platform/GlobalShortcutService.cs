@@ -29,12 +29,14 @@ internal enum WinVKeyAction
     Pass,
     Suppress,
     SuppressAndMarkChord,
+    PassAndOpen,
 }
 
 internal sealed class WinVKeyInterceptor
 {
     private bool _winPressed;
     private bool _suppressV;
+    private bool _openPending;
 
     public WinVKeyAction Handle(uint virtualKey, bool keyDown, bool keyUp)
     {
@@ -48,6 +50,11 @@ internal sealed class WinVKeyInterceptor
             {
                 _winPressed = false;
                 _suppressV = false;
+                if (_openPending)
+                {
+                    _openPending = false;
+                    return WinVKeyAction.PassAndOpen;
+                }
             }
             return WinVKeyAction.Pass;
         }
@@ -63,6 +70,7 @@ internal sealed class WinVKeyInterceptor
                 return WinVKeyAction.Suppress;
             }
             _suppressV = true;
+            _openPending = true;
             return WinVKeyAction.SuppressAndMarkChord;
         }
         if (keyUp && _suppressV)
@@ -77,6 +85,7 @@ internal sealed class WinVKeyInterceptor
     {
         _winPressed = false;
         _suppressV = false;
+        _openPending = false;
     }
 }
 
@@ -323,12 +332,17 @@ internal sealed class WindowsGlobalShortcutBackend : IGlobalShortcutBackend
                 _interceptor.Reset();
                 return NativeMethods.CallNextHookEx(_hook, code, wParam, lParam);
             }
-            RequestPanel();
             return 1;
         }
         if (action == WinVKeyAction.Suppress)
         {
             return 1;
+        }
+        if (action == WinVKeyAction.PassAndOpen)
+        {
+            nint next = NativeMethods.CallNextHookEx(_hook, code, wParam, lParam);
+            RequestPanel();
+            return next;
         }
         return NativeMethods.CallNextHookEx(_hook, code, wParam, lParam);
     }
