@@ -1,6 +1,8 @@
 use clipboard_core::{
-    CoreCommand, CoreError, CoreResponse, CoreService, IngestImage, SearchFilters, SearchRequest,
+    ApplyRetentionRequest, CoreCommand, CoreError, CoreResponse, CoreService, IngestImage,
+    SearchFilters, SearchRequest,
 };
+use clipboard_domain::RetentionPolicy;
 use clipboard_search::SearchMode;
 use clipboard_storage::Database;
 use rusqlite::Connection;
@@ -123,6 +125,38 @@ fn opening_core_removes_files_left_in_the_pending_directory() {
     CoreService::open(directory.path(), Uuid::from_u128(104), &KEY).unwrap();
 
     assert!(!interrupted.exists());
+}
+
+#[test]
+fn image_space_retention_removes_the_encrypted_object_after_tombstoning_the_history_item() {
+    let directory = tempdir().unwrap();
+    let vault_id = Uuid::from_u128(105);
+    let mut core = CoreService::open(directory.path(), vault_id, &KEY).unwrap();
+    mutation_id(
+        core.ingest_image(
+            IngestImage {
+                width: 1,
+                height: 1,
+                source_app: "mspaint.exe".into(),
+                captured_ms: 100,
+            },
+            &png_fixture(),
+        )
+        .unwrap(),
+    );
+    assert_eq!(object_files(directory.path()).len(), 1);
+
+    core.execute(CoreCommand::ApplyRetention(ApplyRetentionRequest {
+        now_ms: 200,
+        policy: RetentionPolicy {
+            max_regular_items: None,
+            max_age_days: None,
+            max_image_bytes: Some(0),
+        },
+    }))
+    .unwrap();
+
+    assert!(object_files(directory.path()).is_empty());
 }
 
 fn mutation_id(response: CoreResponse) -> Uuid {

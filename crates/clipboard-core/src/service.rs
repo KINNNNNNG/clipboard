@@ -193,6 +193,7 @@ impl CoreService {
         let mut item = self.find_item(request.item_id)?;
         if !item.is_syncable() {
             self.database.items().delete_local(item.id)?;
+            self.remove_image_objects(std::slice::from_ref(&item))?;
             return Ok(CoreResponse::Mutation { item_id: item.id });
         }
 
@@ -206,6 +207,7 @@ impl CoreService {
         if item.delete_state != Some(merged) {
             item.delete_state = Some(merged);
             self.database.items().update_and_enqueue(&item)?;
+            self.remove_image_objects(std::slice::from_ref(&item))?;
         }
         Ok(CoreResponse::Mutation { item_id: item.id })
     }
@@ -223,7 +225,8 @@ impl CoreService {
         let mut delete_local = Vec::new();
         let mut tombstones = Vec::new();
 
-        for mut item in items {
+        for item in &items {
+            let mut item = item.clone();
             if item.is_syncable() {
                 item.delete_state = Some(DeleteState {
                     deleted: true,
@@ -238,6 +241,7 @@ impl CoreService {
             .database
             .items()
             .apply_cleanup(&delete_local, &tombstones)?;
+        self.remove_image_objects(&items)?;
 
         Ok(CoreResponse::Retention {
             deleted_local: result.deleted_local,
@@ -269,6 +273,17 @@ impl CoreService {
             })
             .collect::<Vec<_>>();
         let plan = plan_retention(&request.policy, request.now_ms, &candidates);
+        let removed_ids = plan
+            .delete_local
+            .iter()
+            .chain(&plan.create_tombstones)
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+        let removed_items = items
+            .iter()
+            .filter(|item| removed_ids.contains(&item.id))
+            .cloned()
+            .collect::<Vec<_>>();
 
         let mut tombstones = Vec::new();
         for item_id in plan.create_tombstones {
@@ -285,6 +300,7 @@ impl CoreService {
             .database
             .items()
             .apply_cleanup(&plan.delete_local, &tombstones)?;
+        self.remove_image_objects(&removed_items)?;
 
         Ok(CoreResponse::Retention {
             deleted_local: result.deleted_local,
@@ -306,6 +322,15 @@ impl CoreService {
             self.database.items().update_and_enqueue(item)?;
         } else {
             self.database.items().update(item)?;
+        }
+        Ok(())
+    }
+
+    fn remove_image_objects(&self, items: &[ClipboardItem]) -> Result<(), CoreError> {
+        for item in items {
+            if let ClipboardContent::Image { object_id, .. } = item.content {
+                self.object_store.remove_image(object_id)?;
+            }
         }
         Ok(())
     }

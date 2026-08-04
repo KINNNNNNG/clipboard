@@ -7,4 +7,5 @@ pub enum CoreStatus {
     InvalidJson = 3,
     CoreError = 4,
     Panic = 5,
+    InvalidRegex = 6,
 }

@@ -1,5 +1,5 @@
 use crate::{CoreBuffer, CoreStatus};
-use clipboard_core::{ApiRequest, CoreService, IngestImage, MAX_IMAGE_BYTES};
+use clipboard_core::{ApiRequest, CoreError, CoreService, IngestImage, MAX_IMAGE_BYTES};
 use serde::Deserialize;
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
@@ -333,7 +333,7 @@ unsafe fn execute_impl(
     };
     let response = match service.execute(command) {
         Ok(response) => response,
-        Err(_) => return CoreStatus::CoreError,
+        Err(error) => return status_for_core_error(error),
     };
     let response_json = match serde_json::to_vec(&response) {
         Ok(json) => json,
@@ -341,6 +341,13 @@ unsafe fn execute_impl(
     };
     unsafe { ptr::write(out_response, CoreBuffer::from_vec(response_json)) };
     CoreStatus::Ok
+}
+
+fn status_for_core_error(error: CoreError) -> CoreStatus {
+    match error {
+        CoreError::Search(_) => CoreStatus::InvalidRegex,
+        _ => CoreStatus::CoreError,
+    }
 }
 
 fn catch_status(operation: impl FnOnce() -> CoreStatus) -> CoreStatus {

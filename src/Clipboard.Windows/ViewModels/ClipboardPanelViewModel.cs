@@ -11,6 +11,8 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
     private readonly IClipboardPanelCore _core;
     private readonly IClipboardItemPasteService _paste;
     private readonly IRetryDelay _delay;
+    private readonly TimeProvider _timeProvider;
+    private readonly Guid _nodeId;
     private CancellationTokenSource? _debounceCancellation;
     private CancellationTokenSource? _activeSearchCancellation;
     private long _searchVersion;
@@ -24,15 +26,22 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
     private bool _isLoading;
     private string? _queryError;
     private string? _errorMessage;
+    private long _lastHlcPhysicalMs = long.MinValue;
+    private uint _hlcLogical;
 
     public ClipboardPanelViewModel(
         IClipboardPanelCore core,
         IClipboardItemPasteService paste,
-        IRetryDelay? delay = null)
+        IRetryDelay? delay = null,
+        TimeProvider? timeProvider = null,
+        Guid? nodeId = null)
     {
         _core = core;
         _paste = paste;
         _delay = delay ?? new SystemRetryDelay();
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _nodeId = nodeId ?? Guid.NewGuid();
+        Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsEmpty));
     }
 
     public event EventHandler? CloseRequested;
@@ -83,20 +92,41 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
     public bool IsLoading
     {
         get => _isLoading;
-        private set => SetProperty(ref _isLoading, value);
+        private set
+        {
+            if (SetProperty(ref _isLoading, value))
+            {
+                OnPropertyChanged(nameof(IsEmpty));
+            }
+        }
     }
 
     public string? QueryError
     {
         get => _queryError;
-        private set => SetProperty(ref _queryError, value);
+        private set
+        {
+            if (SetProperty(ref _queryError, value))
+            {
+                OnPropertyChanged(nameof(IsEmpty));
+            }
+        }
     }
 
     public string? ErrorMessage
     {
         get => _errorMessage;
-        private set => SetProperty(ref _errorMessage, value);
+        private set
+        {
+            if (SetProperty(ref _errorMessage, value))
+            {
+                OnPropertyChanged(nameof(IsEmpty));
+            }
+        }
     }
+
+    public bool IsEmpty =>
+        !IsLoading && Items.Count == 0 && QueryError is null && ErrorMessage is null;
 
     public void SetFilters(
         long? createdAfterMs,
@@ -128,6 +158,13 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
         SelectedIndex = Math.Clamp(start + delta, 0, Items.Count - 1);
     }
 
+    public void SelectIndex(int index)
+    {
+        SelectedIndex = Items.Count == 0
+            ? -1
+            : Math.Clamp(index, 0, Items.Count - 1);
+    }
+
     public async Task<PasteResult?> PasteSelectedAsync(
         nint originalHwnd,
         CancellationToken cancellationToken = default)
@@ -140,7 +177,51 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
         return await _paste.PasteAsync(selected.Item, originalHwnd, cancellationToken);
     }
 
+    public async Task ToggleFavoriteAsync(
+        ClipboardItemViewModel item,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        bool favorite = !item.Favorite;
+        await _core.SetFavoriteAsync(
+            new SetFavoriteRequestDto(item.Id, favorite, NextHlc()),
+            cancellationToken);
+        item.Favorite = favorite;
+    }
+
+    public async Task DeleteAsync(
+        ClipboardItemViewModel item,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        await _core.DeleteAsync(
+            new DeleteRequestDto(item.Id, NextHlc()),
+            cancellationToken);
+        int index = Items.IndexOf(item);
+        if (index >= 0)
+        {
+            Items.RemoveAt(index);
+            SelectedIndex = Items.Count == 0
+                ? -1
+                : Math.Clamp(index, 0, Items.Count - 1);
+        }
+    }
+
+    public async Task ClearUnfavoriteAsync(CancellationToken cancellationToken = default)
+    {
+        await _core.ClearUnfavoriteAsync(cancellationToken);
+        await RefreshAsync(cancellationToken);
+    }
+
     public void HandleEscape() => CloseRequested?.Invoke(this, EventArgs.Empty);
+
+    public void ReportOperationError(string message)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        ErrorMessage = message;
+    }
+
+    public void ClearOperationError() => ErrorMessage = null;
 
     private void ScheduleSearch()
     {
@@ -218,7 +299,8 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
         {
             throw;
         }
-        catch when (request.Mode == SearchModeDto.Regex && IsCurrent(version))
+        catch (ClipboardCoreException error) when (
+            error.Status == CoreStatus.InvalidRegex && IsCurrent(version))
         {
             QueryError = "正则表达式无效。";
             ErrorMessage = null;
@@ -270,5 +352,20 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
             _debounceCancellation = null;
             debounce?.Cancel();
         }
+    }
+
+    private HlcDto NextHlc()
+    {
+        long physicalMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        if (physicalMs > _lastHlcPhysicalMs)
+        {
+            _lastHlcPhysicalMs = physicalMs;
+            _hlcLogical = 0;
+        }
+        else
+        {
+            _hlcLogical = checked(_hlcLogical + 1);
+        }
+        return new HlcDto(_lastHlcPhysicalMs, _hlcLogical, _nodeId);
     }
 }

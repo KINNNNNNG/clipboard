@@ -5,7 +5,7 @@ internal static class ClipboardCoreLimits
     public const int MaxImageBytes = 50 * 1024 * 1024;
 }
 
-internal interface IClipboardCaptureSink
+internal interface IClipboardCaptureSink : ISettingsRetentionService
 {
     Task<MutationResponseDto> IngestTextAsync(
         IngestTextRequestDto request,
@@ -21,6 +21,17 @@ internal interface IClipboardPanelCore
 {
     Task<SearchResponseDto> SearchAsync(
         SearchRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<MutationResponseDto> SetFavoriteAsync(
+        SetFavoriteRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<MutationResponseDto> DeleteAsync(
+        DeleteRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<RetentionResponseDto> ClearUnfavoriteAsync(
         CancellationToken cancellationToken = default);
 }
 

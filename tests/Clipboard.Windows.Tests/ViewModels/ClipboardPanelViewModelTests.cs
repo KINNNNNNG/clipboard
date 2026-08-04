@@ -53,7 +53,7 @@ public sealed class ClipboardPanelViewModelTests
         {
             Handler = (request, _) => request.Pattern == "["
                 ? Task.FromException<SearchResponseDto>(
-                    new ClipboardCoreException(CoreStatus.CoreError))
+                    new ClipboardCoreException(CoreStatus.InvalidRegex))
                 : Task.FromResult(Response(TextItem("preserved"))),
         };
         var viewModel = new ClipboardPanelViewModel(
@@ -68,6 +68,27 @@ public sealed class ClipboardPanelViewModelTests
 
         Assert.NotNull(viewModel.QueryError);
         Assert.Null(viewModel.ErrorMessage);
+        Assert.Equal("preserved", Assert.Single(viewModel.Items).Preview);
+    }
+
+    [Fact]
+    public async Task Regex_mode_reports_core_failure_as_history_error_instead_of_invalid_regex()
+    {
+        var core = new FakePanelCore
+        {
+            Handler = (request, _) => request.Mode == SearchModeDto.Regex
+                ? Task.FromException<SearchResponseDto>(
+                    new ClipboardCoreException(CoreStatus.CoreError))
+                : Task.FromResult(Response(TextItem("preserved"))),
+        };
+        var viewModel = new ClipboardPanelViewModel(core, new FakePasteService());
+        await viewModel.RefreshAsync();
+        viewModel.UseRegex = true;
+
+        await viewModel.RefreshAsync();
+
+        Assert.Null(viewModel.QueryError);
+        Assert.Equal("无法加载剪贴板历史。", viewModel.ErrorMessage);
         Assert.Equal("preserved", Assert.Single(viewModel.Items).Preview);
     }
 
@@ -163,6 +184,108 @@ public sealed class ClipboardPanelViewModelTests
         Assert.Equal(1, closeRequests);
     }
 
+    [Fact]
+    public async Task Toggling_favorite_persists_state_and_updates_the_card()
+    {
+        ClipboardItemDto item = TextItem("keep me");
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(Response(item)),
+        };
+        var viewModel = new ClipboardPanelViewModel(
+            core,
+            new FakePasteService(),
+            timeProvider: new ManualTimeProvider(1234),
+            nodeId: Guid.Parse("11111111-1111-1111-1111-111111111111"));
+
+        await viewModel.RefreshAsync();
+        ClipboardItemViewModel card = Assert.Single(viewModel.Items);
+
+        await viewModel.ToggleFavoriteAsync(card);
+
+        Assert.True(card.Favorite);
+        Assert.Equal(item.Id, Assert.Single(core.FavoriteRequests).ItemId);
+        Assert.True(core.FavoriteRequests[0].Favorite);
+        Assert.Equal(1234, core.FavoriteRequests[0].Updated.PhysicalMs);
+    }
+
+    [Fact]
+    public async Task Mutations_in_the_same_millisecond_increment_the_hlc_logical_counter()
+    {
+        ClipboardItemDto item = TextItem("toggle twice");
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(Response(item)),
+        };
+        var viewModel = new ClipboardPanelViewModel(
+            core,
+            new FakePasteService(),
+            timeProvider: new ManualTimeProvider(1234),
+            nodeId: Guid.Parse("11111111-1111-1111-1111-111111111111"));
+        await viewModel.RefreshAsync();
+        ClipboardItemViewModel card = Assert.Single(viewModel.Items);
+
+        await viewModel.ToggleFavoriteAsync(card);
+        await viewModel.ToggleFavoriteAsync(card);
+
+        Assert.Equal((uint)0, core.FavoriteRequests[0].Updated.Logical);
+        Assert.Equal((uint)1, core.FavoriteRequests[1].Updated.Logical);
+        Assert.False(card.Favorite);
+    }
+
+    [Fact]
+    public async Task Deleting_item_removes_it_from_the_visible_history()
+    {
+        ClipboardItemDto first = TextItem("first");
+        ClipboardItemDto second = TextItem("second");
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(Response(first, second)),
+        };
+        var viewModel = new ClipboardPanelViewModel(core, new FakePasteService());
+
+        await viewModel.RefreshAsync();
+        await viewModel.DeleteAsync(viewModel.Items[0]);
+
+        Assert.Single(viewModel.Items);
+        Assert.Equal("second", viewModel.Items[0].Preview);
+        Assert.Equal(first.Id, Assert.Single(core.DeleteRequests).ItemId);
+    }
+
+    [Fact]
+    public async Task Clearing_unfavorite_items_refreshes_the_visible_history()
+    {
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(Response(TextItem("remaining"))),
+        };
+        var viewModel = new ClipboardPanelViewModel(core, new FakePasteService());
+
+        await viewModel.ClearUnfavoriteAsync();
+
+        Assert.Equal(1, core.ClearCalls);
+        Assert.Equal("remaining", Assert.Single(viewModel.Items).Preview);
+    }
+
+    [Fact]
+    public async Task Empty_state_and_explicit_selection_follow_visible_items()
+    {
+        ClipboardItemDto first = TextItem("first");
+        ClipboardItemDto second = TextItem("second");
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(Response(first, second)),
+        };
+        var viewModel = new ClipboardPanelViewModel(core, new FakePasteService());
+
+        Assert.True(viewModel.IsEmpty);
+        await viewModel.RefreshAsync();
+        viewModel.SelectIndex(1);
+
+        Assert.False(viewModel.IsEmpty);
+        Assert.Equal(second.Id, viewModel.SelectedItem?.Id);
+    }
+
     private static ClipboardItemDto TextItem(string preview) =>
         new(Guid.NewGuid(), "text", preview, "notepad.exe", 100, false, null, null, null);
 
@@ -187,12 +310,41 @@ public sealed class ClipboardPanelViewModelTests
 
         public List<SearchRequestDto> Requests { get; } = [];
 
+        public List<SetFavoriteRequestDto> FavoriteRequests { get; } = [];
+
+        public List<DeleteRequestDto> DeleteRequests { get; } = [];
+
+        public int ClearCalls { get; private set; }
+
         public Task<SearchResponseDto> SearchAsync(
             SearchRequestDto request,
             CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
             return Handler(request, cancellationToken);
+        }
+
+        public Task<MutationResponseDto> SetFavoriteAsync(
+            SetFavoriteRequestDto request,
+            CancellationToken cancellationToken = default)
+        {
+            FavoriteRequests.Add(request);
+            return Task.FromResult(new MutationResponseDto(request.ItemId));
+        }
+
+        public Task<MutationResponseDto> DeleteAsync(
+            DeleteRequestDto request,
+            CancellationToken cancellationToken = default)
+        {
+            DeleteRequests.Add(request);
+            return Task.FromResult(new MutationResponseDto(request.ItemId));
+        }
+
+        public Task<RetentionResponseDto> ClearUnfavoriteAsync(
+            CancellationToken cancellationToken = default)
+        {
+            ClearCalls++;
+            return Task.FromResult(new RetentionResponseDto(0, 0));
         }
     }
 
@@ -226,6 +378,12 @@ public sealed class ClipboardPanelViewModelTests
         }
 
         public void ReleaseLatest() => Entries[^1].Completion.TrySetResult();
+    }
+
+    private sealed class ManualTimeProvider(long milliseconds) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() =>
+            DateTimeOffset.FromUnixTimeMilliseconds(milliseconds);
     }
 
     private sealed record DelayEntry(

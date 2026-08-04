@@ -94,6 +94,33 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task Loading_and_saving_settings_updates_the_capture_retention_policy()
+    {
+        var provider = new RetentionPolicyProvider();
+        var store = new MemorySettingsStore(new ClientSettings(4, 8, 12, true, "Alt+V", false, "system"));
+        var viewModel = new SettingsViewModel(
+            store,
+            new FakeRetentionService(),
+            new FakeShortcutConfigurator(),
+            new FakeStartupSettingsService(),
+            retentionPolicy: provider);
+
+        await viewModel.LoadAsync();
+        Assert.Equal(4, provider.Current.MaxRegularItems);
+        Assert.Equal((uint)8, provider.Current.MaxAgeDays);
+        Assert.Equal((ulong)12, provider.Current.MaxImageBytes);
+
+        viewModel.MaxRegularItems = 2;
+        viewModel.MaxAgeDays = 3;
+        viewModel.MaxImageGiB = 2;
+        await viewModel.SaveAsync();
+
+        Assert.Equal(2, provider.Current.MaxRegularItems);
+        Assert.Equal((uint)3, provider.Current.MaxAgeDays);
+        Assert.Equal(2UL * ClientSettings.BytesPerGiB, provider.Current.MaxImageBytes);
+    }
+
+    [Fact]
     public async Task Startup_failure_rolls_back_value_and_reports_sanitized_error()
     {
         const string secret = "startup failure secret";

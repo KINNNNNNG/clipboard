@@ -2,20 +2,244 @@
     x:Class="Clipboard.Windows.Views.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Clipboard.Windows.Views"
     Title="剪贴板">
-    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
-        <StackPanel
-            HorizontalAlignment="Center"
-            VerticalAlignment="Center"
-            Spacing="12">
-            <FontIcon
+    <Grid
+        x:Name="Root"
+        Padding="12"
+        Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+        KeyDown="Root_KeyDown">
+        <Grid.Resources>
+            <local:ClipboardKindVisibilityConverter x:Key="KindVisibilityConverter" />
+            <local:BooleanVisibilityConverter x:Key="BooleanVisibilityConverter" />
+            <DataTemplate x:Key="ClipboardItemTemplate">
+                <Border
+                    Margin="0,0,0,8"
+                    Padding="10,9,8,8"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Spacing="8">
+                            <TextBlock
+                                MaxLines="6"
+                                Text="{Binding DisplayPreview}"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="WrapWholeWords" />
+                            <StackPanel
+                                Spacing="4"
+                                Visibility="{Binding Kind, Converter={StaticResource KindVisibilityConverter}, ConverterParameter=image}">
+                                <Border
+                                    Height="116"
+                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                    CornerRadius="4">
+                                    <Image
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        MaxHeight="116"
+                                        MaxWidth="340"
+                                        Stretch="Uniform"
+                                        Loaded="ImagePreview_Loaded" />
+                                </Border>
+                                <TextBlock
+                                    FontSize="12"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="{Binding ImageDimensions}" />
+                            </StackPanel>
+                        </StackPanel>
+                        <Grid Grid.Row="1" Margin="0,9,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock
+                                    FontSize="12"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="{Binding SourceApp}" />
+                                <TextBlock
+                                    FontSize="12"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="{Binding LastUsedLabel}" />
+                            </StackPanel>
+                            <TextBlock
+                                Grid.Column="1"
+                                Margin="0,0,7,0"
+                                FontSize="12"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="{Binding ImageBytesLabel}"
+                                Visibility="{Binding Kind, Converter={StaticResource KindVisibilityConverter}, ConverterParameter=image}" />
+                            <Button
+                                Grid.Column="2"
+                                Padding="7"
+                                AutomationProperties.Name="收藏此条记录"
+                                Click="FavoriteButton_Click"
+                                CornerRadius="4"
+                                Tag="{Binding}"
+                                ToolTipService.ToolTip="收藏或取消收藏">
+                                <FontIcon FontSize="14" Glyph="{Binding FavoriteGlyph}" />
+                            </Button>
+                            <Button
+                                Grid.Column="3"
+                                Padding="7"
+                                AutomationProperties.Name="更多操作"
+                                Click="MoreButton_Click"
+                                CornerRadius="4"
+                                Tag="{Binding}"
+                                ToolTipService.ToolTip="更多操作">
+                                <FontIcon FontSize="14" Glyph="&#xE712;" />
+                            </Button>
+                        </Grid>
+                    </Grid>
+                </Border>
+            </DataTemplate>
+        </Grid.Resources>
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <SymbolIcon Symbol="Paste" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    FontSize="20"
+                    FontWeight="SemiBold"
+                    Text="剪贴板" />
+            </StackPanel>
+            <Button
+                Grid.Column="1"
+                Padding="10,6"
+                AutomationProperties.Name="全部清除"
+                Click="ClearButton_Click"
+                CornerRadius="4"
+                Content="全部清除" />
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox
+                x:Name="SearchBox"
+                Height="34"
+                PlaceholderText="搜索剪贴板"
+                TextChanged="SearchBox_TextChanged" />
+            <ToggleButton
+                x:Name="RegexButton"
+                Grid.Column="1"
+                Width="38"
+                Height="34"
+                Margin="6,0,0,0"
+                AutomationProperties.Name="正则表达式搜索"
+                Checked="RegexButton_Changed"
+                Content=".*"
+                CornerRadius="4"
+                ToolTipService.ToolTip="使用正则表达式搜索"
+                Unchecked="RegexButton_Changed" />
+            <Button
+                x:Name="FilterButton"
+                Grid.Column="2"
+                Width="38"
+                Height="34"
+                Margin="6,0,0,0"
+                AutomationProperties.Name="筛选剪贴板记录"
+                CornerRadius="4"
+                ToolTipService.ToolTip="筛选">
+                <FontIcon FontSize="14" Glyph="&#xE71C;" />
+                <Button.Flyout>
+                    <Flyout Placement="Bottom">
+                        <StackPanel Width="240" Spacing="8">
+                            <TextBlock FontWeight="SemiBold" Text="筛选" />
+                            <CheckBox x:Name="TextKindCheckBox" Content="文本" IsChecked="True" />
+                            <CheckBox x:Name="ImageKindCheckBox" Content="图片" IsChecked="True" />
+                            <ComboBox x:Name="TimeFilterComboBox" Header="复制时间" SelectedIndex="0">
+                                <ComboBoxItem Content="全部时间" />
+                                <ComboBoxItem Content="最近一小时" />
+                                <ComboBoxItem Content="最近一天" />
+                                <ComboBoxItem Content="最近七天" />
+                            </ComboBox>
+                            <TextBox
+                                x:Name="SourceFilterBox"
+                                Header="来源应用"
+                                PlaceholderText="多个应用用逗号分隔" />
+                            <Button
+                                HorizontalAlignment="Right"
+                                Click="ApplyFiltersButton_Click"
+                                Content="应用" />
+                        </StackPanel>
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
+        </Grid>
+
+        <Grid Grid.Row="2" MinHeight="280">
+            <ListView
+                x:Name="HistoryList"
+                IsItemClickEnabled="True"
+                ItemClick="HistoryList_ItemClick"
+                ItemTemplate="{StaticResource ClipboardItemTemplate}"
+                ItemsSource="{Binding Items}"
+                SelectedItem="{Binding SelectedItem, Mode=OneWay}"
+                SelectionMode="Single" />
+            <StackPanel
                 HorizontalAlignment="Center"
-                FontSize="28"
-                Glyph="&#xE8C8;" />
+                VerticalAlignment="Center"
+                Visibility="{Binding IsEmpty, Converter={StaticResource BooleanVisibilityConverter}}">
+                <TextBlock
+                    HorizontalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="没有匹配的剪贴板记录" />
+            </StackPanel>
+            <ProgressRing
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                IsActive="{Binding IsLoading}"
+                Visibility="{Binding IsLoading, Converter={StaticResource BooleanVisibilityConverter}}" />
             <TextBlock
-                FontSize="20"
-                FontWeight="SemiBold"
-                Text="剪贴板" />
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                Text="{Binding QueryError}" />
+            <TextBlock
+                HorizontalAlignment="Center"
+                VerticalAlignment="Bottom"
+                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                Text="{Binding ErrorMessage}" />
+        </Grid>
+
+        <StackPanel
+            Grid.Row="3"
+            Margin="0,8,0,0"
+            Orientation="Horizontal"
+            Spacing="8">
+            <TextBlock
+                VerticalAlignment="Center"
+                FontSize="12"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="本机历史" />
+            <TextBlock
+                x:Name="ShortcutStateText"
+                VerticalAlignment="Center"
+                FontSize="12"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </StackPanel>
     </Grid>
 </Window>

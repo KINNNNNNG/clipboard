@@ -1,0 +1,122 @@
+<Window
+    x:Class="Clipboard.Windows.Views.SettingsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="剪贴板设置">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <Grid
+            x:Name="Root"
+            Padding="24"
+            Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock
+                FontSize="20"
+                FontWeight="SemiBold"
+                Text="设置" />
+            <StackPanel Grid.Row="1" Margin="0,22,0,0" Spacing="12">
+                <TextBlock FontWeight="SemiBold" Text="历史记录" />
+                <TextBlock
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="收藏项永不自动清理。"
+                    TextWrapping="Wrap" />
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="132" />
+                    </Grid.ColumnDefinitions>
+                    <CheckBox
+                        x:Name="MaxItemsEnabledCheckBox"
+                        VerticalAlignment="Center"
+                        Content="限制最大条数" />
+                    <NumberBox
+                        x:Name="MaxItemsNumberBox"
+                        Grid.Column="1"
+                        Minimum="1"
+                        SpinButtonPlacementMode="Compact" />
+                </Grid>
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="132" />
+                    </Grid.ColumnDefinitions>
+                    <CheckBox
+                        x:Name="MaxAgeEnabledCheckBox"
+                        VerticalAlignment="Center"
+                        Content="限制保留天数" />
+                    <NumberBox
+                        x:Name="MaxAgeNumberBox"
+                        Grid.Column="1"
+                        Minimum="1"
+                        SpinButtonPlacementMode="Compact" />
+                </Grid>
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="132" />
+                    </Grid.ColumnDefinitions>
+                    <CheckBox
+                        x:Name="MaxImageEnabledCheckBox"
+                        VerticalAlignment="Center"
+                        Content="限制图片空间（GiB）" />
+                    <NumberBox
+                        x:Name="MaxImageNumberBox"
+                        Grid.Column="1"
+                        Minimum="0.1"
+                        SmallChange="0.1"
+                        SpinButtonPlacementMode="Compact" />
+                </Grid>
+            </StackPanel>
+            <StackPanel Grid.Row="2" Margin="0,24,0,0" Spacing="12">
+                <TextBlock FontWeight="SemiBold" Text="快捷键" />
+                <ToggleSwitch
+                    x:Name="InterceptWinVToggle"
+                    Header="尝试接管 Win+V" />
+                <TextBox
+                    x:Name="FallbackHotkeyTextBox"
+                    Header="备用快捷键"
+                    PlaceholderText="Alt+V" />
+            </StackPanel>
+            <StackPanel Grid.Row="3" Margin="0,24,0,0" Spacing="12">
+                <TextBlock FontWeight="SemiBold" Text="应用" />
+                <ToggleSwitch
+                    x:Name="StartWithWindowsToggle"
+                    Header="开机启动" />
+                <ComboBox
+                    x:Name="ThemeComboBox"
+                    Header="主题"
+                    SelectedIndex="0">
+                    <ComboBoxItem Content="跟随系统" Tag="system" />
+                    <ComboBoxItem Content="浅色" Tag="light" />
+                    <ComboBoxItem Content="深色" Tag="dark" />
+                </ComboBox>
+            </StackPanel>
+            <Grid Grid.Row="4" Margin="0,24,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    x:Name="ErrorText"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                    TextWrapping="Wrap" />
+                <Button
+                    Grid.Column="1"
+                    Margin="0,0,8,0"
+                    Click="CancelButton_Click"
+                    Content="取消" />
+                <Button
+                    Grid.Column="2"
+                    Click="SaveButton_Click"
+                    Content="保存" />
+            </Grid>
+        </Grid>
+    </ScrollViewer>
+</Window>

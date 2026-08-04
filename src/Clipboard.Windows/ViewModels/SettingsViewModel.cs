@@ -3,13 +3,6 @@ using Clipboard.Windows.Platform;
 
 namespace Clipboard.Windows.ViewModels;
 
-internal interface IStartupSettingsService
-{
-    Task SetEnabledAsync(
-        bool enabled,
-        CancellationToken cancellationToken = default);
-}
-
 internal sealed class SettingsViewModel : ObservableObject
 {
     private readonly IClientSettingsStore _store;
@@ -17,6 +10,7 @@ internal sealed class SettingsViewModel : ObservableObject
     private readonly IGlobalShortcutConfigurator _shortcuts;
     private readonly IStartupSettingsService _startup;
     private readonly TimeProvider _timeProvider;
+    private readonly IRetentionPolicyProvider? _retentionPolicy;
     private ClientSettings _persisted = ClientSettings.Default;
     private bool _maxRegularItemsEnabled = true;
     private int _maxRegularItems = 1000;
@@ -35,13 +29,15 @@ internal sealed class SettingsViewModel : ObservableObject
         ISettingsRetentionService retention,
         IGlobalShortcutConfigurator shortcuts,
         IStartupSettingsService startup,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IRetentionPolicyProvider? retentionPolicy = null)
     {
         _store = store;
         _retention = retention;
         _shortcuts = shortcuts;
         _startup = startup;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _retentionPolicy = retentionPolicy;
     }
 
     public bool MaxRegularItemsEnabled
@@ -115,6 +111,7 @@ internal sealed class SettingsViewModel : ObservableObject
         ClientSettings settings = await _store.LoadAsync(cancellationToken);
         Apply(settings);
         _persisted = settings;
+        _retentionPolicy?.Update(settings);
         ErrorMessage = null;
     }
 
@@ -163,6 +160,7 @@ internal sealed class SettingsViewModel : ObservableObject
                 cancellationToken);
             _shortcuts.Configure(candidate.InterceptWinV, chord);
             _persisted = candidate;
+            _retentionPolicy?.Update(candidate);
             return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

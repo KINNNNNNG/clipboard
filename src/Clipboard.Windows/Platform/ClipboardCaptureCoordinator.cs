@@ -49,6 +49,7 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
     private readonly IClipboardCaptureObserver _observer;
     private readonly IRetryDelay _retryDelay;
     private readonly TimeProvider _timeProvider;
+    private readonly IRetentionPolicyProvider _retentionPolicy;
     private readonly SemaphoreSlim _captureGate = new(1, 1);
     private DispatcherQueue? _dispatcherQueue;
     private int _disposed;
@@ -60,7 +61,8 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
         ClipboardSuppression suppression,
         IClipboardCaptureObserver observer,
         IRetryDelay? retryDelay = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IRetentionPolicyProvider? retentionPolicy = null)
     {
         _reader = reader;
         _core = core;
@@ -69,6 +71,7 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
         _observer = observer;
         _retryDelay = retryDelay ?? new SystemRetryDelay();
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _retentionPolicy = retentionPolicy ?? new RetentionPolicyProvider();
     }
 
     public async Task CaptureAsync(CancellationToken cancellationToken = default)
@@ -91,6 +94,7 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
                     MutationResponseDto text = await _core.IngestTextAsync(
                             new IngestTextRequestDto(payload.TextContent, sourceApp, capturedMs),
                             cancellationToken);
+                    await ApplyRetentionAsync(cancellationToken);
                     _observer.OnCaptured(new CaptureNotification(text.ItemId, "text"));
                     break;
 
@@ -107,6 +111,7 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
                                 capturedMs),
                             payload.Png,
                             cancellationToken);
+                    await ApplyRetentionAsync(cancellationToken);
                     _observer.OnCaptured(new CaptureNotification(image.ItemId, "image"));
                     break;
             }
@@ -177,6 +182,13 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
             return "unknown";
         }
     }
+
+    private Task ApplyRetentionAsync(CancellationToken cancellationToken) =>
+        _core.ApplyRetentionAsync(
+            new ApplyRetentionRequestDto(
+                _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
+                _retentionPolicy.Current),
+            cancellationToken);
 
     private void OnClipboardContentChanged(object? sender, object args)
     {

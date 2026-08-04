@@ -45,6 +45,31 @@ public sealed class ClipboardCaptureCoordinatorTests
     }
 
     [Fact]
+    public async Task Successful_capture_applies_the_current_retention_policy_before_notifying()
+    {
+        var core = new FakeCore();
+        var observer = new FakeObserver();
+        var policy = new RetentionPolicyProvider();
+        policy.Update(new ClientSettings(2, 5, 10, true, "Alt+V", false, "system"));
+        var clock = new ManualTimeProvider();
+        var coordinator = CreateCoordinator(
+            new FakeReader(ClipboardPayload.Text("retained")),
+            core,
+            observer,
+            retentionPolicy: policy,
+            timeProvider: clock);
+
+        await coordinator.CaptureAsync();
+
+        ApplyRetentionRequestDto request = Assert.Single(core.RetentionRequests);
+        Assert.Equal(clock.GetUtcNow().ToUnixTimeMilliseconds(), request.NowMs);
+        Assert.Equal(2, request.Policy.MaxRegularItems);
+        Assert.Equal((uint)5, request.Policy.MaxAgeDays);
+        Assert.Equal((ulong)10, request.Policy.MaxImageBytes);
+        Assert.Single(observer.Captured);
+    }
+
+    [Fact]
     public async Task Clipboard_lock_retries_with_bounded_backoff()
     {
         var reader = new FakeReader(
@@ -133,14 +158,18 @@ public sealed class ClipboardCaptureCoordinatorTests
         IClipboardCaptureObserver observer,
         string sourceApp = "notepad.exe",
         ClipboardSuppression? suppression = null,
-        IRetryDelay? retryDelay = null) =>
+        IRetryDelay? retryDelay = null,
+        IRetentionPolicyProvider? retentionPolicy = null,
+        TimeProvider? timeProvider = null) =>
         new(
             reader,
             core,
             new FakeSourceResolver(sourceApp),
             suppression ?? new ClipboardSuppression(),
             observer,
-            retryDelay ?? new FakeDelay());
+            retryDelay ?? new FakeDelay(),
+            timeProvider,
+            retentionPolicy);
 
     private sealed class FakeReader : IClipboardReader
     {
@@ -186,6 +215,7 @@ public sealed class ClipboardCaptureCoordinatorTests
     {
         public List<IngestTextRequestDto> TextRequests { get; } = [];
         public List<CapturedImage> ImageRequests { get; } = [];
+        public List<ApplyRetentionRequestDto> RetentionRequests { get; } = [];
         public Exception? Failure { get; init; }
 
         public Task<MutationResponseDto> IngestTextAsync(
@@ -203,6 +233,14 @@ public sealed class ClipboardCaptureCoordinatorTests
         {
             ImageRequests.Add(new CapturedImage(request, png.ToArray()));
             return Complete();
+        }
+
+        public Task<RetentionResponseDto> ApplyRetentionAsync(
+            ApplyRetentionRequestDto request,
+            CancellationToken cancellationToken = default)
+        {
+            RetentionRequests.Add(request);
+            return Task.FromResult(new RetentionResponseDto(0, 0));
         }
 
         private Task<MutationResponseDto> Complete() => Failure is null
@@ -287,4 +325,11 @@ public sealed class ClipboardCaptureCoordinatorTests
     }
 
     private sealed record CapturedImage(IngestImageRequestDto Request, byte[] Png);
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private readonly DateTimeOffset _now = new(2026, 8, 4, 10, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => _now;
+    }
 }

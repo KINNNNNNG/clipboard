@@ -134,3 +134,21 @@ fn execute_reports_utf8_json_and_core_errors_without_allocating_output() {
     );
     unsafe { clipboard_core_close(handle) };
 }
+
+#[test]
+fn execute_reports_invalid_regex_separately_from_other_core_errors() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().to_string_lossy();
+    let handle = unsafe { open_handle(&path) };
+    let request = br#"{"api_version":1,"type":"search","payload":{"pattern":"[","mode":"regex"}}"#;
+    let mut response = CoreBuffer::default();
+
+    assert_eq!(
+        unsafe { clipboard_core_execute(handle, request.as_ptr(), request.len(), &mut response) },
+        CoreStatus::InvalidRegex
+    );
+    assert!(response.ptr.is_null());
+    assert_eq!(response.len, 0);
+
+    unsafe { clipboard_core_close(handle) };
+}
