@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FileEntryKind {
     File,
     Directory,
@@ -53,17 +54,18 @@ pub struct FileBundle {
 }
 
 impl FileBundle {
-    pub fn new(entries: Vec<FileEntry>) -> Result<Self, FileBundleError> {
+    pub fn new(mut entries: Vec<FileEntry>) -> Result<Self, FileBundleError> {
         if entries.is_empty() {
             return Err(FileBundleError::Empty);
         }
 
         let mut paths = std::collections::HashSet::with_capacity(entries.len());
-        for entry in &entries {
+        for entry in &mut entries {
             let path = normalize_windows_path(&entry.path)?;
             if !paths.insert(path.clone()) {
                 return Err(FileBundleError::DuplicatePath(path));
             }
+            entry.path = path;
         }
 
         Ok(Self { entries })

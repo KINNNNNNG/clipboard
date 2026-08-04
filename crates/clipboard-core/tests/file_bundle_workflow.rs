@@ -49,7 +49,7 @@ fn normalized_file_bundle_reuses_item_id_stays_local_and_can_be_read() {
     };
     assert_eq!(item_id, first_id);
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].path, "C:\\Docs\\a.txt");
+    assert_eq!(entries[0].path, "c:\\docs\\a.txt");
     assert_eq!(entries[0].kind, FileEntryKind::File);
     assert_eq!(entries[0].size, 42);
     assert_eq!(entries[0].modified_ms, 100);
