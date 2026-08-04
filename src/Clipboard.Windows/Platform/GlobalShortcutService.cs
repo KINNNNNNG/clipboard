@@ -140,6 +140,7 @@ internal sealed class WindowsGlobalShortcutBackend : IGlobalShortcutBackend
     private const int HookStartupTimeoutMs = 2000;
     private const int HotkeyId = 0x434C;
     private const uint ModifierNoRepeat = 0x4000;
+    internal const ushort WindowsChordMarkerKey = NativeMethods.VirtualKey.Control;
 
     private readonly object _sync = new();
     private readonly DispatcherQueue _dispatcherQueue;
@@ -357,7 +358,7 @@ internal sealed class WindowsGlobalShortcutBackend : IGlobalShortcutBackend
             {
                 Keyboard = new NativeMethods.KEYBDINPUT
                 {
-                    VirtualKey = NativeMethods.VirtualKey.F24,
+                    VirtualKey = WindowsChordMarkerKey,
                 },
             },
         };

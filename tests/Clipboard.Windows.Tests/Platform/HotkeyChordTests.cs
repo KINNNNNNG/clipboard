@@ -10,6 +10,7 @@ public sealed class HotkeyChordTests
     {
         var interceptor = new WinVKeyInterceptor();
 
+        Assert.Equal(NativeMethods.VirtualKey.Control, WindowsGlobalShortcutBackend.WindowsChordMarkerKey);
         Assert.Equal(WinVKeyAction.Pass, interceptor.Handle(NativeMethods.VirtualKey.LeftWindows, keyDown: true, keyUp: false));
         Assert.Equal(WinVKeyAction.SuppressAndMarkChord, interceptor.Handle(NativeMethods.VirtualKey.V, keyDown: true, keyUp: false));
         Assert.Equal(WinVKeyAction.Suppress, interceptor.Handle(NativeMethods.VirtualKey.V, keyDown: false, keyUp: true));
