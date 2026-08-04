@@ -501,8 +501,8 @@ fn unix_time_ms() -> i64 {
 }
 
 fn stable_file_bundle_bytes(bundle: &FileBundle) -> Result<Vec<u8>, CoreError> {
-    Ok(serde_json::to_vec(&bundle.entries)
-        .map_err(|error| CoreError::InvalidCommand(error.to_string()))?)
+    serde_json::to_vec(&bundle.entries)
+        .map_err(|error| CoreError::InvalidCommand(error.to_string()))
 }
 
 fn legacy_file_bundle_bytes(bundle: &FileBundle) -> Result<Vec<u8>, CoreError> {
@@ -527,6 +527,5 @@ fn legacy_file_bundle_bytes(bundle: &FileBundle) -> Result<Vec<u8>, CoreError> {
             modified_ms: entry.modified_ms,
         })
         .collect::<Vec<_>>();
-    Ok(serde_json::to_vec(&entries)
-        .map_err(|error| CoreError::InvalidCommand(error.to_string()))?)
+    serde_json::to_vec(&entries).map_err(|error| CoreError::InvalidCommand(error.to_string()))
 }
