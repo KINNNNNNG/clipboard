@@ -4,7 +4,8 @@ namespace Clipboard.Windows.Platform;
 
 internal static partial class NativeMethods
 {
-    internal const uint ApplicationIcon = 32512;
+    internal const uint ImageIcon = 1;
+    internal const uint LoadImageFromFile = 0x0010;
     internal const uint MenuSeparator = 0x0800;
     internal const uint MenuString = 0x0000;
     internal const uint NotifyIconAdd = 0x00000000;
@@ -257,8 +258,18 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool ShellNotifyIcon(uint message, ref NOTIFYICONDATA data);
 
-    [DllImport("user32.dll", EntryPoint = "LoadIconW")]
-    internal static extern nint LoadIcon(nint instance, nint iconName);
+    [LibraryImport("user32.dll", EntryPoint = "LoadImageW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial nint LoadImage(
+        nint instance,
+        string name,
+        uint type,
+        int desiredWidth,
+        int desiredHeight,
+        uint loadFlags);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool DestroyIcon(nint icon);
 
     [DllImport("comctl32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

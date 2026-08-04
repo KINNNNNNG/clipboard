@@ -19,7 +19,7 @@ internal interface IWindowPlacementBackend
 
     MonitorSnapshot GetMonitor(PixelPoint point);
 
-    void ConfigureToolWindow();
+    void ConfigureToolWindow(bool alwaysOnTop, bool hasBorder, bool hasTitleBar);
 
     void Show(PanelPlacementResult placement);
 
@@ -64,7 +64,10 @@ internal sealed class WindowPresenter
             _logicalSize);
         if (!_configured)
         {
-            _backend.ConfigureToolWindow();
+            _backend.ConfigureToolWindow(
+                alwaysOnTop: false,
+                hasBorder: false,
+                hasTitleBar: false);
             _configured = true;
         }
         _backend.Show(placement);
@@ -138,17 +141,17 @@ internal sealed class WinUiWindowPlacementBackend : IWindowPlacementBackend
             dpi);
     }
 
-    public void ConfigureToolWindow()
+    public void ConfigureToolWindow(bool alwaysOnTop, bool hasBorder, bool hasTitleBar)
     {
         _window.ExtendsContentIntoTitleBar = true;
         _appWindow.IsShownInSwitchers = false;
         OverlappedPresenter presenter = OverlappedPresenter.CreateForToolWindow();
-        presenter.IsAlwaysOnTop = true;
+        presenter.IsAlwaysOnTop = alwaysOnTop;
         presenter.IsMaximizable = false;
         presenter.IsMinimizable = false;
         presenter.IsResizable = false;
-        presenter.SetBorderAndTitleBar(false, false);
         _appWindow.SetPresenter(presenter);
+        presenter.SetBorderAndTitleBar(hasBorder, hasTitleBar);
     }
 
     public void Show(PanelPlacementResult placement)

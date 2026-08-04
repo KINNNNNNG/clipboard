@@ -85,6 +85,7 @@ internal sealed class WindowsTrayIconBackend : ITrayIconBackend
     private readonly nint _window;
     private readonly NativeMethods.SubclassProc _subclassProc;
     private Action<TrayCommand>? _handler;
+    private nint _icon;
     private bool _started;
 
     public WindowsTrayIconBackend(nint window)
@@ -104,14 +105,19 @@ internal sealed class WindowsTrayIconBackend : ITrayIconBackend
             return;
         }
         _handler = handler;
+        _icon = LoadTrayIcon();
         if (!NativeMethods.SetWindowSubclass(_window, _subclassProc, IconId, 0))
         {
+            NativeMethods.DestroyIcon(_icon);
+            _icon = 0;
             throw new Win32Exception(Marshal.GetLastPInvokeError());
         }
         NativeMethods.NOTIFYICONDATA data = CreateIconData();
         if (!NativeMethods.ShellNotifyIcon(NativeMethods.NotifyIconAdd, ref data))
         {
             NativeMethods.RemoveWindowSubclass(_window, _subclassProc, IconId);
+            NativeMethods.DestroyIcon(_icon);
+            _icon = 0;
             throw new Win32Exception(Marshal.GetLastPInvokeError());
         }
         data.TimeoutOrVersion = NativeMethods.NotifyIconVersion4;
@@ -128,6 +134,8 @@ internal sealed class WindowsTrayIconBackend : ITrayIconBackend
         NativeMethods.NOTIFYICONDATA data = CreateIconData();
         NativeMethods.ShellNotifyIcon(NativeMethods.NotifyIconDelete, ref data);
         NativeMethods.RemoveWindowSubclass(_window, _subclassProc, IconId);
+        NativeMethods.DestroyIcon(_icon);
+        _icon = 0;
         _handler = null;
         _started = false;
     }
@@ -206,9 +214,26 @@ internal sealed class WindowsTrayIconBackend : ITrayIconBackend
                 | NativeMethods.NotifyIconIcon
                 | NativeMethods.NotifyIconTip,
             CallbackMessage = NativeMethods.TrayCallbackMessage,
-            Icon = NativeMethods.LoadIcon(0, (nint)NativeMethods.ApplicationIcon),
+            Icon = _icon,
             Tip = "剪贴板",
             Info = string.Empty,
             InfoTitle = string.Empty,
         };
+
+    private static nint LoadTrayIcon()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "Clipboard.ico");
+        nint icon = NativeMethods.LoadImage(
+            0,
+            path,
+            NativeMethods.ImageIcon,
+            0,
+            0,
+            NativeMethods.LoadImageFromFile);
+        if (icon == 0)
+        {
+            throw new Win32Exception(Marshal.GetLastPInvokeError());
+        }
+        return icon;
+    }
 }

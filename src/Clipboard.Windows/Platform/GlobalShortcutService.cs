@@ -24,6 +24,60 @@ internal interface IGlobalShortcutConfigurator
     GlobalShortcutState Configure(bool interceptWinV, HotkeyChord fallback);
 }
 
+internal sealed class WinVKeyInterceptor
+{
+    private bool _winPressed;
+    private bool _suppressV;
+    private bool _suppressWinUp;
+
+    public bool Handle(uint virtualKey, bool keyDown, bool keyUp, out bool openPanel)
+    {
+        openPanel = false;
+        if (virtualKey is NativeMethods.VirtualKey.LeftWindows or NativeMethods.VirtualKey.RightWindows)
+        {
+            if (keyDown)
+            {
+                _winPressed = true;
+            }
+            else if (keyUp)
+            {
+                _winPressed = false;
+                if (_suppressWinUp)
+                {
+                    _suppressWinUp = false;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        if (virtualKey != NativeMethods.VirtualKey.V)
+        {
+            return false;
+        }
+        if (keyDown && _winPressed)
+        {
+            openPanel = !_suppressV;
+            _suppressV = true;
+            _suppressWinUp = true;
+            return true;
+        }
+        if (keyUp && _suppressV)
+        {
+            _suppressV = false;
+            return true;
+        }
+        return false;
+    }
+
+    public void Reset()
+    {
+        _winPressed = false;
+        _suppressV = false;
+        _suppressWinUp = false;
+    }
+}
+
 internal sealed class GlobalShortcutService : IDisposable, IGlobalShortcutConfigurator
 {
     private readonly IGlobalShortcutBackend _backend;
@@ -84,8 +138,7 @@ internal sealed class WindowsGlobalShortcutBackend : IGlobalShortcutBackend
     private uint _workerThreadId;
     private nint _hook;
     private bool _hotkeyRegistered;
-    private bool _winPressed;
-    private bool _suppressV;
+    private readonly WinVKeyInterceptor _interceptor = new();
     private int _disposed;
 
     public WindowsGlobalShortcutBackend(DispatcherQueue dispatcherQueue, Action openPanel)
@@ -222,8 +275,7 @@ internal sealed class WindowsGlobalShortcutBackend : IGlobalShortcutBackend
                 NativeMethods.UnregisterHotKey(0, HotkeyId);
                 _hotkeyRegistered = false;
             }
-            _winPressed = false;
-            _suppressV = false;
+            _interceptor.Reset();
         }
     }
 
@@ -262,34 +314,13 @@ internal sealed class WindowsGlobalShortcutBackend : IGlobalShortcutBackend
         NativeMethods.KBDLLHOOKSTRUCT keyboard =
             Marshal.PtrToStructure<NativeMethods.KBDLLHOOKSTRUCT>(lParam);
 
-        if (keyboard.VirtualKey is NativeMethods.VirtualKey.LeftWindows
-            or NativeMethods.VirtualKey.RightWindows)
+        if (_interceptor.Handle(keyboard.VirtualKey, keyDown, keyUp, out bool openPanel))
         {
-            if (keyDown)
+            if (openPanel)
             {
-                _winPressed = true;
+                RequestPanel();
             }
-            else if (keyUp)
-            {
-                _winPressed = false;
-            }
-        }
-        else if (keyboard.VirtualKey == NativeMethods.VirtualKey.V)
-        {
-            if (keyDown && _winPressed)
-            {
-                if (!_suppressV)
-                {
-                    _suppressV = true;
-                    RequestPanel();
-                }
-                return 1;
-            }
-            if (keyUp && _suppressV)
-            {
-                _suppressV = false;
-                return 1;
-            }
+            return 1;
         }
         return NativeMethods.CallNextHookEx(_hook, code, wParam, lParam);
     }

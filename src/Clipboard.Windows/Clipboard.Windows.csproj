@@ -12,6 +12,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Clipboard.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260710003" />
@@ -19,5 +20,6 @@
     <None Include="..\..\target\debug\clipboard_ffi.dll"
           Link="clipboard_ffi.dll"
           CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Clipboard.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
