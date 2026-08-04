@@ -38,6 +38,7 @@ internal static partial class NativeMethods
         internal const uint LeftWindows = 0x5B;
         internal const uint RightWindows = 0x5C;
         internal const ushort V = 0x56;
+        internal const ushort F24 = 0x87;
     }
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]

@@ -6,27 +6,14 @@ namespace Clipboard.Windows.Tests.Platform;
 public sealed class HotkeyChordTests
 {
     [Fact]
-    public void Win_v_interceptor_suppresses_v_and_matching_win_release()
+    public void Win_v_suppresses_only_v_and_marks_the_windows_chord()
     {
         var interceptor = new WinVKeyInterceptor();
 
-        Assert.False(interceptor.Handle(NativeMethods.VirtualKey.LeftWindows, keyDown: true, keyUp: false, out bool openPanel));
-        Assert.False(openPanel);
-        Assert.True(interceptor.Handle(NativeMethods.VirtualKey.V, keyDown: true, keyUp: false, out openPanel));
-        Assert.True(openPanel);
-        Assert.True(interceptor.Handle(NativeMethods.VirtualKey.V, keyDown: false, keyUp: true, out openPanel));
-        Assert.False(openPanel);
-        Assert.True(interceptor.Handle(NativeMethods.VirtualKey.LeftWindows, keyDown: false, keyUp: true, out openPanel));
-        Assert.False(openPanel);
-    }
-
-    [Fact]
-    public void Ordinary_win_press_is_not_suppressed()
-    {
-        var interceptor = new WinVKeyInterceptor();
-
-        Assert.False(interceptor.Handle(NativeMethods.VirtualKey.LeftWindows, keyDown: true, keyUp: false, out _));
-        Assert.False(interceptor.Handle(NativeMethods.VirtualKey.LeftWindows, keyDown: false, keyUp: true, out _));
+        Assert.Equal(WinVKeyAction.Pass, interceptor.Handle(NativeMethods.VirtualKey.LeftWindows, keyDown: true, keyUp: false));
+        Assert.Equal(WinVKeyAction.SuppressAndMarkChord, interceptor.Handle(NativeMethods.VirtualKey.V, keyDown: true, keyUp: false));
+        Assert.Equal(WinVKeyAction.Suppress, interceptor.Handle(NativeMethods.VirtualKey.V, keyDown: false, keyUp: true));
+        Assert.Equal(WinVKeyAction.Pass, interceptor.Handle(NativeMethods.VirtualKey.LeftWindows, keyDown: false, keyUp: true));
     }
     [Fact]
     public void Parses_alt_v_as_a_valid_fallback_chord()

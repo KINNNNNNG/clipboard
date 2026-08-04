@@ -24,15 +24,20 @@ internal interface IGlobalShortcutConfigurator
     GlobalShortcutState Configure(bool interceptWinV, HotkeyChord fallback);
 }
 
+internal enum WinVKeyAction
+{
+    Pass,
+    Suppress,
+    SuppressAndMarkChord,
+}
+
 internal sealed class WinVKeyInterceptor
 {
     private bool _winPressed;
     private bool _suppressV;
-    private bool _suppressWinUp;
 
-    public bool Handle(uint virtualKey, bool keyDown, bool keyUp, out bool openPanel)
+    public WinVKeyAction Handle(uint virtualKey, bool keyDown, bool keyUp)
     {
-        openPanel = false;
         if (virtualKey is NativeMethods.VirtualKey.LeftWindows or NativeMethods.VirtualKey.RightWindows)
         {
             if (keyDown)
@@ -42,39 +47,36 @@ internal sealed class WinVKeyInterceptor
             else if (keyUp)
             {
                 _winPressed = false;
-                if (_suppressWinUp)
-                {
-                    _suppressWinUp = false;
-                    return true;
-                }
+                _suppressV = false;
             }
-            return false;
+            return WinVKeyAction.Pass;
         }
 
         if (virtualKey != NativeMethods.VirtualKey.V)
         {
-            return false;
+            return WinVKeyAction.Pass;
         }
         if (keyDown && _winPressed)
         {
-            openPanel = !_suppressV;
+            if (_suppressV)
+            {
+                return WinVKeyAction.Suppress;
+            }
             _suppressV = true;
-            _suppressWinUp = true;
-            return true;
+            return WinVKeyAction.SuppressAndMarkChord;
         }
         if (keyUp && _suppressV)
         {
             _suppressV = false;
-            return true;
+            return WinVKeyAction.Suppress;
         }
-        return false;
+        return WinVKeyAction.Pass;
     }
 
     public void Reset()
     {
         _winPressed = false;
         _suppressV = false;
-        _suppressWinUp = false;
     }
 }
 
@@ -313,16 +315,41 @@ internal sealed class WindowsGlobalShortcutBackend : IGlobalShortcutBackend
         bool keyUp = message is NativeMethods.WmKeyUp or NativeMethods.WmSysKeyUp;
         NativeMethods.KBDLLHOOKSTRUCT keyboard =
             Marshal.PtrToStructure<NativeMethods.KBDLLHOOKSTRUCT>(lParam);
-
-        if (_interceptor.Handle(keyboard.VirtualKey, keyDown, keyUp, out bool openPanel))
+        WinVKeyAction action = _interceptor.Handle(keyboard.VirtualKey, keyDown, keyUp);
+        if (action == WinVKeyAction.SuppressAndMarkChord)
         {
-            if (openPanel)
+            if (!TryMarkWindowsChord())
             {
-                RequestPanel();
+                _interceptor.Reset();
+                return NativeMethods.CallNextHookEx(_hook, code, wParam, lParam);
             }
+            RequestPanel();
+            return 1;
+        }
+        if (action == WinVKeyAction.Suppress)
+        {
             return 1;
         }
         return NativeMethods.CallNextHookEx(_hook, code, wParam, lParam);
+    }
+
+    private static unsafe bool TryMarkWindowsChord()
+    {
+        NativeMethods.INPUT* inputs = stackalloc NativeMethods.INPUT[2];
+        inputs[0] = new NativeMethods.INPUT
+        {
+            Type = NativeMethods.InputKeyboard,
+            Union = new NativeMethods.INPUTUNION
+            {
+                Keyboard = new NativeMethods.KEYBDINPUT
+                {
+                    VirtualKey = NativeMethods.VirtualKey.F24,
+                },
+            },
+        };
+        inputs[1] = inputs[0];
+        inputs[1].Union.Keyboard.Flags = NativeMethods.KeyEventKeyUp;
+        return NativeMethods.SendInput(2, inputs, sizeof(NativeMethods.INPUT)) == 2;
     }
 
     private void RequestPanel() =>
