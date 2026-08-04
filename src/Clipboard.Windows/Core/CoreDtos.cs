@@ -15,6 +15,10 @@ internal interface IClipboardCaptureSink : ISettingsRetentionService
         IngestImageRequestDto request,
         ReadOnlyMemory<byte> png,
         CancellationToken cancellationToken = default);
+
+    Task<MutationResponseDto> IngestFileBundleAsync(
+        IngestFileBundleRequestDto request,
+        CancellationToken cancellationToken = default);
 }
 
 internal interface IClipboardPanelCore
@@ -69,6 +73,29 @@ internal sealed record IngestImageRequestDto(
     uint Height,
     string SourceApp,
     long CapturedMs);
+
+internal enum FileEntryKindDto
+{
+    File,
+    Directory,
+}
+
+internal sealed record FileEntryDto(
+    string Path,
+    FileEntryKindDto Kind,
+    ulong Size,
+    long ModifiedMs);
+
+internal sealed record IngestFileBundleRequestDto(
+    IReadOnlyList<FileEntryDto> Entries,
+    string SourceApp,
+    long CapturedMs);
+
+internal sealed record ReadFileBundleRequestDto(Guid ItemId);
+
+internal sealed record FileBundleResponseDto(
+    Guid ItemId,
+    IReadOnlyList<FileEntryDto> Entries);
 
 internal sealed record HlcDto(long PhysicalMs, uint Logical, Guid NodeId);
 

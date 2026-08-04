@@ -235,6 +235,10 @@ public sealed class ClipboardCaptureCoordinatorTests
             return Complete();
         }
 
+        public Task<MutationResponseDto> IngestFileBundleAsync(
+            IngestFileBundleRequestDto request,
+            CancellationToken cancellationToken = default) => Complete();
+
         public Task<RetentionResponseDto> ApplyRetentionAsync(
             ApplyRetentionRequestDto request,
             CancellationToken cancellationToken = default)

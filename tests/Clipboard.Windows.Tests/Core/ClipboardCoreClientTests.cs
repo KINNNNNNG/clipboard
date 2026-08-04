@@ -80,6 +80,52 @@ public sealed class ClipboardCoreClientTests
     }
 
     [Fact]
+    public async Task File_bundle_commands_use_json_execute_and_round_trip_structured_entries()
+    {
+        var native = new FakeNative
+        {
+            ExecuteResponse = Encoding.UTF8.GetBytes(
+                "{\"item_id\":\"00000000-0000-0000-0000-000000000001\",\"entries\":[{\"path\":\"c:\\\\docs\\\\a.txt\",\"kind\":\"file\",\"size\":42,\"modified_ms\":100}]}"),
+        };
+        using var client = ClipboardCoreClient.Open(
+            "C:\\clipboard-data",
+            Guid.NewGuid(),
+            new byte[32],
+            native);
+
+        FileBundleResponseDto response = await client.ReadFileBundleAsync(
+            Guid.Parse("00000000-0000-0000-0000-000000000001"));
+
+        Assert.Equal("read_file_bundle", JsonDocument.Parse(native.LastExecuteRequest!)
+            .RootElement.GetProperty("type").GetString());
+        Assert.Equal("c:\\docs\\a.txt", Assert.Single(response.Entries).Path);
+        Assert.Equal(FileEntryKindDto.File, response.Entries[0].Kind);
+        Assert.False(native.ImageAbiWasCalled);
+    }
+
+    [Fact]
+    public async Task Ingest_file_bundle_serializes_snake_case_metadata()
+    {
+        var native = new FakeNative();
+        using var client = ClipboardCoreClient.Open(
+            "C:\\clipboard-data",
+            Guid.NewGuid(),
+            new byte[32],
+            native);
+
+        await client.IngestFileBundleAsync(new IngestFileBundleRequestDto(
+            [new FileEntryDto("C:\\Docs\\a.txt", FileEntryKindDto.File, 42, 100)],
+            "explorer.exe",
+            100));
+
+        using JsonDocument request = JsonDocument.Parse(native.LastExecuteRequest!);
+        Assert.Equal("ingest_file_bundle", request.RootElement.GetProperty("type").GetString());
+        JsonElement entry = request.RootElement.GetProperty("payload").GetProperty("entries")[0];
+        Assert.Equal("file", entry.GetProperty("kind").GetString());
+        Assert.Equal(42, entry.GetProperty("size").GetInt64());
+    }
+
+    [Fact]
     public void Dispose_closes_native_handle_only_once()
     {
         var native = new FakeNative();
@@ -142,6 +188,7 @@ public sealed class ClipboardCoreClientTests
         public int FreeCount { get; private set; }
         public byte[] OpenVaultId { get; private set; } = [];
         public byte[]? LastExecuteRequest { get; private set; }
+        public bool ImageAbiWasCalled { get; private set; }
         public CoreStatus ExecuteStatus { get; init; } = CoreStatus.Ok;
         public byte[] ExecuteResponse { get; init; } = Encoding.UTF8.GetBytes(
             "{\"item_id\":\"00000000-0000-0000-0000-000000000001\"}");
@@ -171,6 +218,7 @@ public sealed class ClipboardCoreClientTests
             ReadOnlySpan<byte> png,
             out CoreBuffer response)
         {
+            ImageAbiWasCalled = true;
             response = Allocate(ExecuteResponse);
             return CoreStatus.Ok;
         }

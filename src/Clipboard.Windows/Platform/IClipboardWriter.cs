@@ -1,3 +1,5 @@
+using Clipboard.Windows.Core;
+
 namespace Clipboard.Windows.Platform;
 
 internal interface IClipboardWriter
@@ -14,6 +16,10 @@ internal interface IClipboardWriter
 internal interface IClipboardItemContentReader
 {
     Task<byte[]> ReadImageAsync(
+        Guid itemId,
+        CancellationToken cancellationToken = default);
+
+    Task<FileBundleResponseDto> ReadFileBundleAsync(
         Guid itemId,
         CancellationToken cancellationToken = default);
 }

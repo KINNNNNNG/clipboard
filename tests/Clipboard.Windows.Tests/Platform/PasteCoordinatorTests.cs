@@ -232,6 +232,12 @@ public sealed class PasteCoordinatorTests
                 ? Task.FromResult(ImagePng.ToArray())
                 : Task.FromException<byte[]>(ImageFailure);
         }
+
+        public Task<FileBundleResponseDto> ReadFileBundleAsync(
+            Guid itemId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<FileBundleResponseDto>(
+                new NotSupportedException("file bundle content is not configured"));
     }
 
     private sealed class FakeClipboardWriter(List<string> events) : IClipboardWriter

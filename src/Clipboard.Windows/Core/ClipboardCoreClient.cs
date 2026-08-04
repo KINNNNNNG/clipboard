@@ -133,6 +133,22 @@ internal sealed class ClipboardCoreClient : IDisposable,
         CancellationToken cancellationToken = default) =>
         ExecuteImageAsync(request, png, cancellationToken);
 
+    public Task<MutationResponseDto> IngestFileBundleAsync(
+        IngestFileBundleRequestDto request,
+        CancellationToken cancellationToken = default) =>
+        ExecuteCommandAsync<MutationResponseDto, IngestFileBundleRequestDto>(
+            "ingest_file_bundle",
+            request,
+            cancellationToken);
+
+    public Task<FileBundleResponseDto> ReadFileBundleAsync(
+        Guid itemId,
+        CancellationToken cancellationToken = default) =>
+        ExecuteCommandAsync<FileBundleResponseDto, ReadFileBundleRequestDto>(
+            "read_file_bundle",
+            new ReadFileBundleRequestDto(itemId),
+            cancellationToken);
+
     public Task<byte[]> ReadImageAsync(
         Guid itemId,
         CancellationToken cancellationToken = default) =>
