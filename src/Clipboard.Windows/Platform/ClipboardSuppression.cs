@@ -28,6 +28,15 @@ internal sealed class ClipboardSuppression
     public bool TryConsumeImage(ReadOnlySpan<byte> png) =>
         TryConsume("image", SHA256.HashData(png));
 
+    public void RegisterFileBundle(IEnumerable<string> paths) =>
+        Register("file_bundle", HashFileBundle(paths));
+
+    public void DiscardFileBundle(IEnumerable<string> paths) =>
+        Discard("file_bundle", HashFileBundle(paths));
+
+    public bool TryConsumeFileBundle(IEnumerable<string> paths) =>
+        TryConsume("file_bundle", HashFileBundle(paths));
+
     private void Discard(string kind, ReadOnlySpan<byte> hash)
     {
         lock (_sync)
@@ -71,6 +80,20 @@ internal sealed class ClipboardSuppression
     private static byte[] HashText(string text)
     {
         byte[] utf8 = Encoding.UTF8.GetBytes(text);
+        try
+        {
+            return SHA256.HashData(utf8);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(utf8);
+        }
+    }
+
+    private static byte[] HashFileBundle(IEnumerable<string> paths)
+    {
+        string canonical = string.Join("\n", paths.Select(path => path.ToUpperInvariant()));
+        byte[] utf8 = Encoding.UTF8.GetBytes(canonical);
         try
         {
             return SHA256.HashData(utf8);

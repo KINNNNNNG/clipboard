@@ -45,6 +45,29 @@ public sealed class ClipboardCaptureCoordinatorTests
     }
 
     [Fact]
+    public async Task File_bundle_capture_preserves_file_and_directory_metadata()
+    {
+        var files = new[]
+        {
+            new ClipboardFileEntry("C:\\a.txt", false, 5, 10),
+            new ClipboardFileEntry("C:\\folder", true, 0, 11),
+        };
+        var core = new FakeCore();
+        var observer = new FakeObserver();
+        await CreateCoordinator(
+            new FakeReader(ClipboardPayload.Files(files)),
+            core,
+            observer,
+            sourceApp: "explorer.exe").CaptureAsync();
+
+        IngestFileBundleRequestDto request = Assert.Single(core.FileBundleRequests);
+        Assert.Equal(files.Select(file => file.Path), request.Entries.Select(entry => entry.Path));
+        Assert.Equal(FileEntryKindDto.Directory, request.Entries[1].Kind);
+        Assert.Equal("file_bundle", Assert.Single(observer.Captured).Kind);
+        Assert.Single(core.RetentionRequests);
+    }
+
+    [Fact]
     public async Task Successful_capture_applies_the_current_retention_policy_before_notifying()
     {
         var core = new FakeCore();
@@ -132,6 +155,24 @@ public sealed class ClipboardCaptureCoordinatorTests
     }
 
     [Fact]
+    public async Task File_bundle_suppression_skips_own_clipboard_write_once()
+    {
+        var files = new[] { new ClipboardFileEntry("C:\\a.txt", false, 5, 10) };
+        var suppression = new ClipboardSuppression();
+        suppression.RegisterFileBundle(files.Select(file => file.Path));
+        var core = new FakeCore();
+        var coordinator = CreateCoordinator(
+            new FakeReader(ClipboardPayload.Files(files)),
+            core,
+            new FakeObserver(),
+            suppression: suppression);
+
+        await coordinator.CaptureAsync();
+
+        Assert.Empty(core.FileBundleRequests);
+    }
+
+    [Fact]
     public async Task Core_failure_notifies_without_exposing_clipboard_content()
     {
         const string secret = "database failure secret";
@@ -215,6 +256,7 @@ public sealed class ClipboardCaptureCoordinatorTests
     {
         public List<IngestTextRequestDto> TextRequests { get; } = [];
         public List<CapturedImage> ImageRequests { get; } = [];
+        public List<IngestFileBundleRequestDto> FileBundleRequests { get; } = [];
         public List<ApplyRetentionRequestDto> RetentionRequests { get; } = [];
         public Exception? Failure { get; init; }
 
@@ -237,7 +279,11 @@ public sealed class ClipboardCaptureCoordinatorTests
 
         public Task<MutationResponseDto> IngestFileBundleAsync(
             IngestFileBundleRequestDto request,
-            CancellationToken cancellationToken = default) => Complete();
+            CancellationToken cancellationToken = default)
+        {
+            FileBundleRequests.Add(request);
+            return Complete();
+        }
 
         public Task<RetentionResponseDto> ApplyRetentionAsync(
             ApplyRetentionRequestDto request,

@@ -11,6 +11,10 @@ internal interface IClipboardWriter
     Task WriteImageAsync(
         ReadOnlyMemory<byte> png,
         CancellationToken cancellationToken = default);
+
+    Task WriteFilesAsync(
+        IReadOnlyList<FileEntryDto> files,
+        CancellationToken cancellationToken = default);
 }
 
 internal interface IClipboardItemContentReader

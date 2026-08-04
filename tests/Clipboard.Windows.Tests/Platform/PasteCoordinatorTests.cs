@@ -70,6 +70,65 @@ public sealed class PasteCoordinatorTests
     }
 
     [Fact]
+    public async Task File_bundle_paste_writes_copy_payload_and_registers_suppression()
+    {
+        var events = new List<string>();
+        var content = new FakeContentReader(events)
+        {
+            FileBundle = new FileBundleResponseDto(
+                Guid.NewGuid(),
+                [new FileEntryDto("C:\\a.txt", FileEntryKindDto.File, 5, 10)]),
+        };
+        var writer = new FakeClipboardWriter(events);
+        var suppression = new ClipboardSuppression();
+        var coordinator = CreateCoordinator(
+            content,
+            writer,
+            new FakeForegroundWindowService(events) { RestoreResult = true, SentInputCount = 4 },
+            suppression,
+            () => events.Add("hide"));
+
+        PasteResult result = await coordinator.PasteAsync(FileBundleItem(), new nint(42));
+
+        Assert.Equal(PasteResultKind.Pasted, result.Kind);
+        Assert.Equal(["read_file_bundle", "write_files", "hide", "restore", "send_input"], events);
+        Assert.True(suppression.TryConsumeFileBundle(["C:\\a.txt"]));
+    }
+
+    [Fact]
+    public async Task Missing_file_bundle_path_does_not_send_paste_input()
+    {
+        var events = new List<string>();
+        var content = new FakeContentReader(events)
+        {
+            FileBundle = new FileBundleResponseDto(
+                Guid.NewGuid(),
+                [new FileEntryDto("C:\\missing.txt", FileEntryKindDto.File, 5, 10)]),
+        };
+        var writer = new FakeClipboardWriter(events)
+        {
+            Failure = new FileNotFoundException(),
+        };
+        var foreground = new FakeForegroundWindowService(events)
+        {
+            RestoreResult = true,
+            SentInputCount = 4,
+        };
+        var coordinator = CreateCoordinator(
+            content,
+            writer,
+            foreground,
+            new ClipboardSuppression(),
+            () => events.Add("hide"));
+
+        await Assert.ThrowsAsync<FileNotFoundException>(() =>
+            coordinator.PasteAsync(FileBundleItem(), new nint(42)));
+
+        Assert.Equal(0, foreground.SendInputCalls);
+        Assert.DoesNotContain("restore", events);
+    }
+
+    [Fact]
     public async Task Missing_original_window_keeps_clipboard_and_requires_manual_paste()
     {
         var events = new List<string>();
@@ -218,11 +277,15 @@ public sealed class PasteCoordinatorTests
     private static ClipboardItemDto ImageItem() =>
         new(Guid.NewGuid(), "image", "image 640x480", "mspaint.exe", 100, false, 640, 480, 4);
 
+    private static ClipboardItemDto FileBundleItem() =>
+        new(Guid.NewGuid(), "file_bundle", "a.txt", "explorer.exe", 100, false, null, null, null);
+
     private sealed class FakeContentReader(List<string> events) : IClipboardItemContentReader
     {
         public byte[] ImagePng { get; init; } = [0x89, 0x50, 0x4e, 0x47];
         public Exception? ImageFailure { get; init; }
         public Guid? LastReadImageId { get; private set; }
+        public FileBundleResponseDto? FileBundle { get; init; }
 
         public Task<byte[]> ReadImageAsync(Guid itemId, CancellationToken cancellationToken = default)
         {
@@ -235,15 +298,21 @@ public sealed class PasteCoordinatorTests
 
         public Task<FileBundleResponseDto> ReadFileBundleAsync(
             Guid itemId,
-            CancellationToken cancellationToken = default) =>
-            Task.FromException<FileBundleResponseDto>(
-                new NotSupportedException("file bundle content is not configured"));
+            CancellationToken cancellationToken = default)
+        {
+            events.Add("read_file_bundle");
+            return FileBundle is null
+                ? Task.FromException<FileBundleResponseDto>(
+                    new NotSupportedException("file bundle content is not configured"))
+                : Task.FromResult(FileBundle);
+        }
     }
 
     private sealed class FakeClipboardWriter(List<string> events) : IClipboardWriter
     {
         public string? Text { get; private set; }
         public byte[]? ImagePng { get; private set; }
+        public IReadOnlyList<FileEntryDto>? Files { get; private set; }
         public Exception? Failure { get; init; }
 
         public Task WriteTextAsync(string text, CancellationToken cancellationToken = default)
@@ -265,6 +334,19 @@ public sealed class PasteCoordinatorTests
                 return Task.FromException(Failure);
             }
             ImagePng = png.ToArray();
+            return Task.CompletedTask;
+        }
+
+        public Task WriteFilesAsync(
+            IReadOnlyList<FileEntryDto> files,
+            CancellationToken cancellationToken = default)
+        {
+            events.Add("write_files");
+            if (Failure is not null)
+            {
+                return Task.FromException(Failure);
+            }
+            Files = files;
             return Task.CompletedTask;
         }
     }

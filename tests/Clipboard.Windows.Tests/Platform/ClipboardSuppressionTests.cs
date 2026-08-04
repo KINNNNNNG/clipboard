@@ -34,6 +34,16 @@ public sealed class ClipboardSuppressionTests
         Assert.False(suppression.TryConsumeText("expires"));
     }
 
+    [Fact]
+    public void File_bundle_token_is_case_insensitive_and_order_sensitive()
+    {
+        var suppression = new ClipboardSuppression();
+        suppression.RegisterFileBundle(["C:\\Docs\\a.txt", "C:\\Docs\\b.txt"]);
+
+        Assert.False(suppression.TryConsumeFileBundle(["C:\\docs\\b.txt", "C:\\docs\\a.txt"]));
+        Assert.True(suppression.TryConsumeFileBundle(["c:\\docs\\A.txt", "c:\\docs\\B.txt"]));
+    }
+
     private sealed class ManualTimeProvider : TimeProvider
     {
         private DateTimeOffset _now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);

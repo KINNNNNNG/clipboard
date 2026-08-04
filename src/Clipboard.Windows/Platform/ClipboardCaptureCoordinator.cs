@@ -114,6 +114,30 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
                     await ApplyRetentionAsync(cancellationToken);
                     _observer.OnCaptured(new CaptureNotification(image.ItemId, "image"));
                     break;
+
+                case ClipboardPayloadKind.FileBundle when payload.FileEntries.Count > 0:
+                    if (_suppression.TryConsumeFileBundle(
+                        payload.FileEntries.Select(file => file.Path)))
+                    {
+                        return;
+                    }
+                    var files = await _core.IngestFileBundleAsync(
+                        new IngestFileBundleRequestDto(
+                            payload.FileEntries
+                                .Select(file => new FileEntryDto(
+                                    file.Path,
+                                    file.IsDirectory
+                                        ? FileEntryKindDto.Directory
+                                        : FileEntryKindDto.File,
+                                    file.Size,
+                                    file.ModifiedMs))
+                                .ToArray(),
+                            sourceApp,
+                            capturedMs),
+                        cancellationToken);
+                    await ApplyRetentionAsync(cancellationToken);
+                    _observer.OnCaptured(new CaptureNotification(files.ItemId, "file_bundle"));
+                    break;
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

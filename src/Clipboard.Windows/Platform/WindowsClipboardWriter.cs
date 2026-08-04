@@ -1,7 +1,10 @@
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Security.Cryptography;
+using Clipboard.Windows.Core;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics.Imaging;
+using Windows.Storage;
 using Windows.Storage.Streams;
 using SystemClipboard = Windows.ApplicationModel.DataTransfer.Clipboard;
 
@@ -61,5 +64,44 @@ internal sealed class WindowsClipboardWriter : IClipboardWriter
         {
             CryptographicOperations.ZeroMemory(copy);
         }
+    }
+
+    public async Task WriteFilesAsync(
+        IReadOnlyList<FileEntryDto> files,
+        CancellationToken cancellationToken = default)
+    {
+        if (files.Count == 0)
+        {
+            throw new InvalidDataException("Clipboard file bundle is empty.");
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var items = new List<IStorageItem>(files.Count);
+        foreach (FileEntryDto file in files)
+        {
+            if (!Path.IsPathRooted(file.Path))
+            {
+                throw new InvalidDataException("Clipboard file path is not absolute.");
+            }
+            try
+            {
+                IStorageItem item = file.Kind == FileEntryKindDto.Directory
+                    ? await StorageFolder.GetFolderFromPathAsync(file.Path)
+                    : await StorageFile.GetFileFromPathAsync(file.Path);
+                items.Add(item);
+            }
+            catch (Exception error) when (error is COMException or UnauthorizedAccessException)
+            {
+                throw new FileNotFoundException("Clipboard file path is unavailable.", error);
+            }
+        }
+
+        var package = new DataPackage
+        {
+            RequestedOperation = DataPackageOperation.Copy,
+        };
+        package.SetStorageItems(items);
+        SystemClipboard.SetContent(package);
+        SystemClipboard.Flush();
     }
 }

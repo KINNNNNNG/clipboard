@@ -93,6 +93,27 @@ internal sealed class PasteCoordinator : IClipboardItemPasteService
                 }
                 break;
 
+            case ClipboardPayloadKind.FileBundle:
+                FileBundleResponseDto bundle = await _contentReader.ReadFileBundleAsync(
+                    item.Id,
+                    cancellationToken);
+                if (bundle.Entries.Count == 0)
+                {
+                    throw new InvalidDataException("Clipboard file bundle is empty.");
+                }
+                string[] paths = bundle.Entries.Select(entry => entry.Path).ToArray();
+                _suppression.RegisterFileBundle(paths);
+                try
+                {
+                    await _clipboardWriter.WriteFilesAsync(bundle.Entries, cancellationToken);
+                }
+                catch
+                {
+                    _suppression.DiscardFileBundle(paths);
+                    throw;
+                }
+                break;
+
             default:
                 throw new NotSupportedException("This clipboard item type cannot be pasted yet.");
         }
@@ -116,6 +137,7 @@ internal sealed class PasteCoordinator : IClipboardItemPasteService
         {
             "text" => ClipboardPayloadKind.Text,
             "image" => ClipboardPayloadKind.Image,
+            "file_bundle" => ClipboardPayloadKind.FileBundle,
             _ => throw new NotSupportedException("This clipboard item type cannot be pasted yet."),
         };
 }
