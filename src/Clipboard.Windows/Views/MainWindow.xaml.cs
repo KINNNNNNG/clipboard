@@ -231,21 +231,35 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         }
     }
 
-    private async void ImagePreview_Loaded(object sender, RoutedEventArgs args)
+    private void ImagePreview_Loaded(object sender, RoutedEventArgs args) =>
+        LoadImagePreview(sender as Image);
+
+    private void ImagePreview_DataContextChanged(
+        FrameworkElement sender,
+        DataContextChangedEventArgs args) =>
+        LoadImagePreview(sender as Image);
+
+    private async void LoadImagePreview(Image? image)
     {
         if (_contentReader is null
-            || sender is not Image image
+            || image is null
             || image.DataContext is not ClipboardItemViewModel item
             || !item.IsImage)
         {
             return;
         }
         Guid requestedItemId = item.Id;
+        var tracker = image.Tag as ImagePreviewLoadTracker ?? new ImagePreviewLoadTracker();
+        if (!tracker.Begin(requestedItemId))
+        {
+            return;
+        }
+        image.Tag = tracker;
         image.Source = null;
         image.Visibility = Visibility.Visible;
         if (_imageCache.TryGetValue(item.Id, out BitmapImage? cached))
         {
-            if (IsCurrentPreview(image, requestedItemId))
+            if (IsCurrentPreview(image, tracker, requestedItemId))
             {
                 image.Source = cached;
             }
@@ -262,7 +276,7 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
                 var bitmap = new BitmapImage();
                 await bitmap.SetSourceAsync(stream);
                 _imageCache.Set(requestedItemId, bitmap);
-                if (IsCurrentPreview(image, requestedItemId))
+                if (IsCurrentPreview(image, tracker, requestedItemId))
                 {
                     image.Source = bitmap;
                 }
@@ -274,15 +288,21 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         }
         catch
         {
-            if (IsCurrentPreview(image, requestedItemId))
+            if (IsCurrentPreview(image, tracker, requestedItemId))
             {
                 image.Visibility = Visibility.Collapsed;
             }
         }
     }
 
-    private static bool IsCurrentPreview(Image image, Guid requestedItemId) =>
-        image.DataContext is ClipboardItemViewModel current && current.Id == requestedItemId;
+    private static bool IsCurrentPreview(
+        Image image,
+        ImagePreviewLoadTracker tracker,
+        Guid requestedItemId) =>
+        ReferenceEquals(image.Tag, tracker)
+        && tracker.IsCurrent(requestedItemId)
+        && image.DataContext is ClipboardItemViewModel current
+        && current.Id == requestedItemId;
 
     private Task<bool> RunUiOperationAsync(Func<Task> operation, string failureMessage) =>
         _operationRunner?.RunAsync(operation, failureMessage)

@@ -90,8 +90,10 @@ public sealed class PanelPlacementTests
         Assert.False(backend.AlwaysOnTop);
         Assert.False(backend.HasBorder);
         Assert.False(backend.HasTitleBar);
+        Assert.True(backend.ExtendsContentIntoTitleBar);
         Assert.Equal(new PanelPlacementResult(1406, 392, 386, 500), backend.LastPlacement);
         Assert.Equal(1, backend.ShowCalls);
+        Assert.Equal(1, backend.ForegroundCalls);
     }
 
     [Fact]
@@ -145,8 +147,10 @@ public sealed class PanelPlacementTests
         public bool AlwaysOnTop { get; private set; }
         public bool HasBorder { get; private set; }
         public bool HasTitleBar { get; private set; }
+        public bool ExtendsContentIntoTitleBar { get; private set; }
         public PanelPlacementResult? LastPlacement { get; private set; }
         public int ShowCalls { get; private set; }
+        public int ForegroundCalls { get; private set; }
         public int HideCalls { get; private set; }
 
         public nint PanelWindowHandle => PanelWindow;
@@ -157,12 +161,17 @@ public sealed class PanelPlacementTests
 
         public MonitorSnapshot GetMonitor(PixelPoint point) => Monitor;
 
-        public void ConfigureToolWindow(bool alwaysOnTop, bool hasBorder, bool hasTitleBar)
+        public void ConfigureToolWindow(
+            bool alwaysOnTop,
+            bool hasBorder,
+            bool hasTitleBar,
+            bool extendsContentIntoTitleBar)
         {
             Configured = true;
             AlwaysOnTop = alwaysOnTop;
             HasBorder = hasBorder;
             HasTitleBar = hasTitleBar;
+            ExtendsContentIntoTitleBar = extendsContentIntoTitleBar;
         }
 
         public void Show(PanelPlacementResult placement)
@@ -170,6 +179,8 @@ public sealed class PanelPlacementTests
             LastPlacement = placement;
             ShowCalls++;
         }
+
+        public void BringToForeground() => ForegroundCalls++;
 
         public void Hide() => HideCalls++;
     }

@@ -19,9 +19,15 @@ internal interface IWindowPlacementBackend
 
     MonitorSnapshot GetMonitor(PixelPoint point);
 
-    void ConfigureToolWindow(bool alwaysOnTop, bool hasBorder, bool hasTitleBar);
+    void ConfigureToolWindow(
+        bool alwaysOnTop,
+        bool hasBorder,
+        bool hasTitleBar,
+        bool extendsContentIntoTitleBar);
 
     void Show(PanelPlacementResult placement);
+
+    void BringToForeground();
 
     void Hide();
 }
@@ -67,10 +73,12 @@ internal sealed class WindowPresenter
             _backend.ConfigureToolWindow(
                 alwaysOnTop: false,
                 hasBorder: false,
-                hasTitleBar: false);
+                hasTitleBar: false,
+                extendsContentIntoTitleBar: true);
             _configured = true;
         }
         _backend.Show(placement);
+        _backend.BringToForeground();
     }
 
     public void Hide() => _backend.Hide();
@@ -141,9 +149,12 @@ internal sealed class WinUiWindowPlacementBackend : IWindowPlacementBackend
             dpi);
     }
 
-    public void ConfigureToolWindow(bool alwaysOnTop, bool hasBorder, bool hasTitleBar)
+    public void ConfigureToolWindow(
+        bool alwaysOnTop,
+        bool hasBorder,
+        bool hasTitleBar,
+        bool extendsContentIntoTitleBar)
     {
-        _window.ExtendsContentIntoTitleBar = true;
         _appWindow.IsShownInSwitchers = false;
         OverlappedPresenter presenter = OverlappedPresenter.CreateForToolWindow();
         presenter.IsAlwaysOnTop = alwaysOnTop;
@@ -151,6 +162,7 @@ internal sealed class WinUiWindowPlacementBackend : IWindowPlacementBackend
         presenter.IsMinimizable = false;
         presenter.IsResizable = false;
         _appWindow.SetPresenter(presenter);
+        _window.ExtendsContentIntoTitleBar = extendsContentIntoTitleBar;
         presenter.SetBorderAndTitleBar(hasBorder, hasTitleBar);
     }
 
@@ -163,6 +175,8 @@ internal sealed class WinUiWindowPlacementBackend : IWindowPlacementBackend
             placement.Height));
         _window.Activate();
     }
+
+    public void BringToForeground() => NativeMethods.SetForegroundWindow(PanelWindowHandle);
 
     public void Hide() => _appWindow.Hide();
 }

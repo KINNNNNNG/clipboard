@@ -44,6 +44,7 @@
                                         MaxHeight="116"
                                         MaxWidth="340"
                                         Stretch="Uniform"
+                                        DataContextChanged="ImagePreview_DataContextChanged"
                                         Loaded="ImagePreview_Loaded" />
                                 </Border>
                                 <TextBlock
@@ -197,8 +198,10 @@
                 ItemClick="HistoryList_ItemClick"
                 ItemTemplate="{StaticResource ClipboardItemTemplate}"
                 ItemsSource="{Binding Items}"
-                SelectedItem="{Binding SelectedItem, Mode=OneWay}"
-                SelectionMode="Single" />
+                Background="Transparent"
+                BorderThickness="0"
+                Padding="0"
+                SelectionMode="None" />
             <StackPanel
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
