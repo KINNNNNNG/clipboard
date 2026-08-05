@@ -9,61 +9,12 @@ public sealed class PanelPlacementTests
     private static readonly PixelRect WorkArea = new(0, 0, 1920, 1080);
 
     [Fact]
-    public void Popup_chrome_hides_the_dwm_border_and_keeps_rounded_corners()
+    public void Popup_chrome_uses_the_default_dwm_border_and_rounded_corners()
     {
-        Assert.Equal(0x00CF0000L, NativeMethods.WindowTiledStyles);
-        Assert.Equal(0x00800000, NativeMethods.WindowBorderStyle);
-        Assert.Equal(0x00C00000, NativeMethods.WindowCaptionStyle);
-        Assert.Equal(0x00040000, NativeMethods.WindowThickFrameStyle);
-        Assert.Equal(0x00020000, NativeMethods.WindowMinimizeBoxStyle);
-        Assert.Equal(0x00010000, NativeMethods.WindowMaximizeBoxStyle);
-        Assert.Equal(0x00080000, NativeMethods.WindowSystemMenuStyle);
-        Assert.Equal(0x00000100, NativeMethods.ExtendedWindowEdgeStyle);
-        Assert.Equal(0x00000200, NativeMethods.ExtendedClientEdgeStyle);
-        Assert.Equal(0x00000080, NativeMethods.ExtendedToolWindowStyle);
-        Assert.Equal(0x00080000, NativeMethods.ExtendedLayeredStyle);
-        Assert.Equal(0x00000002u, NativeMethods.LayeredAlpha);
         Assert.Equal(33u, NativeMethods.DwmwaWindowCornerPreference);
         Assert.Equal(34u, NativeMethods.DwmwaBorderColor);
         Assert.Equal(2u, NativeMethods.DwmWindowCornerRound);
-        Assert.Equal(0xFFFFFFFEu, NativeMethods.DwmColorNone);
-    }
-
-    [Fact]
-    public void Borderless_window_styles_remove_the_frame_and_add_layered_tool_window_flags()
-    {
-        int style = NativeMethods.WindowTiledStyles | 0x00000001;
-        Assert.Equal(
-            0x00000001,
-            NativeMethods.BuildBorderlessWindowStyle(style));
-
-        int extendedStyle = NativeMethods.ExtendedWindowEdgeStyle
-            | NativeMethods.ExtendedClientEdgeStyle
-            | NativeMethods.ExtendedDialogModalFrameStyle;
-        Assert.Equal(
-            NativeMethods.ExtendedToolWindowStyle | NativeMethods.ExtendedLayeredStyle,
-            NativeMethods.BuildBorderlessExtendedStyle(extendedStyle));
-    }
-
-    [Theory]
-    [InlineData(96u, 0)]
-    [InlineData(144u, 0)]
-    [InlineData(192u, 0)]
-    public void Window_region_inset_scales_with_monitor_dpi(uint dpi, int expectedInset)
-    {
-        Assert.Equal(expectedInset, NativeMethods.CalculateWindowRegionInset(dpi));
-    }
-
-    [Theory]
-    [InlineData(386, 387)]
-    [InlineData(500, 501)]
-    public void Window_region_extent_includes_the_last_window_pixel(
-        int windowExtent,
-        int expectedRegionExtent)
-    {
-        Assert.Equal(
-            expectedRegionExtent,
-            NativeMethods.CalculateWindowRegionExtent(windowExtent));
+        Assert.Equal(0xFFFFFFFFu, NativeMethods.DwmColorDefault);
     }
 
     [Fact]
@@ -146,12 +97,11 @@ public sealed class PanelPlacementTests
         Assert.Equal(new nint(99), presenter.OriginalForegroundWindow);
         Assert.True(backend.Configured);
         Assert.False(backend.AlwaysOnTop);
-        Assert.False(backend.HasBorder);
+        Assert.True(backend.HasBorder);
         Assert.False(backend.HasTitleBar);
         Assert.True(backend.ExtendsContentIntoTitleBar);
-        Assert.True(backend.DwmBorderHidden);
         Assert.Equal(
-            new[] { "configure", "show", "foreground", "hide-dwm-border" },
+            new[] { "configure", "show", "foreground" },
             backend.Calls);
         Assert.Equal(new PanelPlacementResult(1406, 392, 386, 500), backend.LastPlacement);
         Assert.Equal(1, backend.ShowCalls);
@@ -210,7 +160,6 @@ public sealed class PanelPlacementTests
         public bool HasBorder { get; private set; }
         public bool HasTitleBar { get; private set; }
         public bool ExtendsContentIntoTitleBar { get; private set; }
-        public bool DwmBorderHidden { get; private set; }
         public PanelPlacementResult? LastPlacement { get; private set; }
         public int ShowCalls { get; private set; }
         public int ForegroundCalls { get; private set; }
@@ -244,12 +193,6 @@ public sealed class PanelPlacementTests
             Calls.Add("show");
             LastPlacement = placement;
             ShowCalls++;
-        }
-
-        public void HideDwmBorder()
-        {
-            Calls.Add("hide-dwm-border");
-            DwmBorderHidden = true;
         }
 
         public void BringToForeground()
