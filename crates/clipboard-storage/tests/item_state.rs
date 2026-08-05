@@ -72,7 +72,7 @@ fn database_rejects_schema_versions_newer_than_this_binary_supports() {
         Database::open(&path, &KEY),
         Err(StorageError::UnsupportedSchemaVersion {
             found: 999,
-            supported: 2
+            supported: 3
         })
     ));
 }

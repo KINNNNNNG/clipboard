@@ -253,6 +253,7 @@ unsafe fn ingest_image_impl(
             height: metadata.height,
             source_app: metadata.source_app,
             captured_ms: metadata.captured_ms,
+            source_app_display_name: None,
         },
         png,
     ) {

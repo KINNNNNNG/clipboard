@@ -21,6 +21,7 @@ fn ingest_text(core: &mut CoreService, text: &str, source_app: &str, captured_ms
             text: text.into(),
             source_app: source_app.into(),
             captured_ms,
+            source_app_display_name: None,
         }))
         .unwrap()
     {

@@ -27,6 +27,7 @@ fn encrypted_image_round_trips_after_reopen_and_search_exposes_metadata() {
                     height: 1,
                     source_app: "mspaint.exe".into(),
                     captured_ms: 100,
+                    source_app_display_name: None,
                 },
                 &png,
             )
@@ -72,6 +73,7 @@ fn tampered_image_ciphertext_is_rejected_without_partial_plaintext() {
                 height: 1,
                 source_app: "mspaint.exe".into(),
                 captured_ms: 100,
+                source_app_display_name: None,
             },
             &png,
         )
@@ -105,6 +107,7 @@ fn failed_database_commit_removes_the_finalized_image_object() {
                 height: 1,
                 source_app: "mspaint.exe".into(),
                 captured_ms: 100,
+                source_app_display_name: None,
             },
             &png_fixture(),
         )
@@ -139,6 +142,7 @@ fn image_space_retention_removes_the_encrypted_object_after_tombstoning_the_hist
                 height: 1,
                 source_app: "mspaint.exe".into(),
                 captured_ms: 100,
+                source_app_display_name: None,
             },
             &png_fixture(),
         )

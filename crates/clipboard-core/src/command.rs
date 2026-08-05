@@ -38,6 +38,8 @@ pub struct IngestText {
     pub text: String,
     pub source_app: String,
     pub captured_ms: i64,
+    #[serde(default)]
+    pub source_app_display_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,6 +47,8 @@ pub struct IngestFileBundle {
     pub entries: Vec<FileEntry>,
     pub source_app: String,
     pub captured_ms: i64,
+    #[serde(default)]
+    pub source_app_display_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,6 +62,8 @@ pub struct IngestImage {
     pub height: u32,
     pub source_app: String,
     pub captured_ms: i64,
+    #[serde(default)]
+    pub source_app_display_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

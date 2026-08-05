@@ -1,6 +1,10 @@
-use clipboard_core::{CoreCommand, CoreResponse, CoreService, IngestFileBundle, ReadFileBundle};
+use clipboard_core::{
+    CoreCommand, CoreResponse, CoreService, IngestFileBundle, ReadFileBundle, SearchFilters,
+    SearchRequest,
+};
 use clipboard_crypto::{KeyPurpose, VaultKey};
 use clipboard_domain::{ClipboardContent, ClipboardItem, FileBundle, FileEntry, FileEntryKind};
+use clipboard_search::SearchMode;
 use clipboard_storage::Database;
 use rusqlite::Connection;
 use tempfile::tempdir;
@@ -19,6 +23,7 @@ fn normalized_file_bundle_reuses_item_id_stays_local_and_can_be_read() {
             entries: vec![FileEntry::file("C:\\Docs\\a.txt".into(), 42, 100)],
             source_app: "explorer.exe".into(),
             captured_ms: 100,
+            source_app_display_name: None,
         }))
         .unwrap(),
     );
@@ -27,6 +32,7 @@ fn normalized_file_bundle_reuses_item_id_stays_local_and_can_be_read() {
             entries: vec![FileEntry::file("c:/docs/A.txt/".into(), 42, 100)],
             source_app: "explorer.exe".into(),
             captured_ms: 200,
+            source_app_display_name: None,
         }))
         .unwrap(),
     );
@@ -77,6 +83,7 @@ fn invalid_file_bundles_fail_before_storage() {
                 entries,
                 source_app: "explorer.exe".into(),
                 captured_ms: 100,
+                source_app_display_name: None,
             }))
             .is_err()
         );
@@ -85,6 +92,45 @@ fn invalid_file_bundles_fail_before_storage() {
     let database = Database::open(&directory.path().join("history.db"), &KEY).unwrap();
     assert!(database.items().list().unwrap().is_empty());
     assert_eq!(database.outbox().pending_count().unwrap(), 0);
+}
+
+#[test]
+fn file_bundle_search_returns_a_summary_without_exposing_full_paths() {
+    let directory = tempdir().unwrap();
+    let vault_id = Uuid::from_u128(205);
+    let mut core = CoreService::open(directory.path(), vault_id, &KEY).unwrap();
+
+    core.execute(CoreCommand::IngestFileBundle(IngestFileBundle {
+        entries: vec![
+            FileEntry::file("C:\\Docs\\report.docx".into(), 42, 100),
+            FileEntry::directory("C:\\Photos".into(), 100),
+        ],
+        source_app: "explorer.exe".into(),
+        source_app_display_name: Some("文件资源管理器".into()),
+        captured_ms: 100,
+    }))
+    .unwrap();
+
+    let response = core
+        .execute(CoreCommand::Search(SearchRequest {
+            pattern: "C:\\Docs\\report".into(),
+            mode: SearchMode::Substring,
+            filters: SearchFilters::default(),
+        }))
+        .unwrap();
+    let item = &response.search_items()[0];
+
+    assert_eq!(item.kind, "file_bundle");
+    assert_eq!(item.preview, "report.docx");
+    assert_eq!(item.file_count, Some(2));
+    assert_eq!(item.representative_name.as_deref(), Some("report.docx"));
+    assert_eq!(item.representative_kind.as_deref(), Some("file"));
+    assert_eq!(
+        item.source_app_display_name.as_deref(),
+        Some("文件资源管理器")
+    );
+    let json = serde_json::to_string(item).unwrap();
+    assert!(!json.contains("C:\\Docs\\report.docx"));
 }
 
 #[test]
@@ -131,6 +177,7 @@ fn legacy_file_bundle_fingerprint_is_migrated_without_duplicate_item() {
             entries: vec![FileEntry::file("c:/docs/a.txt/".into(), 42, 100)],
             source_app: "explorer.exe".into(),
             captured_ms: 200,
+            source_app_display_name: None,
         }))
         .unwrap(),
     );

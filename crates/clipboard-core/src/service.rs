@@ -67,6 +67,9 @@ impl CoreService {
             if request.captured_ms >= latest.last_used_ms {
                 latest.last_used_ms = request.captured_ms;
                 latest.source_app = request.source_app;
+                if request.source_app_display_name.is_some() {
+                    latest.source_app_display_name = request.source_app_display_name;
+                }
             }
             self.database.items().update_and_enqueue(latest)?;
             return Ok(CoreResponse::Mutation { item_id: latest.id });
@@ -79,6 +82,7 @@ impl CoreService {
             request.source_app,
             request.captured_ms,
         );
+        item.source_app_display_name = request.source_app_display_name;
         item.content_fingerprint = Some(fingerprint);
         self.database.items().insert_and_enqueue(&item)?;
         Ok(CoreResponse::Mutation { item_id: item.id })
@@ -106,6 +110,9 @@ impl CoreService {
             if request.captured_ms >= latest.last_used_ms {
                 latest.last_used_ms = request.captured_ms;
                 latest.source_app = request.source_app;
+                if request.source_app_display_name.is_some() {
+                    latest.source_app_display_name = request.source_app_display_name;
+                }
             }
             self.database.items().update(latest)?;
             return Ok(CoreResponse::Mutation { item_id: latest.id });
@@ -118,6 +125,7 @@ impl CoreService {
             request.source_app,
             request.captured_ms,
         );
+        item.source_app_display_name = request.source_app_display_name;
         item.content_fingerprint = Some(fingerprint);
         self.database.items().insert(&item)?;
         Ok(CoreResponse::Mutation { item_id: item.id })
@@ -163,6 +171,9 @@ impl CoreService {
             if request.captured_ms >= latest.last_used_ms {
                 latest.last_used_ms = request.captured_ms;
                 latest.source_app = request.source_app;
+                if request.source_app_display_name.is_some() {
+                    latest.source_app_display_name = request.source_app_display_name;
+                }
             }
             self.database.items().update_and_enqueue(latest)?;
             return Ok(CoreResponse::Mutation { item_id: latest.id });
@@ -181,6 +192,7 @@ impl CoreService {
             request.source_app,
             request.captured_ms,
         );
+        item.source_app_display_name = request.source_app_display_name;
         item.content_fingerprint = Some(fingerprint);
         self.object_store.store_image(object_id, png)?;
         if let Err(error) = self.database.items().insert_and_enqueue(&item) {
@@ -402,7 +414,7 @@ fn matches_filters(item: &ClipboardItem, filters: &SearchFilters) -> bool {
         && !filters
             .source_apps
             .iter()
-            .any(|source_app| source_app.eq_ignore_ascii_case(&item.source_app))
+            .any(|source_app| source_app_matches(source_app, item))
     {
         return false;
     }
@@ -411,6 +423,29 @@ fn matches_filters(item: &ClipboardItem, filters: &SearchFilters) -> bool {
             .kinds
             .iter()
             .any(|kind| kind.eq_ignore_ascii_case(item_kind(item)))
+}
+
+fn source_app_matches(filter: &str, item: &ClipboardItem) -> bool {
+    let filter = filter.trim();
+    [
+        Some(item.source_app.as_str()),
+        item.source_app_display_name.as_deref(),
+        Some(without_exe_suffix(&item.source_app)),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|candidate| candidate.eq_ignore_ascii_case(filter))
+}
+
+fn without_exe_suffix(value: &str) -> &str {
+    let Some(suffix) = value.as_bytes().get(value.len().saturating_sub(4)..) else {
+        return value;
+    };
+    if suffix.eq_ignore_ascii_case(b".exe") {
+        &value[..value.len() - 4]
+    } else {
+        value
+    }
 }
 
 fn searchable_fields(item: &ClipboardItem) -> (String, String) {
@@ -438,43 +473,83 @@ fn item_kind(item: &ClipboardItem) -> &'static str {
 }
 
 fn search_item(item: &ClipboardItem) -> SearchItem {
-    let (kind, preview, width, height, bytes) = match &item.content {
-        ClipboardContent::Text(text) => ("text", text.clone(), None, None, None),
-        ClipboardContent::Image {
-            width,
-            height,
-            bytes,
-            ..
-        } => (
-            "image",
-            format!("image {width}x{height}"),
-            Some(*width),
-            Some(*height),
-            Some(*bytes),
-        ),
-        ClipboardContent::FileBundle(bundle) => (
-            "file_bundle",
-            bundle
-                .entries
-                .iter()
-                .map(|entry| entry.path.as_str())
-                .collect::<Vec<_>>()
-                .join("\n"),
-            None,
-            None,
-            None,
-        ),
-    };
+    let (kind, preview, width, height, bytes, file_count, representative_name, representative_kind) =
+        match &item.content {
+            ClipboardContent::Text(text) => {
+                ("text", text.clone(), None, None, None, None, None, None)
+            }
+            ClipboardContent::Image {
+                width,
+                height,
+                bytes,
+                ..
+            } => (
+                "image",
+                format!("image {width}x{height}"),
+                Some(*width),
+                Some(*height),
+                Some(*bytes),
+                None,
+                None,
+                None,
+            ),
+            ClipboardContent::FileBundle(bundle) => {
+                let representative = bundle.entries.first();
+                let representative_kind = representative.map(|entry| match entry.kind {
+                    clipboard_domain::FileEntryKind::File => "file",
+                    clipboard_domain::FileEntryKind::Directory => "directory",
+                });
+                let representative_name =
+                    representative.and_then(|entry| representative_name(&entry.path, &entry.kind));
+                let representative_name = representative_name.or_else(|| {
+                    representative_kind
+                        .as_ref()
+                        .map(|kind| fallback_representative_name(kind).into())
+                });
+                (
+                    "file_bundle",
+                    representative_name.clone().unwrap_or_else(|| "文件".into()),
+                    None,
+                    None,
+                    None,
+                    Some(bundle.entries.len()),
+                    representative_name,
+                    representative_kind.map(str::to_owned),
+                )
+            }
+        };
     SearchItem {
         id: item.id,
         kind: kind.into(),
         preview,
         source_app: item.source_app.clone(),
+        source_app_display_name: item.source_app_display_name.clone(),
         last_used_ms: item.last_used_ms,
         favorite: is_favorite(item),
         width,
         height,
         bytes,
+        file_count,
+        representative_name,
+        representative_kind,
+    }
+}
+
+fn representative_name(path: &str, kind: &clipboard_domain::FileEntryKind) -> Option<String> {
+    let name = path.rsplit('\\').find(|component| !component.is_empty())?;
+    if name.len() == 2 && name.as_bytes().get(1) == Some(&b':') {
+        return Some(fallback_representative_name(match kind {
+            clipboard_domain::FileEntryKind::File => "file",
+            clipboard_domain::FileEntryKind::Directory => "directory",
+        }));
+    }
+    Some(name.to_owned())
+}
+
+fn fallback_representative_name(kind: &str) -> String {
+    match kind {
+        "directory" => "文件夹".into(),
+        _ => "文件".into(),
     }
 }
 

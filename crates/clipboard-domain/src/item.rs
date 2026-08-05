@@ -26,6 +26,8 @@ pub struct ClipboardItem {
     pub vault_id: Uuid,
     pub content: ClipboardContent,
     pub source_app: String,
+    #[serde(default)]
+    pub source_app_display_name: Option<String>,
     pub created_ms: i64,
     pub last_used_ms: i64,
     pub content_fingerprint: Option<[u8; 32]>,
@@ -46,12 +48,18 @@ impl ClipboardItem {
             vault_id,
             content,
             source_app,
+            source_app_display_name: None,
             created_ms,
             last_used_ms: created_ms,
             content_fingerprint: None,
             favorite_state: None,
             delete_state: None,
         }
+    }
+
+    pub fn with_source_app_display_name(mut self, display_name: Option<String>) -> Self {
+        self.source_app_display_name = display_name;
+        self
     }
 
     pub fn sync_scope(&self) -> SyncScope {

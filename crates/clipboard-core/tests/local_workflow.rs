@@ -13,6 +13,7 @@ fn ingest_persist_reopen_and_search_text() {
         core.execute(CoreCommand::IngestText(IngestText {
             text: "跨设备剪贴板".into(),
             source_app: "notepad.exe".into(),
+            source_app_display_name: Some("记事本".into()),
             captured_ms: 10,
         }))
         .unwrap();
@@ -31,6 +32,7 @@ fn ingest_persist_reopen_and_search_text() {
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].preview, "跨设备剪贴板");
     assert_eq!(items[0].source_app, "notepad.exe");
+    assert_eq!(items[0].source_app_display_name.as_deref(), Some("记事本"));
 }
 
 #[test]
@@ -43,6 +45,7 @@ fn invalid_regex_is_returned_without_losing_persisted_history() {
         text: "clipboard".into(),
         source_app: "notepad.exe".into(),
         captured_ms: 10,
+        source_app_display_name: None,
     }))
     .unwrap();
 

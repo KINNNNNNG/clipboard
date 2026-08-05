@@ -3,8 +3,14 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::{cell::RefCell, path::Path};
 
 const INITIAL_SCHEMA_VERSION: i64 = 1;
-const MIGRATIONS: &[(i64, &str)] = &[(2, include_str!("../migrations/002_ui_state.sql"))];
-const LATEST_SCHEMA_VERSION: i64 = 2;
+const MIGRATIONS: &[(i64, &str)] = &[
+    (2, include_str!("../migrations/002_ui_state.sql")),
+    (
+        3,
+        include_str!("../migrations/003_source_app_display_name.sql"),
+    ),
+];
+const LATEST_SCHEMA_VERSION: i64 = 3;
 
 pub struct Database {
     pub(crate) connection: RefCell<Connection>,

@@ -129,8 +129,8 @@ impl<'database> ItemRepository<'database> {
     pub fn list_all(&self) -> Result<Vec<ClipboardItem>, StorageError> {
         let connection = self.database.connection.borrow();
         let mut statement = connection.prepare(
-            "SELECT id, vault_id, source_app, created_ms, last_used_ms, content_json,
-                    content_fingerprint, favorite_json, delete_json
+            "SELECT id, vault_id, source_app, source_app_display_name, created_ms,
+                    last_used_ms, content_json, content_fingerprint, favorite_json, delete_json
              FROM clipboard_items
              ORDER BY last_used_ms DESC, id DESC",
         )?;
@@ -140,12 +140,13 @@ impl<'database> ItemRepository<'database> {
                     row.get::<_, Uuid>(0)?,
                     row.get::<_, Uuid>(1)?,
                     row.get::<_, String>(2)?,
-                    row.get::<_, i64>(3)?,
+                    row.get::<_, Option<String>>(3)?,
                     row.get::<_, i64>(4)?,
-                    row.get::<_, String>(5)?,
-                    row.get::<_, Option<Vec<u8>>>(6)?,
-                    row.get::<_, Option<String>>(7)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, Option<Vec<u8>>>(7)?,
                     row.get::<_, Option<String>>(8)?,
+                    row.get::<_, Option<String>>(9)?,
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -158,6 +159,7 @@ type StoredItemRow = (
     Uuid,
     Uuid,
     String,
+    Option<String>,
     i64,
     i64,
     String,
@@ -171,6 +173,7 @@ fn decode_item(
         id,
         vault_id,
         source_app,
+        source_app_display_name,
         created_ms,
         last_used_ms,
         content_json,
@@ -198,6 +201,7 @@ fn decode_item(
         vault_id,
         content: serde_json::from_str(&content_json)?,
         source_app,
+        source_app_display_name,
         created_ms,
         last_used_ms,
         content_fingerprint,
@@ -234,15 +238,16 @@ fn insert_item(transaction: &Transaction<'_>, item: &ClipboardItem) -> Result<()
 
     transaction.execute(
         "INSERT INTO clipboard_items(
-            id, vault_id, kind, sync_scope, source_app, created_ms, last_used_ms, content_json,
-            content_fingerprint, favorite_json, delete_json
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            id, vault_id, kind, sync_scope, source_app, source_app_display_name,
+            created_ms, last_used_ms, content_json, content_fingerprint, favorite_json, delete_json
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             item.id,
             item.vault_id,
             kind,
             sync_scope,
             item.source_app,
+            item.source_app_display_name,
             item.created_ms,
             item.last_used_ms,
             content_json,
@@ -282,9 +287,10 @@ fn update_item(transaction: &Transaction<'_>, item: &ClipboardItem) -> Result<()
 
     let updated = transaction.execute(
         "UPDATE clipboard_items
-         SET vault_id = ?2, kind = ?3, sync_scope = ?4, source_app = ?5, created_ms = ?6,
-             last_used_ms = ?7, content_json = ?8, content_fingerprint = ?9,
-             favorite_json = ?10, delete_json = ?11
+         SET vault_id = ?2, kind = ?3, sync_scope = ?4, source_app = ?5,
+             source_app_display_name = COALESCE(?6, source_app_display_name), created_ms = ?7,
+             last_used_ms = ?8, content_json = ?9, content_fingerprint = ?10,
+             favorite_json = ?11, delete_json = ?12
          WHERE id = ?1",
         params![
             item.id,
@@ -292,6 +298,7 @@ fn update_item(transaction: &Transaction<'_>, item: &ClipboardItem) -> Result<()
             kind,
             sync_scope,
             item.source_app,
+            item.source_app_display_name,
             item.created_ms,
             item.last_used_ms,
             content_json,
