@@ -4,13 +4,12 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:Clipboard.Windows.Views"
     Title="剪贴板">
-    <Border
+    <Grid
         x:Name="Root"
-        Padding="0"
-        Background="Transparent"
-        CornerRadius="0"
+        Padding="12"
+        Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
         KeyDown="Root_KeyDown">
-        <Border.Resources>
+        <Grid.Resources>
             <local:ClipboardKindVisibilityConverter x:Key="KindVisibilityConverter" />
             <local:BooleanVisibilityConverter x:Key="BooleanVisibilityConverter" />
             <DataTemplate x:Key="ClipboardItemTemplate">
@@ -102,13 +101,7 @@
                     </Grid>
                 </Border>
             </DataTemplate>
-        </Border.Resources>
-
-        <Border
-            Padding="10"
-            Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-            CornerRadius="12">
-            <Grid>
+        </Grid.Resources>
 
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -274,7 +267,5 @@
                 FontSize="12"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </StackPanel>
-            </Grid>
-        </Border>
-    </Border>
+    </Grid>
 </Window>
