@@ -43,9 +43,13 @@ public sealed class XamlResourceConfigurationTests
         string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");
         XDocument document = XDocument.Load(path);
 
-        XElement root = document
-            .Descendants()
-            .Single(element => element.Attribute(XName.Get("Name", "http://schemas.microsoft.com/winfx/2006/xaml"))?.Value == "Root");
+        XElement window = Assert.IsType<XElement>(document.Root);
+        Assert.Equal("Window", window.Name.LocalName);
+
+        XElement root = Assert.Single(window.Elements());
+        Assert.Equal(
+            "Root",
+            root.Attribute(XName.Get("Name", "http://schemas.microsoft.com/winfx/2006/xaml"))?.Value);
         Assert.Equal("Grid", root.Name.LocalName);
         Assert.Equal(
             "{ThemeResource ApplicationPageBackgroundThemeBrush}",
@@ -53,9 +57,5 @@ public sealed class XamlResourceConfigurationTests
         Assert.DoesNotContain(
             document.Descendants(),
             element => element.Name.LocalName == "DesktopAcrylicBackdrop");
-        Assert.DoesNotContain(
-            document.Descendants(),
-            element => element.Name.LocalName == "Border"
-                && element.Attribute("CornerRadius")?.Value == "12");
     }
 }

@@ -9,7 +9,7 @@ public sealed class PanelPlacementTests
     private static readonly PixelRect WorkArea = new(0, 0, 1920, 1080);
 
     [Fact]
-    public void Popup_chrome_uses_the_default_dwm_border_and_rounded_corners()
+    public void Popup_chrome_hides_the_dwm_border_and_keeps_rounded_corners()
     {
         Assert.Equal(33u, NativeMethods.DwmwaWindowCornerPreference);
         Assert.Equal(34u, NativeMethods.DwmwaBorderColor);
