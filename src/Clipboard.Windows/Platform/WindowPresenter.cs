@@ -27,6 +27,8 @@ internal interface IWindowPlacementBackend
 
     void Show(PanelPlacementResult placement);
 
+    void HideDwmBorder();
+
     void BringToForeground();
 
     void Hide();
@@ -79,6 +81,8 @@ internal sealed class WindowPresenter
         }
         _backend.Show(placement);
         _backend.BringToForeground();
+        // AppWindow.Show can recreate the non-client frame; apply this after it is visible.
+        _backend.HideDwmBorder();
     }
 
     public void Hide() => _backend.Hide();
@@ -98,8 +102,10 @@ internal sealed class WinUiWindowPlacementBackend : IWindowPlacementBackend
 {
     private const uint MonitorDefaultToNearest = 2;
     private const int EffectiveDpi = 0;
+    private const nuint ChromeSubclassId = 0x43484D;
     private readonly Window _window;
     private readonly AppWindow _appWindow;
+    private readonly NativeMethods.SubclassProc _subclassProc;
 
     public WinUiWindowPlacementBackend(Window window)
     {
@@ -107,9 +113,60 @@ internal sealed class WinUiWindowPlacementBackend : IWindowPlacementBackend
         PanelWindowHandle = WindowNative.GetWindowHandle(window);
         var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(PanelWindowHandle);
         _appWindow = AppWindow.GetFromWindowId(windowId);
+        _subclassProc = WindowSubclassProc;
+        NativeMethods.SetWindowSubclass(
+            PanelWindowHandle,
+            _subclassProc,
+            ChromeSubclassId,
+            0);
+        _window.Activated += Window_Activated;
+        _window.Closed += Window_Closed;
     }
 
     public nint PanelWindowHandle { get; }
+
+    private void Window_Activated(object sender, WindowActivatedEventArgs args)
+    {
+        if (args.WindowActivationState != WindowActivationState.Deactivated)
+        {
+            HideDwmBorder();
+        }
+    }
+
+    private void Window_Closed(object sender, WindowEventArgs args)
+    {
+        NativeMethods.RemoveWindowSubclass(
+            PanelWindowHandle,
+            _subclassProc,
+            ChromeSubclassId);
+    }
+
+    private nint WindowSubclassProc(
+        nint window,
+        uint message,
+        nint wParam,
+        nint lParam,
+        nuint subclassId,
+        nuint referenceData)
+    {
+        if (message == NativeMethods.WmStyleChanging && lParam != 0)
+        {
+            int index = wParam.ToInt32();
+            int style = Marshal.ReadInt32(lParam, sizeof(int));
+            int filteredStyle = index switch
+            {
+                NativeMethods.WindowStyleIndex => NativeMethods.BuildBorderlessWindowStyle(style),
+                NativeMethods.ExtendedWindowStyleIndex => NativeMethods.BuildBorderlessExtendedStyle(style),
+                _ => style,
+            };
+            if (filteredStyle != style)
+            {
+                Marshal.WriteInt32(lParam, sizeof(int), filteredStyle);
+            }
+        }
+
+        return NativeMethods.DefSubclassProc(window, message, wParam, lParam);
+    }
 
     public nint GetForegroundWindow() => NativeMethods.GetForegroundWindow();
 
@@ -156,7 +213,10 @@ internal sealed class WinUiWindowPlacementBackend : IWindowPlacementBackend
         bool extendsContentIntoTitleBar)
     {
         _appWindow.IsShownInSwitchers = false;
-        OverlappedPresenter presenter = OverlappedPresenter.CreateForToolWindow();
+        // PowerToys' Advanced Paste uses the normal overlapped presenter. The
+        // tool-window presenter keeps WS_EX_WINDOWEDGE and re-applies it after
+        // activation, which produces the asymmetric DWM edge on WinUI 3.
+        OverlappedPresenter presenter = OverlappedPresenter.Create();
         presenter.IsAlwaysOnTop = alwaysOnTop;
         presenter.IsMaximizable = false;
         presenter.IsMinimizable = false;
@@ -164,6 +224,7 @@ internal sealed class WinUiWindowPlacementBackend : IWindowPlacementBackend
         _appWindow.SetPresenter(presenter);
         _window.ExtendsContentIntoTitleBar = extendsContentIntoTitleBar;
         presenter.SetBorderAndTitleBar(hasBorder, hasTitleBar);
+        HideDwmBorder();
     }
 
     public void Show(PanelPlacementResult placement)
@@ -174,6 +235,94 @@ internal sealed class WinUiWindowPlacementBackend : IWindowPlacementBackend
             placement.Width,
             placement.Height));
         _window.Activate();
+    }
+
+    public void HideDwmBorder()
+    {
+        int style = unchecked((int)NativeMethods.GetWindowLongPtr(
+            PanelWindowHandle,
+            NativeMethods.WindowStyleIndex).ToInt64());
+        int borderlessStyle = NativeMethods.BuildBorderlessWindowStyle(style);
+        if (borderlessStyle != style)
+        {
+            NativeMethods.SetWindowLongPtr(
+                PanelWindowHandle,
+                NativeMethods.WindowStyleIndex,
+                new nint(borderlessStyle));
+        }
+
+        int extendedStyle = unchecked((int)NativeMethods.GetWindowLongPtr(
+            PanelWindowHandle,
+            NativeMethods.ExtendedWindowStyleIndex).ToInt64());
+        int borderlessExtendedStyle = NativeMethods.BuildBorderlessExtendedStyle(extendedStyle);
+        if (borderlessExtendedStyle != extendedStyle)
+        {
+            NativeMethods.SetWindowLongPtr(
+                PanelWindowHandle,
+                NativeMethods.ExtendedWindowStyleIndex,
+                new nint(borderlessExtendedStyle));
+        }
+
+        NativeMethods.SetLayeredWindowAttributes(
+            PanelWindowHandle,
+            0,
+            byte.MaxValue,
+            NativeMethods.LayeredAlpha);
+        NativeMethods.SetWindowPos(
+            PanelWindowHandle,
+            0,
+            0,
+            0,
+            0,
+            0,
+            NativeMethods.SetWindowPosNoSize
+                | NativeMethods.SetWindowPosNoMove
+                | NativeMethods.SetWindowPosNoZOrder
+                | NativeMethods.SetWindowPosNoOwnerZOrder
+                | NativeMethods.SetWindowPosNoActivate
+                | NativeMethods.SetWindowPosFrameChanged
+                | NativeMethods.SetWindowPosShowWindow);
+
+        // FrameChanged can make WinUI rebuild the non-client frame. Reapply the
+        // DWM attributes after the refresh so the system border stays hidden.
+        uint color = NativeMethods.DwmColorNone;
+        NativeMethods.DwmSetWindowAttribute(
+            PanelWindowHandle,
+            NativeMethods.DwmwaBorderColor,
+            ref color,
+            sizeof(uint));
+        uint corner = NativeMethods.DwmWindowCornerRound;
+        NativeMethods.DwmSetWindowAttribute(
+            PanelWindowHandle,
+            NativeMethods.DwmwaWindowCornerPreference,
+            ref corner,
+            sizeof(uint));
+        ApplyWindowRegion();
+    }
+
+    private void ApplyWindowRegion()
+    {
+        if (!NativeMethods.GetWindowRect(PanelWindowHandle, out NativeMethods.RECT rect))
+        {
+            return;
+        }
+        int width = rect.Right - rect.Left;
+        int height = rect.Bottom - rect.Top;
+        uint dpi = NativeMethods.GetDpiForWindow(PanelWindowHandle);
+        int inset = NativeMethods.CalculateWindowRegionInset(dpi);
+        int cornerDiameter = (int)Math.Ceiling(
+            NativeMethods.WindowRegionCornerDiameter * (dpi == 0 ? 1d : dpi / 96d));
+        nint region = NativeMethods.CreateRoundRectRgn(
+            inset,
+            inset,
+            NativeMethods.CalculateWindowRegionExtent(width),
+            NativeMethods.CalculateWindowRegionExtent(height),
+            cornerDiameter,
+            cornerDiameter);
+        if (region != 0 && !NativeMethods.SetWindowRgn(PanelWindowHandle, region, true))
+        {
+            NativeMethods.DeleteObject(region);
+        }
     }
 
     public void BringToForeground() => NativeMethods.SetForegroundWindow(PanelWindowHandle);

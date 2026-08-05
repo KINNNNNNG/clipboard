@@ -4,12 +4,13 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:Clipboard.Windows.Views"
     Title="剪贴板">
-    <Grid
+    <Border
         x:Name="Root"
-        Padding="12"
-        Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+        Padding="0"
+        Background="Transparent"
+        CornerRadius="0"
         KeyDown="Root_KeyDown">
-        <Grid.Resources>
+        <Border.Resources>
             <local:ClipboardKindVisibilityConverter x:Key="KindVisibilityConverter" />
             <local:BooleanVisibilityConverter x:Key="BooleanVisibilityConverter" />
             <DataTemplate x:Key="ClipboardItemTemplate">
@@ -101,7 +102,13 @@
                     </Grid>
                 </Border>
             </DataTemplate>
-        </Grid.Resources>
+        </Border.Resources>
+
+        <Border
+            Padding="10"
+            Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+            CornerRadius="12">
+            <Grid>
 
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -201,7 +208,30 @@
                 Background="Transparent"
                 BorderThickness="0"
                 Padding="0"
-                SelectionMode="None" />
+                SelectionMode="None"
+                ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Margin" Value="0" />
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="VerticalContentAlignment" Value="Top" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListViewItem">
+                                    <ContentPresenter
+                                        Content="{TemplateBinding Content}"
+                                        ContentTemplate="{TemplateBinding ContentTemplate}"
+                                        HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListView.ItemContainerStyle>
+            </ListView>
             <StackPanel
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
@@ -244,5 +274,7 @@
                 FontSize="12"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </StackPanel>
-    </Grid>
+            </Grid>
+        </Border>
+    </Border>
 </Window>

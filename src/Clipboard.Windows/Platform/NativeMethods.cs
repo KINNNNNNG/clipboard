@@ -4,8 +4,36 @@ namespace Clipboard.Windows.Platform;
 
 internal static partial class NativeMethods
 {
+    internal const int WindowStyleIndex = -16;
+    internal const int ExtendedWindowStyleIndex = -20;
+    internal const int WindowBorderStyle = 0x00800000;
+    internal const int WindowCaptionStyle = 0x00C00000;
+    internal const int WindowThickFrameStyle = 0x00040000;
+    internal const int WindowMinimizeBoxStyle = 0x00020000;
+    internal const int WindowMaximizeBoxStyle = 0x00010000;
+    internal const int WindowSystemMenuStyle = 0x00080000;
+    internal const int WindowTiledStyles = 0x00CF0000;
+    internal const int ExtendedWindowEdgeStyle = 0x00000100;
+    internal const int ExtendedClientEdgeStyle = 0x00000200;
+    internal const int ExtendedDialogModalFrameStyle = 0x00000001;
+    internal const int ExtendedToolWindowStyle = 0x00000080;
+    internal const int ExtendedLayeredStyle = 0x00080000;
+    internal const int WindowRegionCornerDiameter = 24;
+    internal const int WindowRegionInset = 0;
+    internal const uint SetWindowPosNoSize = 0x0001;
+    internal const uint SetWindowPosNoMove = 0x0002;
+    internal const uint SetWindowPosNoZOrder = 0x0004;
+    internal const uint SetWindowPosNoOwnerZOrder = 0x0200;
+    internal const uint SetWindowPosNoActivate = 0x0010;
+    internal const uint SetWindowPosFrameChanged = 0x0020;
+    internal const uint SetWindowPosShowWindow = 0x0040;
     internal const uint ImageIcon = 1;
     internal const uint LoadImageFromFile = 0x0010;
+    internal const uint DwmwaBorderColor = 34;
+    internal const uint DwmwaWindowCornerPreference = 33;
+    internal const uint DwmWindowCornerRound = 2;
+    internal const uint DwmColorNone = 0xFFFFFFFE;
+    internal const uint LayeredAlpha = 0x00000002;
     internal const uint MenuSeparator = 0x0800;
     internal const uint MenuString = 0x0000;
     internal const uint NotifyIconAdd = 0x00000000;
@@ -23,6 +51,7 @@ internal static partial class NativeMethods
     internal const uint KeyEventKeyUp = 0x0002;
     internal const uint WmKeyDown = 0x0100;
     internal const uint WmKeyUp = 0x0101;
+    internal const uint WmStyleChanging = 0x007C;
     internal const uint WmHotkey = 0x0312;
     internal const uint WmContextMenu = 0x007B;
     internal const uint WmLeftButtonDoubleClick = 0x0203;
@@ -169,6 +198,85 @@ internal static partial class NativeMethods
 
     [LibraryImport("user32.dll")]
     internal static partial nint GetForegroundWindow();
+
+    internal static int BuildBorderlessWindowStyle(int currentStyle) =>
+        currentStyle
+        & ~(WindowCaptionStyle
+            | WindowThickFrameStyle
+            | WindowMinimizeBoxStyle
+            | WindowMaximizeBoxStyle
+            | WindowSystemMenuStyle);
+
+    internal static int BuildBorderlessExtendedStyle(int currentStyle) =>
+        (currentStyle
+            & ~(ExtendedWindowEdgeStyle
+                | ExtendedClientEdgeStyle
+                | ExtendedDialogModalFrameStyle))
+        | ExtendedToolWindowStyle
+        | ExtendedLayeredStyle;
+
+    internal static int CalculateWindowRegionInset(uint dpi) => WindowRegionInset;
+
+    internal static int CalculateWindowRegionExtent(int windowExtent) => windowExtent + 1;
+
+    [LibraryImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+    internal static partial nint GetWindowLongPtr(nint window, int index);
+
+    [LibraryImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    internal static partial nint SetWindowLongPtr(nint window, int index, nint value);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetLayeredWindowAttributes(
+        nint window,
+        uint colorKey,
+        byte alpha,
+        uint flags);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool GetWindowRect(nint window, out RECT rect);
+
+    [LibraryImport("user32.dll")]
+    internal static partial uint GetDpiForWindow(nint window);
+
+    [LibraryImport("gdi32.dll")]
+    internal static partial nint CreateRoundRectRgn(
+        int left,
+        int top,
+        int right,
+        int bottom,
+        int width,
+        int height);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetWindowRgn(
+        nint window,
+        nint region,
+        [MarshalAs(UnmanagedType.Bool)] bool redraw);
+
+    [LibraryImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool DeleteObject(nint handle);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetWindowPos(
+        nint window,
+        nint insertAfter,
+        int x,
+        int y,
+        int width,
+        int height,
+        uint flags);
+
+    [LibraryImport("dwmapi.dll")]
+    internal static partial int DwmSetWindowAttribute(
+        nint window,
+        uint attribute,
+        ref uint value,
+        int valueSize);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
