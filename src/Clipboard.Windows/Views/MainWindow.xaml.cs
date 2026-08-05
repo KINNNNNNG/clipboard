@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Clipboard.Windows.Platform;
 using Clipboard.Windows.ViewModels;
@@ -30,6 +31,10 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         IClipboardItemContentReader contentReader,
         IClipboardWriter clipboardWriter)
     {
+        if (_viewModel is not null)
+        {
+            _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+        }
         _viewModel = viewModel;
         _presenter = presenter;
         _contentReader = contentReader;
@@ -38,7 +43,9 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
             viewModel.ReportOperationError,
             viewModel.ClearOperationError);
         Root.DataContext = viewModel;
+        viewModel.PropertyChanged += ViewModel_PropertyChanged;
         viewModel.CloseRequested += (_, _) => HidePanel();
+        SyncHistorySelection();
     }
 
     public void ShowPanel()
@@ -123,7 +130,7 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         };
         IReadOnlyList<string> sourceApps = SourceFilterBox.Text
             .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        var kinds = new List<string>(2);
+        var kinds = new List<string>(3);
         if (TextKindCheckBox.IsChecked == true)
         {
             kinds.Add("text");
@@ -131,6 +138,10 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         if (ImageKindCheckBox.IsChecked == true)
         {
             kinds.Add("image");
+        }
+        if (FileKindCheckBox.IsChecked == true)
+        {
+            kinds.Add("file_bundle");
         }
         _viewModel.SetFilters(after, null, sourceApps, kinds);
         FilterButton.Flyout?.Hide();
@@ -198,6 +209,53 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
             await RunUiOperationAsync(
                 () => _viewModel.PasteSelectedAsync(_presenter.OriginalForegroundWindow),
                 "无法粘贴此记录。");
+        }
+    }
+
+    private void HistoryList_SelectionChanged(object sender, SelectionChangedEventArgs args)
+    {
+        if (_viewModel is null || HistoryList.SelectedIndex == _viewModel.SelectedIndex)
+        {
+            return;
+        }
+        if (HistoryList.SelectedIndex >= 0)
+        {
+            _viewModel.SelectIndex(HistoryList.SelectedIndex);
+        }
+    }
+
+    private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName != nameof(ClipboardPanelViewModel.SelectedIndex))
+        {
+            return;
+        }
+        if (DispatcherQueue.HasThreadAccess)
+        {
+            SyncHistorySelection();
+        }
+        else
+        {
+            DispatcherQueue.TryEnqueue(SyncHistorySelection);
+        }
+    }
+
+    private void SyncHistorySelection()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+        int selectedIndex = _viewModel.SelectedIndex;
+        if (HistoryList.SelectedIndex != selectedIndex)
+        {
+            HistoryList.SelectedIndex = selectedIndex;
+        }
+        if (selectedIndex >= 0 && selectedIndex < _viewModel.Items.Count)
+        {
+            HistoryList.ScrollIntoView(
+                _viewModel.Items[selectedIndex],
+                ScrollIntoViewAlignment.Default);
         }
     }
 

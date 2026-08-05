@@ -20,7 +20,7 @@ public sealed class XamlResourceConfigurationTests
     }
 
     [Fact]
-    public void History_list_uses_a_flat_unselected_item_container()
+    public void History_list_uses_single_selection_with_selected_visual_state()
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");
         XDocument document = XDocument.Load(path);
@@ -28,13 +28,50 @@ public sealed class XamlResourceConfigurationTests
             .Descendants()
             .Single(element => element.Name.LocalName == "ListView");
 
-        Assert.Equal("None", list.Attribute("SelectionMode")?.Value);
+        Assert.Equal("Single", list.Attribute("SelectionMode")?.Value);
+        Assert.Equal("HistoryList_SelectionChanged", list.Attribute("SelectionChanged")?.Value);
         XElement style = list
             .Descendants()
             .Single(element => element.Name.LocalName == "Style");
         Assert.Equal("ListViewItem", style.Attribute("TargetType")?.Value);
         Assert.NotNull(style.Descendants().SingleOrDefault(
             element => element.Name.LocalName == "ControlTemplate"));
+        XElement selected = style
+            .Descendants()
+            .Single(element =>
+                element.Name.LocalName == "VisualState"
+                && element.Attribute(XName.Get("Name", "http://schemas.microsoft.com/winfx/2006/xaml"))?.Value == "Selected");
+        Assert.Contains(
+            selected.Descendants().Where(element => element.Name.LocalName == "Setter"),
+            setter => setter.Attribute("Target")?.Value == "SelectionRoot.Background");
+        Assert.Contains(
+            selected.Descendants().Where(element => element.Name.LocalName == "Setter"),
+            setter => setter.Attribute("Target")?.Value == "SelectionRoot.BorderBrush");
+    }
+
+    [Fact]
+    public void Main_window_has_file_filter_and_file_card_bindings()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");
+        XDocument document = XDocument.Load(path);
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+
+        XElement fileFilter = document
+            .Descendants()
+            .Single(element => element.Attribute(x + "Name")?.Value == "FileKindCheckBox");
+        Assert.Equal("文件", fileFilter.Attribute("Content")?.Value);
+        Assert.Equal("True", fileFilter.Attribute("IsChecked")?.Value);
+
+        Assert.Contains(
+            document.Descendants().Where(element => element.Name.LocalName == "FontIcon"),
+            element => element.Attribute("Glyph")?.Value == "{Binding FileIconGlyph}");
+        Assert.Contains(
+            document.Descendants().Where(element => element.Name.LocalName == "TextBlock"),
+            element => element.Attribute("Text")?.Value == "{Binding FileNameSummary}");
+        XElement preview = document
+            .Descendants()
+            .Single(element => element.Attribute("Text")?.Value == "{Binding DisplayPreview}");
+        Assert.Contains("ConverterParameter=text", preview.Attribute("Visibility")?.Value);
     }
 
     [Fact]

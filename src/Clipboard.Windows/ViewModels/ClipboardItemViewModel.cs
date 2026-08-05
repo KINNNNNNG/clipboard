@@ -6,6 +6,7 @@ namespace Clipboard.Windows.ViewModels;
 internal sealed class ClipboardItemViewModel : ObservableObject
 {
     private bool _favorite;
+    private bool _isSourceUnavailable;
 
     public ClipboardItemViewModel(ClipboardItemDto item)
     {
@@ -25,6 +26,21 @@ internal sealed class ClipboardItemViewModel : ObservableObject
 
     public string SourceApp => Item.SourceApp;
 
+    public string DisplaySourceApp
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(Item.SourceAppDisplayName))
+            {
+                return Item.SourceAppDisplayName.Trim();
+            }
+            string identifier = SourceApp.Trim();
+            return identifier.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                ? identifier[..^4]
+                : identifier;
+        }
+    }
+
     public long LastUsedMs => Item.LastUsedMs;
 
     public uint? Width => Item.Width;
@@ -34,6 +50,30 @@ internal sealed class ClipboardItemViewModel : ObservableObject
     public ulong? Bytes => Item.Bytes;
 
     public bool IsImage => string.Equals(Kind, "image", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsFileBundle =>
+        string.Equals(Kind, "file_bundle", StringComparison.OrdinalIgnoreCase);
+
+    public string FileIconGlyph =>
+        string.Equals(Item.RepresentativeKind, "directory", StringComparison.OrdinalIgnoreCase)
+            ? "\uE8B7"
+            : "\uE8A5";
+
+    public string FileNameSummary => !string.IsNullOrWhiteSpace(Item.RepresentativeName)
+        ? Item.RepresentativeName.Trim()
+        : DisplayPreview;
+
+    public string FileCountLabel => Item.FileCount is > 1
+        ? $"共 {Item.FileCount.Value} 项"
+        : string.Empty;
+
+    public bool IsSourceUnavailable
+    {
+        get => _isSourceUnavailable;
+        private set => SetProperty(ref _isSourceUnavailable, value);
+    }
+
+    public void MarkSourceUnavailable() => IsSourceUnavailable = true;
 
     public string ImageDimensions => Width.HasValue && Height.HasValue
         ? $"{Width} × {Height}"

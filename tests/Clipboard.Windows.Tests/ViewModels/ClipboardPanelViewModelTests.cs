@@ -107,7 +107,7 @@ public sealed class ClipboardPanelViewModelTests
             createdAfterMs: 10,
             createdBeforeMs: 20,
             sourceApps: ["notepad.exe", "msedge.exe"],
-            kinds: ["text", "image"]);
+            kinds: ["text", "image", "file_bundle"]);
 
         await viewModel.RefreshAsync();
 
@@ -115,7 +115,7 @@ public sealed class ClipboardPanelViewModelTests
         Assert.Equal(10, filters.CreatedAfterMs);
         Assert.Equal(20, filters.CreatedBeforeMs);
         Assert.Equal(["notepad.exe", "msedge.exe"], filters.SourceApps);
-        Assert.Equal(["text", "image"], filters.Kinds);
+        Assert.Equal(["text", "image", "file_bundle"], filters.Kinds);
     }
 
     [Fact]
@@ -182,6 +182,27 @@ public sealed class ClipboardPanelViewModelTests
         Assert.Equal(new nint(42), paste.LastOriginalWindow);
         Assert.Equal(PasteResultKind.Pasted, result?.Kind);
         Assert.Equal(1, closeRequests);
+    }
+
+    [Fact]
+    public async Task Keyboard_selection_is_clamped_at_list_boundaries()
+    {
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(Response(
+                TextItem("first"),
+                TextItem("second"),
+                TextItem("third"))),
+        };
+        var viewModel = new ClipboardPanelViewModel(core, new FakePasteService());
+        await viewModel.RefreshAsync();
+
+        viewModel.MoveSelection(-1);
+        Assert.Equal(0, viewModel.SelectedIndex);
+        viewModel.MoveSelection(10);
+        Assert.Equal(2, viewModel.SelectedIndex);
+        viewModel.MoveSelection(1);
+        Assert.Equal(2, viewModel.SelectedIndex);
     }
 
     [Fact]

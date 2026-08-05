@@ -30,7 +30,40 @@
                                 MaxLines="6"
                                 Text="{Binding DisplayPreview}"
                                 TextTrimming="CharacterEllipsis"
-                                TextWrapping="WrapWholeWords" />
+                                TextWrapping="WrapWholeWords"
+                                Visibility="{Binding Kind, Converter={StaticResource KindVisibilityConverter}, ConverterParameter=text}" />
+                            <Grid
+                                ColumnSpacing="10"
+                                Visibility="{Binding Kind, Converter={StaticResource KindVisibilityConverter}, ConverterParameter=file_bundle}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="42" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border
+                                    Width="42"
+                                    Height="42"
+                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                    CornerRadius="4">
+                                    <FontIcon
+                                        FontSize="22"
+                                        Glyph="{Binding FileIconGlyph}" />
+                                </Border>
+                                <StackPanel
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Spacing="2">
+                                    <TextBlock
+                                        MaxLines="2"
+                                        FontWeight="SemiBold"
+                                        Text="{Binding FileNameSummary}"
+                                        TextTrimming="CharacterEllipsis"
+                                        TextWrapping="WrapWholeWords" />
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Text="{Binding FileCountLabel}" />
+                                </StackPanel>
+                            </Grid>
                             <StackPanel
                                 Spacing="4"
                                 Visibility="{Binding Kind, Converter={StaticResource KindVisibilityConverter}, ConverterParameter=image}">
@@ -64,7 +97,7 @@
                                 <TextBlock
                                     FontSize="12"
                                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    Text="{Binding SourceApp}" />
+                                    Text="{Binding DisplaySourceApp}" />
                                 <TextBlock
                                     FontSize="12"
                                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
@@ -171,6 +204,7 @@
                             <TextBlock FontWeight="SemiBold" Text="筛选" />
                             <CheckBox x:Name="TextKindCheckBox" Content="文本" IsChecked="True" />
                             <CheckBox x:Name="ImageKindCheckBox" Content="图片" IsChecked="True" />
+                            <CheckBox x:Name="FileKindCheckBox" Content="文件" IsChecked="True" />
                             <ComboBox x:Name="TimeFilterComboBox" Header="复制时间" SelectedIndex="0">
                                 <ComboBoxItem Content="全部时间" />
                                 <ComboBoxItem Content="最近一小时" />
@@ -198,10 +232,11 @@
                 ItemClick="HistoryList_ItemClick"
                 ItemTemplate="{StaticResource ClipboardItemTemplate}"
                 ItemsSource="{Binding Items}"
+                SelectionChanged="HistoryList_SelectionChanged"
                 Background="Transparent"
                 BorderThickness="0"
                 Padding="0"
-                SelectionMode="None"
+                SelectionMode="Single"
                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                 <ListView.ItemContainerStyle>
                     <Style TargetType="ListViewItem">
@@ -214,11 +249,35 @@
                         <Setter Property="Template">
                             <Setter.Value>
                                 <ControlTemplate TargetType="ListViewItem">
-                                    <ContentPresenter
-                                        Content="{TemplateBinding Content}"
-                                        ContentTemplate="{TemplateBinding ContentTemplate}"
-                                        HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                                    <Grid
+                                        x:Name="SelectionRoot"
+                                        Padding="2"
+                                        Background="Transparent"
+                                        BorderBrush="Transparent"
+                                        BorderThickness="2"
+                                        CornerRadius="8">
+                                        <VisualStateManager.VisualStateGroups>
+                                            <VisualStateGroup x:Name="CommonStates">
+                                                <VisualState x:Name="Normal" />
+                                                <VisualState x:Name="PointerOver" />
+                                                <VisualState x:Name="Selected">
+                                                    <VisualState.Setters>
+                                                        <Setter
+                                                            Target="SelectionRoot.Background"
+                                                            Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                                                        <Setter
+                                                            Target="SelectionRoot.BorderBrush"
+                                                            Value="{ThemeResource AccentFillColorDefaultBrush}" />
+                                                    </VisualState.Setters>
+                                                </VisualState>
+                                            </VisualStateGroup>
+                                        </VisualStateManager.VisualStateGroups>
+                                        <ContentPresenter
+                                            Content="{TemplateBinding Content}"
+                                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                                    </Grid>
                                 </ControlTemplate>
                             </Setter.Value>
                         </Setter>

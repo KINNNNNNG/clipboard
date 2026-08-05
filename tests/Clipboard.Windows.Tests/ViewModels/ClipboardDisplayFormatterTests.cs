@@ -1,3 +1,5 @@
+using Clipboard.Windows.Core;
+using Clipboard.Windows.ViewModels;
 using Clipboard.Windows.Views;
 using Xunit;
 
@@ -5,6 +7,54 @@ namespace Clipboard.Windows.Tests.ViewModels;
 
 public sealed class ClipboardDisplayFormatterTests
 {
+    [Fact]
+    public void File_bundle_card_uses_fluent_summary_and_friendly_source_name()
+    {
+        var item = new ClipboardItemViewModel(new ClipboardItemDto(
+            Guid.NewGuid(),
+            "file_bundle",
+            "report.docx",
+            "explorer.exe",
+            100,
+            false,
+            null,
+            null,
+            null,
+            "文件资源管理器",
+            3,
+            "report.docx",
+            "file"));
+
+        Assert.True(item.IsFileBundle);
+        Assert.Equal("\uE8A5", item.FileIconGlyph);
+        Assert.Equal("report.docx", item.FileNameSummary);
+        Assert.Equal("共 3 项", item.FileCountLabel);
+        Assert.Equal("文件资源管理器", item.DisplaySourceApp);
+    }
+
+    [Fact]
+    public void Single_folder_uses_folder_glyph_and_legacy_source_name_drops_exe_suffix()
+    {
+        var item = new ClipboardItemViewModel(new ClipboardItemDto(
+            Guid.NewGuid(),
+            "file_bundle",
+            "Photos",
+            "explorer.exe",
+            100,
+            false,
+            null,
+            null,
+            null,
+            null,
+            1,
+            "Photos",
+            "directory"));
+
+        Assert.Equal("\uE8B7", item.FileIconGlyph);
+        Assert.Equal(string.Empty, item.FileCountLabel);
+        Assert.Equal("explorer", item.DisplaySourceApp);
+    }
+
     [Fact]
     public void Preview_is_limited_to_six_lines_without_trailing_ellipsis_line()
     {
