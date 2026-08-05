@@ -35,6 +35,11 @@ internal sealed class ClipboardItemViewModel : ObservableObject
                 return Item.SourceAppDisplayName.Trim();
             }
             string identifier = SourceApp.Trim();
+            if (identifier.Length == 0
+                || string.Equals(identifier, "unknown", StringComparison.OrdinalIgnoreCase))
+            {
+                return "未知应用";
+            }
             return identifier.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
                 ? identifier[..^4]
                 : identifier;

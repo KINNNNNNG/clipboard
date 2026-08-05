@@ -79,9 +79,9 @@ internal sealed class WindowsClipboardWriter : IClipboardWriter
         var items = new List<IStorageItem>(files.Count);
         foreach (FileEntryDto file in files)
         {
-            if (!Path.IsPathRooted(file.Path))
+            if (!Path.IsPathFullyQualified(file.Path))
             {
-                throw new InvalidDataException("Clipboard file path is not absolute.");
+                throw new FileNotFoundException("Clipboard file source is unavailable.");
             }
             try
             {
@@ -90,9 +90,12 @@ internal sealed class WindowsClipboardWriter : IClipboardWriter
                     : await StorageFile.GetFileFromPathAsync(file.Path);
                 items.Add(item);
             }
-            catch (Exception error) when (error is COMException or UnauthorizedAccessException)
+            catch (Exception error) when (
+                error is COMException
+                or UnauthorizedAccessException
+                or IOException)
             {
-                throw new FileNotFoundException("Clipboard file path is unavailable.", error);
+                throw new FileNotFoundException("Clipboard file source is unavailable.", error);
             }
         }
 

@@ -41,6 +41,9 @@ public sealed class XamlResourceConfigurationTests
             .Single(element =>
                 element.Name.LocalName == "VisualState"
                 && element.Attribute(XName.Get("Name", "http://schemas.microsoft.com/winfx/2006/xaml"))?.Value == "Selected");
+        Assert.Equal(
+            "SelectionStates",
+            selected.Parent?.Attribute(XName.Get("Name", "http://schemas.microsoft.com/winfx/2006/xaml"))?.Value);
         Assert.Contains(
             selected.Descendants().Where(element => element.Name.LocalName == "Setter"),
             setter => setter.Attribute("Target")?.Value == "SelectionRoot.Background");
@@ -68,6 +71,9 @@ public sealed class XamlResourceConfigurationTests
         Assert.Contains(
             document.Descendants().Where(element => element.Name.LocalName == "TextBlock"),
             element => element.Attribute("Text")?.Value == "{Binding FileNameSummary}");
+        Assert.Contains(
+            document.Descendants().Where(element => element.Name.LocalName == "TextBlock"),
+            element => element.Attribute("Text")?.Value == "原路径不可用");
         XElement preview = document
             .Descendants()
             .Single(element => element.Attribute("Text")?.Value == "{Binding DisplayPreview}");

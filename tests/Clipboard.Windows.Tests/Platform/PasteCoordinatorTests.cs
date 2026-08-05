@@ -96,7 +96,7 @@ public sealed class PasteCoordinatorTests
     }
 
     [Fact]
-    public async Task Missing_file_bundle_path_does_not_send_paste_input()
+    public async Task Missing_file_bundle_path_returns_source_unavailable_without_side_effects()
     {
         var events = new List<string>();
         var content = new FakeContentReader(events)
@@ -114,18 +114,21 @@ public sealed class PasteCoordinatorTests
             RestoreResult = true,
             SentInputCount = 4,
         };
+        var suppression = new ClipboardSuppression();
         var coordinator = CreateCoordinator(
             content,
             writer,
             foreground,
-            new ClipboardSuppression(),
+            suppression,
             () => events.Add("hide"));
 
-        await Assert.ThrowsAsync<FileNotFoundException>(() =>
-            coordinator.PasteAsync(FileBundleItem(), new nint(42)));
+        PasteResult result = await coordinator.PasteAsync(FileBundleItem(), new nint(42));
 
-        Assert.Equal(0, foreground.SendInputCalls);
+        Assert.Equal(PasteResultKind.SourceUnavailable, result.Kind);
+        Assert.DoesNotContain("hide", events);
         Assert.DoesNotContain("restore", events);
+        Assert.Equal(0, foreground.SendInputCalls);
+        Assert.False(suppression.TryConsumeFileBundle(["C:\\missing.txt"]));
     }
 
     [Fact]

@@ -62,6 +62,11 @@
                                         FontSize="12"
                                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                         Text="{Binding FileCountLabel}" />
+                                    <TextBlock
+                                        FontSize="12"
+                                        Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                        Text="原路径不可用"
+                                        Visibility="{Binding IsSourceUnavailable, Converter={StaticResource BooleanVisibilityConverter}}" />
                                 </StackPanel>
                             </Grid>
                             <StackPanel
@@ -257,9 +262,8 @@
                                         BorderThickness="2"
                                         CornerRadius="8">
                                         <VisualStateManager.VisualStateGroups>
-                                            <VisualStateGroup x:Name="CommonStates">
-                                                <VisualState x:Name="Normal" />
-                                                <VisualState x:Name="PointerOver" />
+                                            <VisualStateGroup x:Name="SelectionStates">
+                                                <VisualState x:Name="Unselected" />
                                                 <VisualState x:Name="Selected">
                                                     <VisualState.Setters>
                                                         <Setter

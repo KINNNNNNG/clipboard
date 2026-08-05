@@ -206,6 +206,40 @@ public sealed class ClipboardPanelViewModelTests
     }
 
     [Fact]
+    public async Task Source_unavailable_result_marks_the_selected_file_card_without_closing_panel()
+    {
+        ClipboardItemDto item = new(
+            Guid.NewGuid(),
+            "file_bundle",
+            "missing.txt",
+            "explorer.exe",
+            100,
+            false,
+            null,
+            null,
+            null,
+            "文件资源管理器",
+            1,
+            "missing.txt",
+            "file");
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(Response(item)),
+        };
+        var paste = new FakePasteService
+        {
+            NextResult = new PasteResult(PasteResultKind.SourceUnavailable, item.Id),
+        };
+        var viewModel = new ClipboardPanelViewModel(core, paste);
+        await viewModel.RefreshAsync();
+
+        PasteResult? result = await viewModel.PasteSelectedAsync(new nint(42));
+
+        Assert.Equal(PasteResultKind.SourceUnavailable, result?.Kind);
+        Assert.True(viewModel.Items[0].IsSourceUnavailable);
+    }
+
+    [Fact]
     public async Task Toggling_favorite_persists_state_and_updates_the_card()
     {
         ClipboardItemDto item = TextItem("keep me");
@@ -373,6 +407,7 @@ public sealed class ClipboardPanelViewModelTests
     {
         public ClipboardItemDto? LastItem { get; private set; }
         public nint LastOriginalWindow { get; private set; }
+        public PasteResult? NextResult { get; init; }
 
         public Task<PasteResult> PasteAsync(
             ClipboardItemDto item,
@@ -381,7 +416,8 @@ public sealed class ClipboardPanelViewModelTests
         {
             LastItem = item;
             LastOriginalWindow = originalHwnd;
-            return Task.FromResult(new PasteResult(PasteResultKind.Pasted, item.Id));
+            return Task.FromResult(
+                NextResult ?? new PasteResult(PasteResultKind.Pasted, item.Id));
         }
     }
 

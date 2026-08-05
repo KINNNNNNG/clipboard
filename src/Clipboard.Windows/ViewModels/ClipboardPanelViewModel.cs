@@ -174,7 +174,12 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
         {
             return null;
         }
-        return await _paste.PasteAsync(selected.Item, originalHwnd, cancellationToken);
+        PasteResult result = await _paste.PasteAsync(selected.Item, originalHwnd, cancellationToken);
+        if (result.Kind == PasteResultKind.SourceUnavailable)
+        {
+            selected.MarkSourceUnavailable();
+        }
+        return result;
     }
 
     public async Task ToggleFavoriteAsync(

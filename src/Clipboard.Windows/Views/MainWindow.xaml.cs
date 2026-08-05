@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices.WindowsRuntime;
+using Clipboard.Windows.Core;
 using Clipboard.Windows.Platform;
 using Clipboard.Windows.ViewModels;
 using Microsoft.UI.Xaml;
@@ -372,7 +373,28 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         {
             return;
         }
-        if (item.IsImage && _contentReader is not null)
+        if (item.IsFileBundle)
+        {
+            if (_contentReader is null)
+            {
+                throw new InvalidOperationException("File history content reader is unavailable.");
+            }
+            try
+            {
+                FileBundleResponseDto bundle = await _contentReader.ReadFileBundleAsync(item.Id);
+                await _clipboardWriter.WriteFilesAsync(bundle.Entries);
+            }
+            catch (Exception error) when (
+                error is FileNotFoundException
+                or DirectoryNotFoundException
+                or UnauthorizedAccessException
+                or IOException)
+            {
+                item.MarkSourceUnavailable();
+                throw;
+            }
+        }
+        else if (item.IsImage && _contentReader is not null)
         {
             byte[] png = await _contentReader.ReadImageAsync(item.Id);
             try
