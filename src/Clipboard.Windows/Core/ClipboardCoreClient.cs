@@ -219,7 +219,8 @@ internal sealed class ClipboardCoreClient : IDisposable,
                 request.Width,
                 request.Height,
                 request.SourceApp,
-                request.CapturedMs),
+                request.CapturedMs,
+                request.SourceAppDisplayName),
             JsonOptions);
         CoreBuffer response = default;
         try

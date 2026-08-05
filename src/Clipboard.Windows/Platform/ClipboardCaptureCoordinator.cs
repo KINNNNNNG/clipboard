@@ -7,7 +7,7 @@ namespace Clipboard.Windows.Platform;
 
 internal interface ISourceApplicationResolver
 {
-    string Resolve();
+    SourceApplicationInfo Resolve();
 }
 
 internal interface IClipboardCaptureObserver
@@ -81,7 +81,7 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
         try
         {
             ClipboardPayload payload = await ReadWithRetryAsync(cancellationToken);
-            string sourceApp = ResolveSourceApplication();
+            SourceApplicationInfo sourceApp = ResolveSourceApplication();
             long capturedMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
 
             switch (payload.Kind)
@@ -92,7 +92,11 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
                         return;
                     }
                     MutationResponseDto text = await _core.IngestTextAsync(
-                            new IngestTextRequestDto(payload.TextContent, sourceApp, capturedMs),
+                            new IngestTextRequestDto(
+                                payload.TextContent,
+                                sourceApp.Identifier,
+                                capturedMs,
+                                sourceApp.DisplayName),
                             cancellationToken);
                     await ApplyRetentionAsync(cancellationToken);
                     _observer.OnCaptured(new CaptureNotification(text.ItemId, "text"));
@@ -107,8 +111,9 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
                             new IngestImageRequestDto(
                                 payload.Width,
                                 payload.Height,
-                                sourceApp,
-                                capturedMs),
+                                sourceApp.Identifier,
+                                capturedMs,
+                                sourceApp.DisplayName),
                             payload.Png,
                             cancellationToken);
                     await ApplyRetentionAsync(cancellationToken);
@@ -132,8 +137,9 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
                                     file.Size,
                                     file.ModifiedMs))
                                 .ToArray(),
-                            sourceApp,
-                            capturedMs),
+                            sourceApp.Identifier,
+                            capturedMs,
+                            sourceApp.DisplayName),
                         cancellationToken);
                     await ApplyRetentionAsync(cancellationToken);
                     _observer.OnCaptured(new CaptureNotification(files.ItemId, "file_bundle"));
@@ -194,16 +200,21 @@ internal sealed class ClipboardCaptureCoordinator : IDisposable
         }
     }
 
-    private string ResolveSourceApplication()
+    private SourceApplicationInfo ResolveSourceApplication()
     {
         try
         {
-            string source = _sourceResolver.Resolve();
-            return string.IsNullOrWhiteSpace(source) ? "unknown" : source;
+            SourceApplicationInfo source = _sourceResolver.Resolve();
+            if (string.IsNullOrWhiteSpace(source.Identifier)
+                || string.IsNullOrWhiteSpace(source.DisplayName))
+            {
+                return new SourceApplicationInfo("unknown", "unknown");
+            }
+            return source;
         }
         catch
         {
-            return "unknown";
+            return new SourceApplicationInfo("unknown", "unknown");
         }
     }
 

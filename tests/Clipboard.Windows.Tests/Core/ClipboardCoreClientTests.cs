@@ -21,7 +21,8 @@ public sealed class ClipboardCoreClientTests
             await client.IngestTextAsync(new IngestTextRequestDto(
                 "native round trip",
                 "xunit.exe",
-                100));
+                100,
+                "xUnit"));
 
             SearchResponseDto result = await client.SearchAsync(new SearchRequestDto(
                 "round",
@@ -31,6 +32,7 @@ public sealed class ClipboardCoreClientTests
             ClipboardItemDto item = Assert.Single(result.Items);
             Assert.Equal("native round trip", item.Preview);
             Assert.Equal("xunit.exe", item.SourceApp);
+            Assert.Equal("xUnit", item.SourceAppDisplayName);
 
             byte[] png = Convert.FromHexString(
                 "89504E470D0A1A0A0000000D49484452000000010000000108060000001F15C489" +
@@ -116,13 +118,63 @@ public sealed class ClipboardCoreClientTests
         await client.IngestFileBundleAsync(new IngestFileBundleRequestDto(
             [new FileEntryDto("C:\\Docs\\a.txt", FileEntryKindDto.File, 42, 100)],
             "explorer.exe",
-            100));
+            100,
+            "文件资源管理器"));
 
         using JsonDocument request = JsonDocument.Parse(native.LastExecuteRequest!);
         Assert.Equal("ingest_file_bundle", request.RootElement.GetProperty("type").GetString());
         JsonElement entry = request.RootElement.GetProperty("payload").GetProperty("entries")[0];
         Assert.Equal("file", entry.GetProperty("kind").GetString());
         Assert.Equal(42, entry.GetProperty("size").GetInt64());
+        Assert.Equal(
+            "文件资源管理器",
+            request.RootElement.GetProperty("payload")
+                .GetProperty("source_app_display_name")
+                .GetString());
+    }
+
+    [Fact]
+    public async Task Search_response_deserializes_file_card_summary_and_source_display_name()
+    {
+        var native = new FakeNative
+        {
+            ExecuteResponse = Encoding.UTF8.GetBytes(
+                "{\"items\":[{\"id\":\"00000000-0000-0000-0000-000000000001\",\"kind\":\"file_bundle\",\"preview\":\"report.docx\",\"source_app\":\"explorer.exe\",\"source_app_display_name\":\"文件资源管理器\",\"last_used_ms\":100,\"favorite\":false,\"width\":null,\"height\":null,\"bytes\":null,\"file_count\":2,\"representative_name\":\"report.docx\",\"representative_kind\":\"file\"}]}"),
+        };
+        using var client = ClipboardCoreClient.Open(
+            "C:\\clipboard-data",
+            Guid.NewGuid(),
+            new byte[32],
+            native);
+
+        ClipboardItemDto item = Assert.Single((await client.SearchAsync(new SearchRequestDto(
+            string.Empty,
+            SearchModeDto.Substring,
+            SearchFiltersDto.Empty))).Items);
+
+        Assert.Equal("文件资源管理器", item.SourceAppDisplayName);
+        Assert.Equal(2, item.FileCount);
+        Assert.Equal("report.docx", item.RepresentativeName);
+        Assert.Equal("file", item.RepresentativeKind);
+    }
+
+    [Fact]
+    public async Task Image_metadata_serializes_optional_source_display_name()
+    {
+        var native = new FakeNative();
+        using var client = ClipboardCoreClient.Open(
+            "C:\\clipboard-data",
+            Guid.NewGuid(),
+            new byte[32],
+            native);
+
+        await client.IngestImageAsync(
+            new IngestImageRequestDto(1, 1, "mspaint.exe", 100, "画图"),
+            new byte[] { 0x89, 0x50 });
+
+        using JsonDocument metadata = JsonDocument.Parse(native.LastImageMetadata!);
+        Assert.Equal("mspaint.exe", metadata.RootElement.GetProperty("source_app").GetString());
+        Assert.Equal("画图", metadata.RootElement.GetProperty("source_app_display_name").GetString());
     }
 
     [Fact]
@@ -188,6 +240,7 @@ public sealed class ClipboardCoreClientTests
         public int FreeCount { get; private set; }
         public byte[] OpenVaultId { get; private set; } = [];
         public byte[]? LastExecuteRequest { get; private set; }
+        public byte[]? LastImageMetadata { get; private set; }
         public bool ImageAbiWasCalled { get; private set; }
         public CoreStatus ExecuteStatus { get; init; } = CoreStatus.Ok;
         public byte[] ExecuteResponse { get; init; } = Encoding.UTF8.GetBytes(
@@ -219,6 +272,7 @@ public sealed class ClipboardCoreClientTests
             out CoreBuffer response)
         {
             ImageAbiWasCalled = true;
+            LastImageMetadata = metadata.ToArray();
             response = Allocate(ExecuteResponse);
             return CoreStatus.Ok;
         }

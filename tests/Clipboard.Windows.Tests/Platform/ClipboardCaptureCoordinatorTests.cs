@@ -13,13 +13,18 @@ public sealed class ClipboardCaptureCoordinatorTests
         var reader = new FakeReader(ClipboardPayload.Text("跨设备剪贴板"));
         var core = new FakeCore();
         var observer = new FakeObserver();
-        var coordinator = CreateCoordinator(reader, core, observer, sourceApp: "unknown");
+        var coordinator = CreateCoordinator(
+            reader,
+            core,
+            observer,
+            sourceApp: new SourceApplicationInfo("unknown", "未知应用"));
 
         await coordinator.CaptureAsync();
 
         IngestTextRequestDto captured = Assert.Single(core.TextRequests);
         Assert.Equal("跨设备剪贴板", captured.Text);
         Assert.Equal("unknown", captured.SourceApp);
+        Assert.Equal("未知应用", captured.SourceAppDisplayName);
         CaptureNotification notification = Assert.Single(observer.Captured);
         Assert.Equal("text", notification.Kind);
         Assert.DoesNotContain("跨设备剪贴板", notification.ToString(), StringComparison.Ordinal);
@@ -32,7 +37,11 @@ public sealed class ClipboardCaptureCoordinatorTests
         var reader = new FakeReader(ClipboardPayload.Image(png, 640, 480));
         var core = new FakeCore();
         var observer = new FakeObserver();
-        var coordinator = CreateCoordinator(reader, core, observer, sourceApp: "mspaint.exe");
+        var coordinator = CreateCoordinator(
+            reader,
+            core,
+            observer,
+            sourceApp: new SourceApplicationInfo("mspaint.exe", "画图"));
 
         await coordinator.CaptureAsync();
 
@@ -40,6 +49,7 @@ public sealed class ClipboardCaptureCoordinatorTests
         Assert.Equal((uint)640, captured.Request.Width);
         Assert.Equal((uint)480, captured.Request.Height);
         Assert.Equal("mspaint.exe", captured.Request.SourceApp);
+        Assert.Equal("画图", captured.Request.SourceAppDisplayName);
         Assert.Equal(png, captured.Png);
         Assert.Equal("image", Assert.Single(observer.Captured).Kind);
     }
@@ -58,11 +68,13 @@ public sealed class ClipboardCaptureCoordinatorTests
             new FakeReader(ClipboardPayload.Files(files)),
             core,
             observer,
-            sourceApp: "explorer.exe").CaptureAsync();
+            sourceApp: new SourceApplicationInfo("explorer.exe", "文件资源管理器")).CaptureAsync();
 
         IngestFileBundleRequestDto request = Assert.Single(core.FileBundleRequests);
         Assert.Equal(files.Select(file => file.Path), request.Entries.Select(entry => entry.Path));
         Assert.Equal(FileEntryKindDto.Directory, request.Entries[1].Kind);
+        Assert.Equal("explorer.exe", request.SourceApp);
+        Assert.Equal("文件资源管理器", request.SourceAppDisplayName);
         Assert.Equal("file_bundle", Assert.Single(observer.Captured).Kind);
         Assert.Single(core.RetentionRequests);
     }
@@ -197,7 +209,7 @@ public sealed class ClipboardCaptureCoordinatorTests
         IClipboardReader reader,
         IClipboardCaptureSink core,
         IClipboardCaptureObserver observer,
-        string sourceApp = "notepad.exe",
+        SourceApplicationInfo? sourceApp = null,
         ClipboardSuppression? suppression = null,
         IRetryDelay? retryDelay = null,
         IRetentionPolicyProvider? retentionPolicy = null,
@@ -205,7 +217,7 @@ public sealed class ClipboardCaptureCoordinatorTests
         new(
             reader,
             core,
-            new FakeSourceResolver(sourceApp),
+            new FakeSourceResolver(sourceApp ?? new SourceApplicationInfo("notepad.exe", "记事本")),
             suppression ?? new ClipboardSuppression(),
             observer,
             retryDelay ?? new FakeDelay(),
@@ -298,9 +310,9 @@ public sealed class ClipboardCaptureCoordinatorTests
             : Task.FromException<MutationResponseDto>(Failure);
     }
 
-    private sealed class FakeSourceResolver(string sourceApp) : ISourceApplicationResolver
+    private sealed class FakeSourceResolver(SourceApplicationInfo sourceApp) : ISourceApplicationResolver
     {
-        public string Resolve() => sourceApp;
+        public SourceApplicationInfo Resolve() => sourceApp;
     }
 
     private sealed class FakeObserver : IClipboardCaptureObserver

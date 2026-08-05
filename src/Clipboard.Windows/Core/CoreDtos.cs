@@ -66,13 +66,18 @@ internal sealed record SearchRequestDto(
     SearchModeDto Mode,
     SearchFiltersDto Filters);
 
-internal sealed record IngestTextRequestDto(string Text, string SourceApp, long CapturedMs);
+internal sealed record IngestTextRequestDto(
+    string Text,
+    string SourceApp,
+    long CapturedMs,
+    string? SourceAppDisplayName = null);
 
 internal sealed record IngestImageRequestDto(
     uint Width,
     uint Height,
     string SourceApp,
-    long CapturedMs);
+    long CapturedMs,
+    string? SourceAppDisplayName = null);
 
 internal enum FileEntryKindDto
 {
@@ -89,7 +94,8 @@ internal sealed record FileEntryDto(
 internal sealed record IngestFileBundleRequestDto(
     IReadOnlyList<FileEntryDto> Entries,
     string SourceApp,
-    long CapturedMs);
+    long CapturedMs,
+    string? SourceAppDisplayName = null);
 
 internal sealed record ReadFileBundleRequestDto(Guid ItemId);
 
@@ -122,7 +128,11 @@ internal sealed record ClipboardItemDto(
     bool Favorite,
     uint? Width,
     uint? Height,
-    ulong? Bytes);
+    ulong? Bytes,
+    string? SourceAppDisplayName = null,
+    int? FileCount = null,
+    string? RepresentativeName = null,
+    string? RepresentativeKind = null);
 
 internal sealed record SearchResponseDto(IReadOnlyList<ClipboardItemDto> Items);
 
@@ -139,4 +149,5 @@ internal sealed record ImageMetadataEnvelope(
     uint Width,
     uint Height,
     string SourceApp,
-    long CapturedMs);
+    long CapturedMs,
+    string? SourceAppDisplayName = null);

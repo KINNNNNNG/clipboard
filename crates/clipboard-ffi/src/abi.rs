@@ -206,6 +206,8 @@ struct ImageMetadataRequest {
     height: u32,
     source_app: String,
     captured_ms: i64,
+    #[serde(default)]
+    source_app_display_name: Option<String>,
 }
 
 unsafe fn ingest_image_impl(
@@ -253,7 +255,7 @@ unsafe fn ingest_image_impl(
             height: metadata.height,
             source_app: metadata.source_app,
             captured_ms: metadata.captured_ms,
-            source_app_display_name: None,
+            source_app_display_name: metadata.source_app_display_name,
         },
         png,
     ) {

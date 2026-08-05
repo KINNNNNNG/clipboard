@@ -65,6 +65,25 @@ fn image_abi_round_trips_binary_png_and_uses_requested_vault() {
     let stored = database.items().list().unwrap();
     assert_eq!(stored.len(), 1);
     assert_eq!(stored[0].vault_id, vault_id);
+    assert_eq!(stored[0].source_app_display_name, None);
+}
+
+#[test]
+fn image_abi_accepts_optional_source_display_name() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().to_string_lossy();
+    let handle = unsafe { open_v2(&path, Uuid::from_u128(204)) };
+    let metadata = r#"{"api_version":1,"width":1,"height":1,"source_app":"mspaint.exe","source_app_display_name":"画图","captured_ms":100}"#;
+
+    unsafe {
+        ingest_with_metadata(handle, &png_fixture(), metadata.as_bytes());
+        clipboard_core_close(handle);
+    }
+
+    let database = Database::open(&directory.path().join("history.db"), &KEY).unwrap();
+    let stored = database.items().list().unwrap();
+    assert_eq!(stored[0].source_app, "mspaint.exe");
+    assert_eq!(stored[0].source_app_display_name.as_deref(), Some("画图"));
 }
 
 #[test]
@@ -180,6 +199,10 @@ fn image_abi_reports_tamper_as_core_error_without_returning_output() {
 
 unsafe fn ingest(handle: *mut CoreHandle, png: &[u8]) -> Uuid {
     let metadata = metadata_json();
+    unsafe { ingest_with_metadata(handle, png, &metadata) }
+}
+
+unsafe fn ingest_with_metadata(handle: *mut CoreHandle, png: &[u8], metadata: &[u8]) -> Uuid {
     let mut output = CoreBuffer::default();
     assert_eq!(
         unsafe {
