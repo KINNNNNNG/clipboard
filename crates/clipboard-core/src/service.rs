@@ -64,12 +64,12 @@ impl CoreService {
                 || (latest.content_fingerprint.is_none() && latest_text == &request.text))
         {
             latest.content_fingerprint = Some(fingerprint);
+            if request.source_app_display_name.is_some() {
+                latest.source_app_display_name = request.source_app_display_name;
+            }
             if request.captured_ms >= latest.last_used_ms {
                 latest.last_used_ms = request.captured_ms;
                 latest.source_app = request.source_app;
-                if request.source_app_display_name.is_some() {
-                    latest.source_app_display_name = request.source_app_display_name;
-                }
             }
             self.database.items().update_and_enqueue(latest)?;
             return Ok(CoreResponse::Mutation { item_id: latest.id });
@@ -107,12 +107,12 @@ impl CoreService {
         }) {
             latest.content = ClipboardContent::FileBundle(bundle);
             latest.content_fingerprint = Some(fingerprint);
+            if request.source_app_display_name.is_some() {
+                latest.source_app_display_name = request.source_app_display_name;
+            }
             if request.captured_ms >= latest.last_used_ms {
                 latest.last_used_ms = request.captured_ms;
                 latest.source_app = request.source_app;
-                if request.source_app_display_name.is_some() {
-                    latest.source_app_display_name = request.source_app_display_name;
-                }
             }
             self.database.items().update(latest)?;
             return Ok(CoreResponse::Mutation { item_id: latest.id });
@@ -168,12 +168,12 @@ impl CoreService {
             && matches!(&latest.content, ClipboardContent::Image { .. })
             && latest.content_fingerprint == Some(fingerprint)
         {
+            if request.source_app_display_name.is_some() {
+                latest.source_app_display_name = request.source_app_display_name;
+            }
             if request.captured_ms >= latest.last_used_ms {
                 latest.last_used_ms = request.captured_ms;
                 latest.source_app = request.source_app;
-                if request.source_app_display_name.is_some() {
-                    latest.source_app_display_name = request.source_app_display_name;
-                }
             }
             self.database.items().update_and_enqueue(latest)?;
             return Ok(CoreResponse::Mutation { item_id: latest.id });
@@ -504,7 +504,7 @@ fn search_item(item: &ClipboardItem) -> SearchItem {
                 let representative_name = representative_name.or_else(|| {
                     representative_kind
                         .as_ref()
-                        .map(|kind| fallback_representative_name(kind).into())
+                        .map(|kind| fallback_representative_name(kind))
                 });
                 (
                     "file_bundle",

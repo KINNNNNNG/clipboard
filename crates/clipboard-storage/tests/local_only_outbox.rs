@@ -11,6 +11,7 @@ fn local_file_item() -> ClipboardItem {
         "explorer.exe".into(),
         1,
     )
+    .with_source_app_display_name(Some("文件资源管理器".into()))
 }
 
 #[test]
@@ -26,6 +27,10 @@ fn local_file_bundle_cannot_enter_outbox() {
         Err(OutboxError::LocalOnly)
     ));
     assert_eq!(database.outbox().pending_count().unwrap(), 0);
+    assert_eq!(
+        item.source_app_display_name.as_deref(),
+        Some("文件资源管理器")
+    );
 }
 
 #[test]

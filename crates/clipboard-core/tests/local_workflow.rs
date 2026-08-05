@@ -36,6 +36,40 @@ fn ingest_persist_reopen_and_search_text() {
 }
 
 #[test]
+fn duplicate_capture_backfills_source_display_name_without_rewinding_usage_time() {
+    let directory = tempdir().unwrap();
+    let vault_id = Uuid::from_u128(104);
+    let key = [0x31; 32];
+    let mut core = CoreService::open(directory.path(), vault_id, &key).unwrap();
+
+    core.execute(CoreCommand::IngestText(IngestText {
+        text: "same clipboard text".into(),
+        source_app: "notepad.exe".into(),
+        source_app_display_name: Some("旧名称".into()),
+        captured_ms: 200,
+    }))
+    .unwrap();
+    core.execute(CoreCommand::IngestText(IngestText {
+        text: "same clipboard text".into(),
+        source_app: "notepad.exe".into(),
+        source_app_display_name: Some("记事本".into()),
+        captured_ms: 100,
+    }))
+    .unwrap();
+
+    let response = core
+        .execute(CoreCommand::Search(SearchRequest {
+            pattern: "same clipboard".into(),
+            mode: SearchMode::Substring,
+            filters: SearchFilters::default(),
+        }))
+        .unwrap();
+    let item = &response.search_items()[0];
+    assert_eq!(item.last_used_ms, 200);
+    assert_eq!(item.source_app_display_name.as_deref(), Some("记事本"));
+}
+
+#[test]
 fn invalid_regex_is_returned_without_losing_persisted_history() {
     let directory = tempdir().unwrap();
     let vault_id = Uuid::new_v4();

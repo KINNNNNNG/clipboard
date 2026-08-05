@@ -21,6 +21,14 @@ try {
         -c Debug `
         -p:Platform=x64 `
         -p:WindowsAppSDKSelfContained=true `
+        --no-restore `
+        --filter 'ClipboardCoreClientTests|SourceApplicationResolverTests|ClipboardCaptureCoordinatorTests|ClipboardDisplayFormatterTests|ClipboardPanelViewModelTests|XamlResourceConfigurationTests|PasteCoordinatorTests'
+    if ($LASTEXITCODE -ne 0) { throw 'Task 4 Windows targeted tests failed.' }
+
+    & dotnet test 'tests\Clipboard.Windows.Tests\Clipboard.Windows.Tests.csproj' `
+        -c Debug `
+        -p:Platform=x64 `
+        -p:WindowsAppSDKSelfContained=true `
         --no-restore
     if ($LASTEXITCODE -ne 0) { throw 'Windows client tests failed.' }
 
