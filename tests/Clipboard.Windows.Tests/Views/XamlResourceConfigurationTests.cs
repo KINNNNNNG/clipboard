@@ -68,6 +68,20 @@ public sealed class XamlResourceConfigurationTests
         Assert.Contains(
             document.Descendants().Where(element => element.Name.LocalName == "FontIcon"),
             element => element.Attribute("Glyph")?.Value == "{Binding FileIconGlyph}");
+        XElement fallback = document
+            .Descendants()
+            .Single(element => element.Attribute(x + "Name")?.Value == "FallbackFileIcon");
+        Assert.Equal("{Binding FileIconGlyph}", fallback.Attribute("Glyph")?.Value);
+        XElement systemIcon = document
+            .Descendants()
+            .Single(element => element.Attribute(x + "Name")?.Value == "SystemFileIcon");
+        Assert.Equal("32", systemIcon.Attribute("Width")?.Value);
+        Assert.Equal("32", systemIcon.Attribute("Height")?.Value);
+        Assert.Equal("Collapsed", systemIcon.Attribute("Visibility")?.Value);
+        Assert.Equal("FileIcon_Loaded", systemIcon.Attribute("Loaded")?.Value);
+        Assert.Equal(
+            "FileIcon_DataContextChanged",
+            systemIcon.Attribute("DataContextChanged")?.Value);
         Assert.Contains(
             document.Descendants().Where(element => element.Name.LocalName == "TextBlock"),
             element => element.Attribute("Text")?.Value == "{Binding FileNameSummary}");

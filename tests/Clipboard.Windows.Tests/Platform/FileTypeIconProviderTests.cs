@@ -59,9 +59,15 @@ public sealed class FileTypeIconProviderTests
         ShellIconPixels? result = new ShellFileTypeIconProvider(
             new ShellIconNativeApi()).Load("file:.txt");
 
-        Assert.True(result is null || (result.Width == 32
-            && result.Height == 32
-            && result.BgraPixels.Length == 32 * 32 * 4));
+        if (result is null)
+        {
+            return;
+        }
+
+        Assert.Equal(32, result.Width);
+        Assert.Equal(32, result.Height);
+        Assert.Equal(32 * 32 * 4, result.BgraPixels.Length);
+        Assert.True(HasVisiblePixel(result.BgraPixels));
     }
 
     private sealed class FakeShellIconNativeApi : IShellIconNativeApi
@@ -94,5 +100,17 @@ public sealed class FileTypeIconProviderTests
         }
 
         public void DestroyIcon(nint icon) => DestroyedIcons.Add(icon);
+    }
+
+    private static bool HasVisiblePixel(byte[] bgraPixels)
+    {
+        for (int index = 3; index < bgraPixels.Length; index += 4)
+        {
+            if (bgraPixels[index] != 0)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }

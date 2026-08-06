@@ -6,6 +6,7 @@ using Clipboard.Windows.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Storage.Streams;
 
@@ -19,6 +20,10 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
     private IClipboardWriter? _clipboardWriter;
     private UiOperationRunner? _operationRunner;
     private readonly BoundedLruCache<Guid, BitmapImage> _imageCache = new(64);
+    private readonly FileIconCache<SoftwareBitmapSource> _fileIconCache =
+        new(128, TimeProvider.System, TimeSpan.FromMinutes(5));
+    private readonly ShellFileTypeIconProvider _fileIconProvider =
+        new(new ShellIconNativeApi());
 
     public MainWindow()
     {
@@ -298,6 +303,59 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         DataContextChangedEventArgs args) =>
         LoadImagePreview(sender as Image);
 
+    private void FileIcon_Loaded(object sender, RoutedEventArgs args) =>
+        LoadFileIcon(sender as Image);
+
+    private void FileIcon_DataContextChanged(
+        FrameworkElement sender,
+        DataContextChangedEventArgs args) =>
+        LoadFileIcon(sender as Image);
+
+    private async void LoadFileIcon(Image? image)
+    {
+        if (image is null)
+        {
+            return;
+        }
+        if (image.DataContext is not ClipboardItemViewModel item || !item.IsFileBundle)
+        {
+            ApplyFileIcon(image, null);
+            return;
+        }
+
+        string cacheKey = item.FileIconCacheKey;
+        var tracker = image.Tag as FileIconLoadTracker ?? new FileIconLoadTracker();
+        if (!tracker.Begin(item.Id, cacheKey))
+        {
+            return;
+        }
+        image.Tag = tracker;
+        ApplyFileIcon(image, null);
+
+        SoftwareBitmapSource? source;
+        try
+        {
+            source = await _fileIconCache.GetAsync(
+                cacheKey,
+                async () =>
+                {
+                    ShellIconPixels? pixels = await Task.Run(() => _fileIconProvider.Load(cacheKey));
+                    return pixels is null
+                        ? null
+                        : await SoftwareBitmapSourceFactory.CreateAsync(pixels);
+                });
+        }
+        catch
+        {
+            source = null;
+        }
+
+        if (IsCurrentFileIcon(image, tracker, item.Id, cacheKey))
+        {
+            ApplyFileIcon(image, source);
+        }
+    }
+
     private async void LoadImagePreview(Image? image)
     {
         if (_contentReader is null
@@ -362,6 +420,28 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         && tracker.IsCurrent(requestedItemId)
         && image.DataContext is ClipboardItemViewModel current
         && current.Id == requestedItemId;
+
+    private static bool IsCurrentFileIcon(
+        Image image,
+        FileIconLoadTracker tracker,
+        Guid itemId,
+        string cacheKey) =>
+        ReferenceEquals(image.Tag, tracker)
+        && tracker.IsCurrent(itemId, cacheKey)
+        && image.DataContext is ClipboardItemViewModel current
+        && current.Id == itemId
+        && string.Equals(current.FileIconCacheKey, cacheKey, StringComparison.Ordinal);
+
+    private static void ApplyFileIcon(Image image, ImageSource? source)
+    {
+        image.Source = source;
+        image.Visibility = source is null ? Visibility.Collapsed : Visibility.Visible;
+        if (image.Parent is Panel panel
+            && panel.Children.OfType<FontIcon>().SingleOrDefault() is FontIcon fallback)
+        {
+            fallback.Visibility = source is null ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
 
     private Task<bool> RunUiOperationAsync(Func<Task> operation, string failureMessage) =>
         _operationRunner?.RunAsync(operation, failureMessage)

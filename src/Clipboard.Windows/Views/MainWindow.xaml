@@ -44,9 +44,22 @@
                                     Height="42"
                                     Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                                     CornerRadius="4">
-                                    <FontIcon
-                                        FontSize="22"
-                                        Glyph="{Binding FileIconGlyph}" />
+                                    <Grid
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                        <FontIcon
+                                            x:Name="FallbackFileIcon"
+                                            FontSize="22"
+                                            Glyph="{Binding FileIconGlyph}" />
+                                        <Image
+                                            x:Name="SystemFileIcon"
+                                            Width="32"
+                                            Height="32"
+                                            DataContextChanged="FileIcon_DataContextChanged"
+                                            Loaded="FileIcon_Loaded"
+                                            Stretch="Uniform"
+                                            Visibility="Collapsed" />
+                                    </Grid>
                                 </Border>
                                 <StackPanel
                                     Grid.Column="1"
