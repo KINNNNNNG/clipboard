@@ -64,6 +64,23 @@ internal sealed class ClipboardItemViewModel : ObservableObject
             ? "\uE8B7"
             : "\uE8A5";
 
+    public string FileIconCacheKey
+    {
+        get
+        {
+            if (string.Equals(Item.RepresentativeKind, "directory", StringComparison.OrdinalIgnoreCase))
+            {
+                return "directory";
+            }
+
+            string fileName = System.IO.Path.GetFileName(Item.RepresentativeName?.Trim() ?? string.Empty);
+            int extensionStart = fileName.LastIndexOf('.');
+            return extensionStart > 0 && extensionStart < fileName.Length - 1
+                ? $"file:{fileName[extensionStart..].ToLowerInvariant()}"
+                : "file";
+        }
+    }
+
     public string FileNameSummary => !string.IsNullOrWhiteSpace(Item.RepresentativeName)
         ? Item.RepresentativeName.Trim()
         : DisplayPreview;

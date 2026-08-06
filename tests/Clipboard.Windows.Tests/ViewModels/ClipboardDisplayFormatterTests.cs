@@ -7,6 +7,60 @@ namespace Clipboard.Windows.Tests.ViewModels;
 
 public sealed class ClipboardDisplayFormatterTests
 {
+    [Theory]
+    [InlineData("file", "report.DOCX", "file:.docx")]
+    [InlineData("file", "archive.tar.gz", "file:.gz")]
+    [InlineData("file", ".gitignore", "file")]
+    [InlineData("file", "README", "file")]
+    [InlineData("file", "report.", "file")]
+    [InlineData("file", "", "file")]
+    [InlineData("file", @"C:\\Temp\\manual.PDF", "file:.pdf")]
+    [InlineData("directory", "Photos", "directory")]
+    public void File_icon_cache_key_normalizes_only_the_file_type(
+        string representativeKind,
+        string representativeName,
+        string expected)
+    {
+        var item = new ClipboardItemViewModel(new ClipboardItemDto(
+            Guid.NewGuid(),
+            "file_bundle",
+            representativeName,
+            "explorer.exe",
+            100,
+            false,
+            null,
+            null,
+            null,
+            null,
+            1,
+            representativeName,
+            representativeKind));
+
+        Assert.Equal(expected, item.FileIconCacheKey);
+        Assert.Equal(representativeName, item.FileNameSummary);
+    }
+
+    [Fact]
+    public void File_icon_cache_key_uses_file_when_representative_name_is_null()
+    {
+        var item = new ClipboardItemViewModel(new ClipboardItemDto(
+            Guid.NewGuid(),
+            "file_bundle",
+            "file bundle",
+            "explorer.exe",
+            100,
+            false,
+            null,
+            null,
+            null,
+            null,
+            1,
+            null,
+            "file"));
+
+        Assert.Equal("file", item.FileIconCacheKey);
+    }
+
     [Fact]
     public void File_bundle_card_uses_fluent_summary_and_friendly_source_name()
     {
