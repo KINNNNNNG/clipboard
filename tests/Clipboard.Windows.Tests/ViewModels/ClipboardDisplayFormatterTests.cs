@@ -61,6 +61,32 @@ public sealed class ClipboardDisplayFormatterTests
         Assert.Equal("file", item.FileIconCacheKey);
     }
 
+    [Theory]
+    [InlineData("file", "  report.PDF  ", "file:.pdf")]
+    [InlineData("DIRECTORY", "  Photos  ", "directory")]
+    public void File_icon_cache_key_trims_names_and_matches_directory_case_insensitively(
+        string representativeKind,
+        string representativeName,
+        string expected)
+    {
+        var item = new ClipboardItemViewModel(new ClipboardItemDto(
+            Guid.NewGuid(),
+            "file_bundle",
+            representativeName,
+            "explorer.exe",
+            100,
+            false,
+            null,
+            null,
+            null,
+            null,
+            1,
+            representativeName,
+            representativeKind));
+
+        Assert.Equal(expected, item.FileIconCacheKey);
+    }
+
     [Fact]
     public void File_bundle_card_uses_fluent_summary_and_friendly_source_name()
     {
