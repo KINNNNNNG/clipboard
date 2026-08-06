@@ -53,7 +53,7 @@ public sealed class XamlResourceConfigurationTests
     }
 
     [Fact]
-    public void History_list_intercepts_direction_keys_before_its_default_navigation()
+    public void History_list_uses_root_keyboard_navigation_without_duplicate_preview_handler()
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");
         XDocument document = XDocument.Load(path);
@@ -64,7 +64,7 @@ public sealed class XamlResourceConfigurationTests
             .Single(element => element.Name.LocalName == "ListView");
 
         Assert.Equal("Root_KeyDown", root.Attribute("KeyDown")?.Value);
-        Assert.Equal("Root_KeyDown", list.Attribute("PreviewKeyDown")?.Value);
+        Assert.Null(list.Attribute("PreviewKeyDown"));
     }
 
     [Fact]

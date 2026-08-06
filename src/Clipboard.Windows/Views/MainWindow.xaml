@@ -250,7 +250,6 @@
                 ItemClick="HistoryList_ItemClick"
                 ItemTemplate="{StaticResource ClipboardItemTemplate}"
                 ItemsSource="{Binding Items}"
-                PreviewKeyDown="Root_KeyDown"
                 SelectionChanged="HistoryList_SelectionChanged"
                 Background="Transparent"
                 BorderThickness="0"
