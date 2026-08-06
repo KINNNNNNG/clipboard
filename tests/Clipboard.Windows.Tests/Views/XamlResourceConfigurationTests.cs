@@ -53,6 +53,21 @@ public sealed class XamlResourceConfigurationTests
     }
 
     [Fact]
+    public void History_list_intercepts_direction_keys_before_its_default_navigation()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");
+        XDocument document = XDocument.Load(path);
+
+        XElement root = Assert.IsType<XElement>(document.Root).Elements().Single();
+        XElement list = document
+            .Descendants()
+            .Single(element => element.Name.LocalName == "ListView");
+
+        Assert.Equal("Root_KeyDown", root.Attribute("KeyDown")?.Value);
+        Assert.Equal("Root_KeyDown", list.Attribute("PreviewKeyDown")?.Value);
+    }
+
+    [Fact]
     public void Main_window_has_file_filter_and_file_card_bindings()
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");
