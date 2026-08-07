@@ -78,7 +78,8 @@ impl OssStore {
         {
             let mut query = url.query_pairs_mut();
             query.append_pair("list-type", "2");
-            query.append_pair("prefix", &format!("{}/", self.prefix));
+            let prefix = (!self.prefix.is_empty()).then(|| format!("{}/", self.prefix));
+            query.append_pair("prefix", prefix.as_deref().unwrap_or_default());
             if let Some(max_keys) = max_keys {
                 query.append_pair("max-keys", &max_keys.to_string());
             }
@@ -103,20 +104,27 @@ impl OssStore {
             .format(&format_description!("[year][month][day]"))
             .map_err(|_| SyncError::RemoteUnavailable)?;
         let payload_hash = hex::encode(Sha256::digest(body));
-        let mut headers = additional_headers;
+        let additional_header_names = additional_headers
+            .keys()
+            .map(|name| name.to_ascii_lowercase())
+            .collect::<Vec<_>>();
+        let mut headers = additional_headers
+            .into_iter()
+            .map(|(name, value)| (name.to_ascii_lowercase(), normalize_header_value(&value)))
+            .collect::<BTreeMap<_, _>>();
         headers.insert("host".to_owned(), host_header(&url)?);
         headers.insert("x-oss-content-sha256".to_owned(), payload_hash.clone());
         headers.insert("x-oss-date".to_owned(), timestamp.clone());
         let canonical_headers = headers
             .iter()
-            .map(|(name, value)| format!("{name}:{}\n", value.trim()))
+            .map(|(name, value)| format!("{name}:{value}\n"))
             .collect::<String>();
         let signed_headers = headers.keys().cloned().collect::<Vec<_>>().join(";");
         let canonical_request = format!(
             "{}\n{}\n{}\n{}\n{}\n{}",
             method.as_str(),
-            url.path(),
-            url.query().unwrap_or_default(),
+            canonical_uri(&url),
+            canonical_query(&url),
             canonical_headers,
             signed_headers,
             payload_hash
@@ -132,8 +140,9 @@ impl OssStore {
         let signing_key = hmac_bytes(&service_key, OSS_TERMINATOR)?;
         let signature = hex::encode(hmac_bytes(&signing_key, &string_to_sign)?);
         let authorization = format!(
-            "OSS4-HMAC-SHA256 Credential={}/{scope},AdditionalHeaders=,Signature={signature}",
-            self.access_key_id
+            "OSS4-HMAC-SHA256 Credential={}/{scope},AdditionalHeaders={},Signature={signature}",
+            self.access_key_id,
+            additional_header_names.join(";")
         );
 
         let mut request = self.client.request(method, url).body(body.to_vec());
@@ -151,6 +160,39 @@ impl OssStore {
             Err(map_status(response.status()))
         }
     }
+}
+
+fn canonical_uri(url: &Url) -> String {
+    url.path().to_owned()
+}
+
+fn canonical_query(url: &Url) -> String {
+    let mut pairs = url
+        .query_pairs()
+        .map(|(name, value)| (percent_encode(&name), percent_encode(&value)))
+        .collect::<Vec<_>>();
+    pairs.sort_unstable();
+    pairs
+        .into_iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+fn normalize_header_value(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn percent_encode(value: &str) -> String {
+    value
+        .bytes()
+        .flat_map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                vec![byte as char]
+            }
+            _ => format!("%{byte:02X}").chars().collect(),
+        })
+        .collect()
 }
 
 impl RemoteStore for OssStore {

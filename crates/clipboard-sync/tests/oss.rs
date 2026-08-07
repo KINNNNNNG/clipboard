@@ -180,6 +180,16 @@ fn oss_publishes_by_copying_completed_object_then_deleting_pending() {
     );
     assert_eq!(requests[0].headers["if-none-match"], "*");
     assert_eq!(requests[0].body, b"ciphertext");
+    assert_eq!(
+        requests[0].headers["authorization"]
+            .split("AdditionalHeaders=")
+            .nth(1)
+            .unwrap()
+            .split(',')
+            .next()
+            .unwrap(),
+        "if-none-match"
+    );
     assert_eq!(requests[1].method, "PUT");
     assert_eq!(
         requests[1].path_and_query,
@@ -189,11 +199,48 @@ fn oss_publishes_by_copying_completed_object_then_deleting_pending() {
         requests[1].headers["x-oss-copy-source"],
         format!("/bucket/encrypted/segments/{pending}")
     );
+    assert_eq!(
+        requests[1].headers["authorization"]
+            .split("AdditionalHeaders=")
+            .nth(1)
+            .unwrap()
+            .split(',')
+            .next()
+            .unwrap(),
+        "if-none-match;x-oss-copy-source"
+    );
     assert_eq!(requests[2].method, "DELETE");
     assert_eq!(
         requests[2].path_and_query,
         format!("/bucket/encrypted/segments/{pending}")
     );
+}
+
+#[test]
+fn oss_does_not_invent_a_prefix_when_prefix_is_empty() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let worker = thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        read_request(
+            stream,
+            200,
+            "<ListBucketResult></ListBucketResult>",
+        )
+    });
+    let store = OssStore::new(OssConfig::new(
+        &endpoint,
+        "cn-hangzhou",
+        "bucket",
+        "",
+        "AKIDEXAMPLE",
+        "secret",
+    ))
+    .unwrap();
+    store.probe().unwrap();
+    let request = worker.join().unwrap();
+    assert!(request.path_and_query.contains("prefix=&"));
+    assert!(!request.path_and_query.contains("prefix=%2F"));
 }
 
 #[test]
