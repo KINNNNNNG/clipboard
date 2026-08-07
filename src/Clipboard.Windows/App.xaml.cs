@@ -95,7 +95,9 @@ public partial class App : Microsoft.UI.Xaml.Application
                 _shortcuts,
                 new StartupService(),
                 retentionPolicy: retentionPolicy,
-                favoriteFileCachePolicy: favoriteFileCachePolicy);
+                favoriteFileCachePolicy: favoriteFileCachePolicy,
+                syncCore: _core,
+                credentials: new SyncCredentialStore());
             await _settingsViewModel.LoadAsync();
             ApplyTheme(_settingsViewModel.Theme);
             _shortcuts.Configure(

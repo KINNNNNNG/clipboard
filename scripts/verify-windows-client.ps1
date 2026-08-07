@@ -28,8 +28,8 @@ try {
         -p:Platform=x64 `
         -p:WindowsAppSDKSelfContained=true `
         --no-restore `
-        --filter 'ClipboardCoreClientTests|SourceApplicationResolverTests|ClipboardCaptureCoordinatorTests|ClipboardDisplayFormatterTests|ClipboardPanelViewModelTests|XamlResourceConfigurationTests|PasteCoordinatorTests'
-    if ($LASTEXITCODE -ne 0) { throw 'Task 4 Windows targeted tests failed.' }
+        --filter 'ClipboardCoreClientTests|SettingsViewModelTests|SyncCredentialStoreTests|SourceApplicationResolverTests|ClipboardCaptureCoordinatorTests|ClipboardDisplayFormatterTests|ClipboardPanelViewModelTests|XamlResourceConfigurationTests|PasteCoordinatorTests'
+    if ($LASTEXITCODE -ne 0) { throw 'Windows targeted tests failed.' }
 
     & dotnet test 'tests\Clipboard.Windows.Tests\Clipboard.Windows.Tests.csproj' `
         -c Debug `

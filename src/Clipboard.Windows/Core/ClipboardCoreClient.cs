@@ -144,6 +144,16 @@ internal sealed class ClipboardCoreClient : IDisposable,
             request,
             cancellationToken);
 
+    public Task<SyncResponseDto> SyncRemoteAsync(
+        SyncRemoteRequestDto request,
+        CancellationToken cancellationToken = default) =>
+        ExecuteCommandAsync<SyncResponseDto, SyncRemoteRequestDto>("sync_remote", request, cancellationToken);
+
+    public Task<RemoteProbeResponseDto> ProbeRemoteAsync(
+        ProbeRemoteRequestDto request,
+        CancellationToken cancellationToken = default) =>
+        ExecuteCommandAsync<RemoteProbeResponseDto, ProbeRemoteRequestDto>("probe_remote", request, cancellationToken);
+
     public Task<MutationResponseDto> IngestImageAsync(
         IngestImageRequestDto request,
         ReadOnlyMemory<byte> png,

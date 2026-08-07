@@ -154,6 +154,26 @@ internal sealed record MutationResponseDto(Guid ItemId);
 
 internal sealed record RetentionResponseDto(int DeletedLocal, int TombstonesCreated);
 
+internal sealed record SyncResponseDto(int Pulled, int Merged, int Uploaded, int RejectedLocalOnly);
+
+internal sealed record RemoteProbeResponseDto(bool Available);
+
+internal sealed record RemoteConfigDto(
+    string Provider,
+    int Version,
+    string Endpoint,
+    string? Username = null,
+    string? Password = null,
+    string? Region = null,
+    string? Bucket = null,
+    string? Prefix = null,
+    string? AccessKeyId = null,
+    string? AccessKeySecret = null);
+
+internal sealed record SyncRemoteRequestDto(Guid DeviceId, RemoteConfigDto Remote);
+
+internal sealed record ProbeRemoteRequestDto(RemoteConfigDto Remote);
+
 internal sealed record CommandEnvelope<T>(int ApiVersion, string Type, T Payload);
 
 internal sealed record CommandWithoutPayload(int ApiVersion, string Type);

@@ -12,6 +12,8 @@ internal sealed class SettingsViewModel : ObservableObject
     private readonly TimeProvider _timeProvider;
     private readonly IRetentionPolicyProvider? _retentionPolicy;
     private readonly IFavoriteFileCachePolicyProvider? _favoriteFileCachePolicy;
+    private readonly ClipboardCoreClient? _syncCore;
+    private readonly ISyncCredentialStore? _credentials;
     private ClientSettings _persisted = ClientSettings.Default;
     private bool _maxRegularItemsEnabled = true;
     private int _maxRegularItems = 1000;
@@ -26,6 +28,16 @@ internal sealed class SettingsViewModel : ObservableObject
     private bool _startWithWindows;
     private string _theme = "system";
     private string? _errorMessage;
+    private bool _syncEnabled;
+    private string _syncProvider = "webdav";
+    private string _syncEndpoint = "https://";
+    private string _syncRootPath = "/";
+    private string _syncBucket = string.Empty;
+    private string _syncRegion = "cn-hangzhou";
+    private string _syncPrefix = "clipboard";
+    private string _syncAccount = string.Empty;
+    private string _syncSecret = string.Empty;
+    private string _syncStatus = string.Empty;
 
     public SettingsViewModel(
         IClientSettingsStore store,
@@ -34,7 +46,9 @@ internal sealed class SettingsViewModel : ObservableObject
         IStartupSettingsService startup,
         TimeProvider? timeProvider = null,
         IRetentionPolicyProvider? retentionPolicy = null,
-        IFavoriteFileCachePolicyProvider? favoriteFileCachePolicy = null)
+        IFavoriteFileCachePolicyProvider? favoriteFileCachePolicy = null,
+        ClipboardCoreClient? syncCore = null,
+        ISyncCredentialStore? credentials = null)
     {
         _store = store;
         _retention = retention;
@@ -43,6 +57,8 @@ internal sealed class SettingsViewModel : ObservableObject
         _timeProvider = timeProvider ?? TimeProvider.System;
         _retentionPolicy = retentionPolicy;
         _favoriteFileCachePolicy = favoriteFileCachePolicy;
+        _syncCore = syncCore;
+        _credentials = credentials;
     }
 
     public bool MaxRegularItemsEnabled
@@ -123,6 +139,17 @@ internal sealed class SettingsViewModel : ObservableObject
         private set => SetProperty(ref _errorMessage, value);
     }
 
+    public bool SyncEnabled { get => _syncEnabled; set => SetProperty(ref _syncEnabled, value); }
+    public string SyncProvider { get => _syncProvider; set => SetProperty(ref _syncProvider, value); }
+    public string SyncEndpoint { get => _syncEndpoint; set => SetProperty(ref _syncEndpoint, value); }
+    public string SyncRootPath { get => _syncRootPath; set => SetProperty(ref _syncRootPath, value); }
+    public string SyncBucket { get => _syncBucket; set => SetProperty(ref _syncBucket, value); }
+    public string SyncRegion { get => _syncRegion; set => SetProperty(ref _syncRegion, value); }
+    public string SyncPrefix { get => _syncPrefix; set => SetProperty(ref _syncPrefix, value); }
+    public string SyncAccount { get => _syncAccount; set => SetProperty(ref _syncAccount, value); }
+    public string SyncSecret { get => _syncSecret; set => SetProperty(ref _syncSecret, value); }
+    public string SyncStatus { get => _syncStatus; private set => SetProperty(ref _syncStatus, value); }
+
     public async Task LoadAsync(CancellationToken cancellationToken = default)
     {
         ClientSettings settings = await _store.LoadAsync(cancellationToken);
@@ -133,14 +160,19 @@ internal sealed class SettingsViewModel : ObservableObject
         ErrorMessage = null;
     }
 
-    public async Task<bool> SaveAsync(CancellationToken cancellationToken = default)
+    public Task<bool> SaveAsync(CancellationToken cancellationToken = default) =>
+        SaveSettingsAsync(_persisted.Sync, cancellationToken);
+
+    private async Task<bool> SaveSettingsAsync(
+        SyncSettings? sync,
+        CancellationToken cancellationToken)
     {
         ErrorMessage = null;
         ClientSettings candidate;
         HotkeyChord chord;
         try
         {
-            candidate = BuildSettings();
+            candidate = BuildSettings(sync);
             candidate.Validate();
             chord = HotkeyChord.Parse(candidate.FallbackHotkey);
         }
@@ -204,7 +236,7 @@ internal sealed class SettingsViewModel : ObservableObject
         }
     }
 
-    private ClientSettings BuildSettings()
+    private ClientSettings BuildSettings(SyncSettings? sync)
     {
         ulong? maxImageBytes = null;
         if (MaxImageGiBEnabled)
@@ -236,7 +268,8 @@ internal sealed class SettingsViewModel : ObservableObject
             FallbackHotkey,
             StartWithWindows,
             Theme,
-            maxFavoriteFileCacheBytes);
+            maxFavoriteFileCacheBytes,
+            sync);
     }
 
     private void Apply(ClientSettings settings)
@@ -257,5 +290,183 @@ internal sealed class SettingsViewModel : ObservableObject
         FallbackHotkey = settings.FallbackHotkey;
         StartWithWindows = settings.StartWithWindows;
         Theme = settings.Theme;
+        SyncSettings? sync = settings.Sync;
+        SyncEnabled = sync?.Enabled == true;
+        SyncProvider = sync?.Provider ?? "webdav";
+        SyncEndpoint = sync?.Endpoint ?? "https://";
+        SyncRootPath = sync?.RootPath ?? "/";
+        SyncBucket = sync?.Bucket ?? string.Empty;
+        SyncRegion = sync?.Region ?? "cn-hangzhou";
+        SyncPrefix = sync?.Prefix ?? "clipboard";
+        SyncAccount = string.Empty;
+        SyncSecret = string.Empty;
+        SyncStatus = string.Empty;
+    }
+
+    public async Task<bool> SaveSyncAsync(CancellationToken cancellationToken = default)
+    {
+        SyncSettings? sync = BuildSyncSettings();
+        if (sync is null)
+        {
+            bool disabledSyncSaved = await SaveSettingsAsync(null, cancellationToken);
+            if (disabledSyncSaved)
+            {
+                SyncStatus = "同步设置已保存。";
+            }
+            return disabledSyncSaved;
+        }
+        try
+        {
+            ClientSettings candidate = BuildSettings(sync);
+            candidate.Validate();
+            _ = HotkeyChord.Parse(candidate.FallbackHotkey);
+        }
+        catch (Exception error) when (error is ArgumentException or FormatException or OverflowException)
+        {
+            ErrorMessage = "设置值无效。";
+            return false;
+        }
+        if (_credentials is null)
+        {
+            ErrorMessage = "请输入同步账号和凭据。";
+            return false;
+        }
+
+        SyncCredentials? previousCredentials;
+        SyncCredentials credentials;
+        bool updateCredentials;
+        try
+        {
+            previousCredentials = await _credentials.LoadAsync(sync.CredentialProfileId!, cancellationToken);
+            bool accountProvided = !string.IsNullOrWhiteSpace(SyncAccount);
+            bool secretProvided = !string.IsNullOrWhiteSpace(SyncSecret);
+            if (accountProvided != secretProvided)
+            {
+                ErrorMessage = "请输入完整的同步账号和凭据。";
+                return false;
+            }
+            credentials = accountProvided
+                ? new SyncCredentials(SyncAccount, SyncSecret)
+                : previousCredentials ?? throw new InvalidOperationException();
+            updateCredentials = accountProvided;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            ErrorMessage = "请输入同步账号和凭据。";
+            return false;
+        }
+
+        if (updateCredentials)
+        {
+            try
+            {
+                await _credentials.SaveAsync(sync.CredentialProfileId!, credentials, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                ErrorMessage = "无法保存同步凭据。";
+                return false;
+            }
+        }
+
+        bool saved = await SaveSettingsAsync(sync, cancellationToken);
+        if (!saved && updateCredentials)
+        {
+            try
+            {
+                if (previousCredentials is null)
+                {
+                    await _credentials.DeleteAsync(sync.CredentialProfileId!, CancellationToken.None);
+                }
+                else
+                {
+                    await _credentials.SaveAsync(
+                        sync.CredentialProfileId!,
+                        previousCredentials,
+                        CancellationToken.None);
+                }
+            }
+            catch
+            {
+            }
+        }
+        if (saved)
+        {
+            SyncStatus = "同步设置已保存。";
+        }
+        return saved;
+    }
+
+    public async Task ProbeSyncAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            RemoteConfigDto remote = await BuildRemoteAsync(cancellationToken);
+            await (_syncCore ?? throw new InvalidOperationException()).ProbeRemoteAsync(new ProbeRemoteRequestDto(remote), cancellationToken);
+            SyncStatus = "连接成功。";
+        }
+        catch { SyncStatus = "连接失败。"; }
+    }
+
+    public async Task RunSyncAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            RemoteConfigDto remote = await BuildRemoteAsync(cancellationToken);
+            SyncSettings sync = BuildSyncSettings() ?? throw new InvalidOperationException();
+            SyncResponseDto response = await (_syncCore ?? throw new InvalidOperationException()).SyncRemoteAsync(
+                new SyncRemoteRequestDto(Guid.Parse(sync.DeviceId), remote), cancellationToken);
+            SyncStatus = $"已同步：拉取 {response.Pulled}，合并 {response.Merged}，上传 {response.Uploaded}。";
+        }
+        catch { SyncStatus = "同步失败。"; }
+    }
+
+    private SyncSettings? BuildSyncSettings() => !SyncEnabled ? null : new(
+        true, SyncProvider, SyncEndpoint, SyncRootPath, SyncBucket, SyncRegion, SyncPrefix,
+        _persisted.Sync?.DeviceId ?? Guid.NewGuid().ToString("D"),
+        _persisted.Sync?.CredentialProfileId ?? Guid.NewGuid().ToString("N"));
+
+    private async Task<RemoteConfigDto> BuildRemoteAsync(CancellationToken cancellationToken)
+    {
+        SyncSettings sync = BuildSyncSettings() ?? throw new InvalidOperationException();
+        sync.Validate();
+        SyncCredentials? saved = _credentials is null ? null : await _credentials.LoadAsync(sync.CredentialProfileId!, cancellationToken);
+        string account = string.IsNullOrWhiteSpace(SyncAccount) ? saved?.Account ?? string.Empty : SyncAccount;
+        string secret = string.IsNullOrWhiteSpace(SyncSecret) ? saved?.Secret ?? string.Empty : SyncSecret;
+        if (sync.Provider == "oss")
+        {
+            return new RemoteConfigDto(
+                "oss",
+                1,
+                sync.Endpoint,
+                Region: sync.Region,
+                Bucket: sync.Bucket,
+                Prefix: sync.Prefix,
+                AccessKeyId: account,
+                AccessKeySecret: secret);
+        }
+
+        Uri endpoint = new(sync.Endpoint.TrimEnd('/') + "/");
+        Uri remoteEndpoint = new(endpoint, sync.RootPath!.TrimStart('/'));
+        if (remoteEndpoint.Scheme != endpoint.Scheme ||
+            remoteEndpoint.Host != endpoint.Host ||
+            remoteEndpoint.Port != endpoint.Port)
+        {
+            throw new InvalidOperationException();
+        }
+        return new RemoteConfigDto(
+            "webdav",
+            1,
+            remoteEndpoint.ToString(),
+            Username: account,
+            Password: secret);
     }
 }

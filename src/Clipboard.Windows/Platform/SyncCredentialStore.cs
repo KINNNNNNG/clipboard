@@ -11,6 +11,8 @@ internal interface ISyncCredentialStore
     Task SaveAsync(string profileId, SyncCredentials credentials, CancellationToken cancellationToken = default);
 
     Task<SyncCredentials?> LoadAsync(string profileId, CancellationToken cancellationToken = default);
+
+    Task DeleteAsync(string profileId, CancellationToken cancellationToken = default);
 }
 
 internal sealed class SyncCredentialStore : ISyncCredentialStore
@@ -76,6 +78,16 @@ internal sealed class SyncCredentialStore : ISyncCredentialStore
         {
             CryptographicOperations.ZeroMemory(protectedBytes);
             CryptographicOperations.ZeroMemory(plaintext);
+        }
+    }
+
+    public async Task DeleteAsync(string profileId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
+        SyncCredentials? stored = await LoadAsync(profileId, cancellationToken);
+        if (stored is not null && File.Exists(_path))
+        {
+            File.Delete(_path);
         }
     }
 

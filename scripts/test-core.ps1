@@ -16,11 +16,11 @@ try {
     & cargo test --workspace --all-targets
     if ($LASTEXITCODE -ne 0) { throw 'cargo test failed.' }
 
-    & cargo test -p clipboard-sync --test recovery_code --test diagnostics --test protocol --test directory_transport
-    if ($LASTEXITCODE -ne 0) { throw 'Clipboard sync protocol verification failed.' }
+    & cargo test -p clipboard-sync --test recovery_code --test diagnostics --test protocol --test directory_transport --test remote --test webdav --test oss
+    if ($LASTEXITCODE -ne 0) { throw 'Clipboard sync protocol and remote verification failed.' }
 
-    & cargo test -p clipboard-core --test sync_foundation
-    if ($LASTEXITCODE -ne 0) { throw 'Clipboard core sync verification failed.' }
+    & cargo test -p clipboard-core --test sync_foundation --test remote_sync
+    if ($LASTEXITCODE -ne 0) { throw 'Clipboard core remote sync verification failed.' }
 
     & cargo build -p clipboard-ffi
     if ($LASTEXITCODE -ne 0) { throw 'clipboard-ffi build failed.' }

@@ -59,6 +59,22 @@ public sealed class XamlResourceConfigurationTests
     }
 
     [Fact]
+    public void Settings_window_switches_provider_specific_sync_fields()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "SettingsWindow.xaml");
+        XDocument document = XDocument.Load(path);
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+
+        XElement provider = document.Descendants()
+            .Single(element => element.Attribute(x + "Name")?.Value == "SyncProviderComboBox");
+        Assert.Equal("SyncProviderComboBox_SelectionChanged", provider.Attribute("SelectionChanged")?.Value);
+        Assert.NotNull(document.Descendants()
+            .SingleOrDefault(element => element.Attribute(x + "Name")?.Value == "WebDavFields"));
+        Assert.NotNull(document.Descendants()
+            .SingleOrDefault(element => element.Attribute(x + "Name")?.Value == "OssFields"));
+    }
+
+    [Fact]
     public void History_list_binds_selection_chrome_to_the_container_selection_property()
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");

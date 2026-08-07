@@ -110,7 +110,13 @@ internal sealed record SyncSettings(
         {
             throw new ArgumentOutOfRangeException(nameof(SyncSettings));
         }
-        if (Provider == "webdav" && string.IsNullOrWhiteSpace(RootPath))
+        if (Provider == "webdav" &&
+            (string.IsNullOrWhiteSpace(RootPath) ||
+             !Uri.TryCreate(RootPath, UriKind.Relative, out _) ||
+             RootPath.StartsWith("//", StringComparison.Ordinal) ||
+             RootPath.Contains('\\') ||
+             RootPath.Contains('?') ||
+             RootPath.Contains('#')))
         {
             throw new ArgumentOutOfRangeException(nameof(RootPath));
         }

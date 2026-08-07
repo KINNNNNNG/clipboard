@@ -1,6 +1,8 @@
 using Clipboard.Windows.Core;
 using Clipboard.Windows.Platform;
 using Clipboard.Windows.ViewModels;
+using System.Runtime.InteropServices;
+using System.Text.Json;
 using Xunit;
 
 namespace Clipboard.Windows.Tests.ViewModels;
@@ -191,6 +193,270 @@ public sealed class SettingsViewModelTests
         Assert.Equal(0, store.SaveCalls);
     }
 
+    [Fact]
+    public async Task Save_sync_rejects_missing_credentials_without_persisting_an_enabled_configuration()
+    {
+        var store = new MemorySettingsStore(ClientSettings.Default);
+        var credentials = new MemoryCredentialStore();
+        var viewModel = CreateViewModel(store, credentials);
+        await viewModel.LoadAsync();
+        viewModel.SyncEnabled = true;
+        viewModel.SyncProvider = "webdav";
+        viewModel.SyncEndpoint = "https://sync.example.test";
+        viewModel.SyncRootPath = "/clipboard";
+
+        bool saved = await viewModel.SaveSyncAsync();
+
+        Assert.False(saved);
+        Assert.False(store.Current.Sync?.Enabled ?? false);
+        Assert.Equal(0, store.SaveCalls);
+        Assert.Equal(0, credentials.SaveCalls);
+    }
+
+    [Fact]
+    public async Task Save_sync_writes_credentials_outside_settings_json()
+    {
+        using var directory = new TemporaryDirectory();
+        string path = Path.Combine(directory.Path, "settings.json");
+        var store = new ClientSettingsStore(path);
+        var credentials = new MemoryCredentialStore();
+        var viewModel = CreateViewModel(store, credentials);
+        await viewModel.LoadAsync();
+        viewModel.SyncEnabled = true;
+        viewModel.SyncProvider = "webdav";
+        viewModel.SyncEndpoint = "https://sync.example.test";
+        viewModel.SyncRootPath = "/clipboard";
+        viewModel.SyncAccount = "account-value";
+        viewModel.SyncSecret = "secret-value";
+
+        bool saved = await viewModel.SaveSyncAsync();
+        string settingsJson = await File.ReadAllTextAsync(path);
+
+        Assert.True(saved);
+        Assert.DoesNotContain("account-value", settingsJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-value", settingsJson, StringComparison.Ordinal);
+        Assert.Equal(1, credentials.SaveCalls);
+    }
+
+    [Fact]
+    public async Task Probe_and_run_sync_keep_status_text_redacted()
+    {
+        var store = new MemorySettingsStore(ClientSettings.Default with
+        {
+            Sync = new SyncSettings(
+                true,
+                "webdav",
+                "https://sync.example.test",
+                "/clipboard",
+                null,
+                null,
+                null,
+                Guid.NewGuid().ToString("D"),
+                "profile"),
+        });
+        var credentials = new MemoryCredentialStore
+        {
+            Current = new SyncCredentials("account-value", "secret-value"),
+        };
+        var viewModel = CreateViewModel(store, credentials);
+        await viewModel.LoadAsync();
+
+        await viewModel.ProbeSyncAsync();
+        AssertRedacted(viewModel.SyncStatus);
+        await viewModel.RunSyncAsync();
+        AssertRedacted(viewModel.SyncStatus);
+    }
+
+    [Fact]
+    public async Task General_save_preserves_existing_sync_profile_without_touching_credentials()
+    {
+        var sync = new SyncSettings(
+            true,
+            "webdav",
+            "https://sync.example.test",
+            "/clipboard",
+            null,
+            null,
+            null,
+            Guid.NewGuid().ToString("D"),
+            "profile");
+        var store = new MemorySettingsStore(ClientSettings.Default with { Sync = sync });
+        var credentials = new MemoryCredentialStore();
+        var viewModel = CreateViewModel(store, credentials);
+        await viewModel.LoadAsync();
+        viewModel.Theme = "dark";
+
+        bool saved = await viewModel.SaveAsync();
+
+        Assert.True(saved);
+        Assert.Equal(sync.CredentialProfileId, store.Current.Sync?.CredentialProfileId);
+        Assert.Equal(0, credentials.SaveCalls);
+    }
+
+    [Fact]
+    public async Task Loading_sync_settings_keeps_credential_fields_empty()
+    {
+        var store = new MemorySettingsStore(ClientSettings.Default with
+        {
+            Sync = new SyncSettings(
+                true,
+                "oss",
+                "https://oss-cn-hangzhou.aliyuncs.com",
+                null,
+                "bucket-value",
+                "cn-hangzhou",
+                "clipboard",
+                Guid.NewGuid().ToString("D"),
+                "profile"),
+        });
+        var viewModel = CreateViewModel(store, new MemoryCredentialStore
+        {
+            Current = new SyncCredentials("account-value", "secret-value"),
+        });
+
+        await viewModel.LoadAsync();
+
+        Assert.Equal(string.Empty, viewModel.SyncAccount);
+        Assert.Equal(string.Empty, viewModel.SyncSecret);
+    }
+
+    [Fact]
+    public async Task Save_sync_rejects_an_absolute_webdav_root_path()
+    {
+        var store = new MemorySettingsStore(ClientSettings.Default);
+        var credentials = new MemoryCredentialStore();
+        var viewModel = CreateViewModel(store, credentials);
+        await viewModel.LoadAsync();
+        viewModel.SyncEnabled = true;
+        viewModel.SyncProvider = "webdav";
+        viewModel.SyncEndpoint = "https://sync.example.test/root";
+        viewModel.SyncRootPath = "https://untrusted.example/";
+        viewModel.SyncAccount = "account-value";
+        viewModel.SyncSecret = "secret-value";
+
+        bool saved = await viewModel.SaveSyncAsync();
+
+        Assert.False(saved);
+        Assert.Null(store.Current.Sync);
+        Assert.Equal(0, credentials.SaveCalls);
+    }
+
+    [Fact]
+    public async Task Save_sync_reuses_existing_credentials_when_both_input_fields_are_empty()
+    {
+        SyncSettings sync = WebDavSettings("https://sync.example.test/old");
+        var store = new MemorySettingsStore(ClientSettings.Default with { Sync = sync });
+        var credentials = new MemoryCredentialStore
+        {
+            Current = new SyncCredentials("existing-account", "existing-secret"),
+        };
+        var viewModel = CreateViewModel(store, credentials);
+        await viewModel.LoadAsync();
+        viewModel.SyncEndpoint = "https://sync.example.test/new";
+
+        bool saved = await viewModel.SaveSyncAsync();
+
+        Assert.True(saved);
+        Assert.Equal("https://sync.example.test/new", store.Current.Sync?.Endpoint);
+        Assert.Equal(0, credentials.SaveCalls);
+    }
+
+    [Fact]
+    public async Task Probe_sync_uses_the_current_unsaved_configuration()
+    {
+        SyncSettings sync = WebDavSettings("https://sync.example.test/old");
+        var store = new MemorySettingsStore(ClientSettings.Default with { Sync = sync });
+        var credentials = new MemoryCredentialStore
+        {
+            Current = new SyncCredentials("existing-account", "existing-secret"),
+        };
+        var native = new RecordingNative("{\"available\":true}"u8.ToArray());
+        using var core = ClipboardCoreClient.Open("C:\\clipboard-test", Guid.NewGuid(), new byte[32], native);
+        var viewModel = CreateViewModel(store, credentials, core);
+        await viewModel.LoadAsync();
+        viewModel.SyncEndpoint = "https://sync.example.test/new";
+        viewModel.SyncRootPath = "/changed";
+
+        await viewModel.ProbeSyncAsync();
+
+        using JsonDocument request = JsonDocument.Parse(native.Request!);
+        JsonElement remote = request.RootElement.GetProperty("payload").GetProperty("remote");
+        Assert.Equal("https://sync.example.test/new/changed", remote.GetProperty("endpoint").GetString());
+    }
+
+    [Fact]
+    public async Task Run_sync_uses_a_device_id_from_the_current_first_time_configuration()
+    {
+        var store = new MemorySettingsStore(ClientSettings.Default);
+        var credentials = new MemoryCredentialStore();
+        var native = new RecordingNative("{\"pulled\":0,\"merged\":0,\"uploaded\":0,\"rejected_local_only\":0}"u8.ToArray());
+        using var core = ClipboardCoreClient.Open("C:\\clipboard-test", Guid.NewGuid(), new byte[32], native);
+        var viewModel = CreateViewModel(store, credentials, core);
+        await viewModel.LoadAsync();
+        viewModel.SyncEnabled = true;
+        viewModel.SyncProvider = "webdav";
+        viewModel.SyncEndpoint = "https://sync.example.test/new";
+        viewModel.SyncRootPath = "/clipboard";
+        viewModel.SyncAccount = "account-value";
+        viewModel.SyncSecret = "secret-value";
+
+        await viewModel.RunSyncAsync();
+
+        using JsonDocument request = JsonDocument.Parse(native.Request!);
+        Assert.Equal("sync_remote", request.RootElement.GetProperty("type").GetString());
+        Assert.True(Guid.TryParse(request.RootElement.GetProperty("payload").GetProperty("device_id").GetString(), out _));
+    }
+
+    [Fact]
+    public async Task Save_sync_restores_existing_credentials_when_settings_persistence_fails()
+    {
+        SyncSettings sync = WebDavSettings("https://sync.example.test/old");
+        var store = new FailingSettingsStore(ClientSettings.Default with { Sync = sync });
+        var credentials = new MemoryCredentialStore
+        {
+            Current = new SyncCredentials("old-account", "old-secret"),
+        };
+        var viewModel = CreateViewModel(store, credentials);
+        await viewModel.LoadAsync();
+        viewModel.SyncAccount = "new-account";
+        viewModel.SyncSecret = "new-secret";
+
+        bool saved = await viewModel.SaveSyncAsync();
+
+        Assert.False(saved);
+        Assert.Equal(new SyncCredentials("old-account", "old-secret"), credentials.Current);
+    }
+
+    private static SyncSettings WebDavSettings(string endpoint) => new(
+        true,
+        "webdav",
+        endpoint,
+        "/clipboard",
+        null,
+        null,
+        null,
+        Guid.NewGuid().ToString("D"),
+        "profile");
+
+    private static SettingsViewModel CreateViewModel(
+        IClientSettingsStore store,
+        ISyncCredentialStore credentials,
+        ClipboardCoreClient? syncCore = null) =>
+        new(
+            store,
+            new FakeRetentionService(),
+            new FakeShortcutConfigurator(),
+            new FakeStartupSettingsService(),
+            syncCore: syncCore,
+            credentials: credentials);
+
+    private static void AssertRedacted(string status)
+    {
+        Assert.DoesNotContain("sync.example.test", status, StringComparison.Ordinal);
+        Assert.DoesNotContain("account-value", status, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-value", status, StringComparison.Ordinal);
+    }
+
     private sealed class MemorySettingsStore(ClientSettings initial) : IClientSettingsStore
     {
         public ClientSettings Current { get; private set; } = initial;
@@ -241,6 +507,80 @@ public sealed class SettingsViewModelTests
 
         public Task SetEnabledAsync(bool enabled, CancellationToken cancellationToken = default) =>
             Failure is null ? Task.CompletedTask : Task.FromException(Failure);
+    }
+
+    private sealed class FailingSettingsStore(ClientSettings initial) : IClientSettingsStore
+    {
+        public Task<ClientSettings> LoadAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(initial);
+
+        public Task SaveAsync(ClientSettings settings, CancellationToken cancellationToken = default) =>
+            Task.FromException(new IOException("simulated settings failure"));
+    }
+
+    private sealed class MemoryCredentialStore : ISyncCredentialStore
+    {
+        public int SaveCalls { get; private set; }
+        public SyncCredentials? Current { get; set; }
+
+        public Task SaveAsync(
+            string profileId,
+            SyncCredentials credentials,
+            CancellationToken cancellationToken = default)
+        {
+            SaveCalls++;
+            Current = credentials;
+            return Task.CompletedTask;
+        }
+
+        public Task<SyncCredentials?> LoadAsync(
+            string profileId,
+            CancellationToken cancellationToken = default) => Task.FromResult(Current);
+
+        public Task DeleteAsync(string profileId, CancellationToken cancellationToken = default)
+        {
+            Current = null;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingNative(byte[] response) : IClipboardCoreNative
+    {
+        public byte[]? Request { get; private set; }
+
+        public CoreStatus OpenV2(
+            ReadOnlySpan<byte> dataDirectory,
+            ReadOnlySpan<byte> vaultKey,
+            ReadOnlySpan<byte> vaultId,
+            out nint handle)
+        {
+            handle = 1;
+            return CoreStatus.Ok;
+        }
+
+        public CoreStatus Execute(nint handle, ReadOnlySpan<byte> request, out CoreBuffer responseBuffer)
+        {
+            Request = request.ToArray();
+            nint pointer = Marshal.AllocHGlobal(response.Length);
+            Marshal.Copy(response, 0, pointer, response.Length);
+            responseBuffer = new CoreBuffer(pointer, (nuint)response.Length, (nuint)response.Length);
+            return CoreStatus.Ok;
+        }
+
+        public CoreStatus IngestImage(
+            nint handle,
+            ReadOnlySpan<byte> metadata,
+            ReadOnlySpan<byte> png,
+            out CoreBuffer responseBuffer) => throw new NotSupportedException();
+
+        public CoreStatus ReadImage(nint handle, ReadOnlySpan<byte> itemId, out CoreBuffer responseBuffer) =>
+            throw new NotSupportedException();
+
+        public void FreeBuffer(CoreBuffer buffer) => Marshal.FreeHGlobal(buffer.Pointer);
+
+        public void Close(nint handle)
+        {
+        }
     }
 
     private sealed class ManualTimeProvider : TimeProvider

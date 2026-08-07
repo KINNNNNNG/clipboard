@@ -67,7 +67,7 @@ impl OssStore {
         let path = if self.path_style {
             format!("/{}/{}", self.bucket, key)
         } else {
-            format!("/{}", key)
+            format!("/{key}")
         };
         url.set_path(&path);
         Ok(url)
