@@ -9,7 +9,8 @@ internal sealed record ClientSettings(
     bool StartWithWindows,
     string Theme,
     ulong? MaxFavoriteFileCacheBytes = 5UL * 1024 * 1024 * 1024,
-    SyncSettings? Sync = null)
+    SyncSettings? Sync = null,
+    LoggingSettings? Logging = null)
 {
     public const ulong BytesPerGiB = 1024UL * 1024 * 1024;
     public const ulong DefaultMaxFavoriteFileCacheBytes = 5UL * BytesPerGiB;
@@ -22,7 +23,9 @@ internal sealed record ClientSettings(
         "Alt+V",
         false,
         "system",
-        DefaultMaxFavoriteFileCacheBytes);
+        DefaultMaxFavoriteFileCacheBytes,
+        null,
+        LoggingSettings.Default);
 
     public void Validate()
     {
@@ -48,6 +51,28 @@ internal sealed record ClientSettings(
             throw new ArgumentOutOfRangeException(nameof(Theme));
         }
         Sync?.Validate();
+        Logging?.Validate();
+    }
+}
+
+internal sealed record LoggingSettings(
+    string Level,
+    int RetentionDays,
+    ulong MaxSizeBytes)
+{
+    public const ulong MinimumSizeBytes = 10UL * 1024 * 1024;
+    public const ulong MaximumSizeBytes = 1024UL * 1024 * 1024;
+
+    public static LoggingSettings Default { get; } = new("info", 7, 200UL * 1024 * 1024);
+
+    public void Validate()
+    {
+        if (Level is not ("trace" or "debug" or "info" or "warn" or "error")
+            || RetentionDays is < 1 or > 30
+            || MaxSizeBytes is < MinimumSizeBytes or > MaximumSizeBytes)
+        {
+            throw new ArgumentOutOfRangeException(nameof(LoggingSettings));
+        }
     }
 }
 
