@@ -23,6 +23,7 @@ blake3 = "1.8"
 chacha20poly1305 = "0.10"
 hex = "0.4"
 hkdf = "0.12"
+hmac = "0.12"
 proptest = "1.7"
 quick-xml = "0.37"
 rand_core = { version = "0.6", features = ["getrandom"] }
@@ -34,5 +35,6 @@ serde_json = "1.0"
 sha2 = "0.10"
 tempfile = "3.20"
 thiserror = "2.0"
+time = { version = "0.3", features = ["formatting", "macros"] }
 uuid = { version = "1.17", features = ["serde", "v4", "v7"] }
 zeroize = { version = "1.8", features = ["derive"] }

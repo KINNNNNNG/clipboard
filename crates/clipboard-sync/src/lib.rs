@@ -4,6 +4,7 @@
 
 mod diagnostics;
 mod error;
+mod oss;
 mod protocol;
 mod recovery_code;
 mod remote;
@@ -15,6 +16,7 @@ pub use diagnostics::{
     SyncDiagnosticOutcome, SyncDiagnosticPhase, SyncDiagnostics,
 };
 pub use error::SyncError;
+pub use oss::OssStore;
 pub use protocol::{SegmentHeader, SyncEvent, open_segment, seal_segment};
 pub use recovery_code::{RecoveryMaterial, decode_recovery_code, encode_recovery_code};
 pub use remote::{
