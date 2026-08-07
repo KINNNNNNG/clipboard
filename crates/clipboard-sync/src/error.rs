@@ -16,6 +16,14 @@ pub enum SyncError {
     InvalidSegment,
     #[error("sync transport failed")]
     Transport,
+    #[error("remote authentication failed")]
+    Authentication,
+    #[error("remote sync conflict")]
+    Conflict,
+    #[error("remote sync rate limited")]
+    RateLimited,
+    #[error("remote sync unavailable")]
+    RemoteUnavailable,
     #[error(transparent)]
     Crypto(#[from] clipboard_crypto::CryptoError),
 }
