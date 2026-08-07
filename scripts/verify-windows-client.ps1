@@ -11,6 +11,12 @@ try {
     & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'test-core.ps1')
     if ($LASTEXITCODE -ne 0) { throw 'Clipboard core verification failed.' }
 
+    & cargo test -p clipboard-core --test file_bundle_workflow
+    if ($LASTEXITCODE -ne 0) { throw 'File bundle workflow verification failed.' }
+
+    & cargo test -p clipboard-core --test file_cache_workflow
+    if ($LASTEXITCODE -ne 0) { throw 'Favorite file cache workflow verification failed.' }
+
     & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'verify-windows-client-toolchain.ps1')
     if ($LASTEXITCODE -ne 0) { throw 'Windows client toolchain verification failed.' }
 

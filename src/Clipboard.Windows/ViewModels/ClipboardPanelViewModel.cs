@@ -12,6 +12,7 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
     private readonly IClipboardItemPasteService _paste;
     private readonly IRetryDelay _delay;
     private readonly TimeProvider _timeProvider;
+    private readonly IFavoriteFileCachePolicyProvider _favoriteFileCachePolicy;
     private readonly Guid _nodeId;
     private CancellationTokenSource? _debounceCancellation;
     private CancellationTokenSource? _activeSearchCancellation;
@@ -34,13 +35,15 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
         IClipboardItemPasteService paste,
         IRetryDelay? delay = null,
         TimeProvider? timeProvider = null,
-        Guid? nodeId = null)
+        Guid? nodeId = null,
+        IFavoriteFileCachePolicyProvider? favoriteFileCachePolicy = null)
     {
         _core = core;
         _paste = paste;
         _delay = delay ?? new SystemRetryDelay();
         _timeProvider = timeProvider ?? TimeProvider.System;
         _nodeId = nodeId ?? Guid.NewGuid();
+        _favoriteFileCachePolicy = favoriteFileCachePolicy ?? new FavoriteFileCachePolicyProvider();
         Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsEmpty));
     }
 
@@ -188,6 +191,18 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
     {
         ArgumentNullException.ThrowIfNull(item);
         bool favorite = !item.Favorite;
+        if (item.IsFileBundle)
+        {
+            if (favorite)
+            {
+                ulong maxFavoriteFileCacheBytes = _favoriteFileCachePolicy.MaxFavoriteFileCacheBytes
+                    ?? throw new InvalidOperationException("Favorite file caching is disabled.");
+                await _core.CacheFileBundleAsync(
+                    item.Id,
+                    maxFavoriteFileCacheBytes,
+                    cancellationToken);
+            }
+        }
         await _core.SetFavoriteAsync(
             new SetFavoriteRequestDto(item.Id, favorite, NextHlc()),
             cancellationToken);

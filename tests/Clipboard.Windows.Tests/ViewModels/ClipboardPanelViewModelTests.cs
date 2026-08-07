@@ -265,6 +265,68 @@ public sealed class ClipboardPanelViewModelTests
     }
 
     [Fact]
+    public async Task Favoriting_a_file_bundle_caches_it_before_persisting_favorite_state()
+    {
+        ClipboardItemDto item = FileItem("report.txt");
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(Response(item)),
+        };
+        var viewModel = new ClipboardPanelViewModel(
+            core,
+            new FakePasteService(),
+            timeProvider: new ManualTimeProvider(1234),
+            nodeId: Guid.Parse("11111111-1111-1111-1111-111111111111"));
+
+        await viewModel.RefreshAsync();
+        await viewModel.ToggleFavoriteAsync(Assert.Single(viewModel.Items));
+
+        Assert.Equal((item.Id, 5UL * ClientSettings.BytesPerGiB), Assert.Single(core.CacheRequests));
+        Assert.True(Assert.Single(core.FavoriteRequests).Favorite);
+    }
+
+    [Fact]
+    public async Task Favoriting_a_file_bundle_uses_the_current_favorite_file_cache_policy()
+    {
+        ClipboardItemDto item = FileItem("report.txt");
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(Response(item)),
+        };
+        var policy = new FavoriteFileCachePolicyProvider();
+        policy.Update(ClientSettings.Default with
+        {
+            MaxFavoriteFileCacheBytes = 2UL * ClientSettings.BytesPerGiB,
+        });
+        var viewModel = new ClipboardPanelViewModel(
+            core,
+            new FakePasteService(),
+            favoriteFileCachePolicy: policy);
+
+        await viewModel.RefreshAsync();
+        await viewModel.ToggleFavoriteAsync(Assert.Single(viewModel.Items));
+
+        Assert.Equal((item.Id, 2UL * ClientSettings.BytesPerGiB), Assert.Single(core.CacheRequests));
+    }
+
+    [Fact]
+    public async Task Unfavoriting_a_file_bundle_leaves_cache_release_to_the_core_state_transition()
+    {
+        ClipboardItemDto item = FileItem("report.txt", favorite: true);
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(Response(item)),
+        };
+        var viewModel = new ClipboardPanelViewModel(core, new FakePasteService());
+
+        await viewModel.RefreshAsync();
+        await viewModel.ToggleFavoriteAsync(Assert.Single(viewModel.Items));
+
+        Assert.Equal(0, core.UncacheCalls);
+        Assert.False(Assert.Single(core.FavoriteRequests).Favorite);
+    }
+
+    [Fact]
     public async Task Mutations_in_the_same_millisecond_increment_the_hlc_logical_counter()
     {
         ClipboardItemDto item = TextItem("toggle twice");
@@ -344,6 +406,12 @@ public sealed class ClipboardPanelViewModelTests
     private static ClipboardItemDto TextItem(string preview) =>
         new(Guid.NewGuid(), "text", preview, "notepad.exe", 100, false, null, null, null);
 
+    private static ClipboardItemDto FileItem(string name, bool favorite = false) =>
+        new(Guid.NewGuid(), "file_bundle", name, "explorer.exe", 100, favorite, null, null, null,
+            FileCount: 1,
+            RepresentativeName: name,
+            RepresentativeKind: "file");
+
     private static SearchResponseDto Response(params ClipboardItemDto[] items) => new(items);
 
     private static async Task EventuallyAsync(Func<bool> condition)
@@ -367,6 +435,10 @@ public sealed class ClipboardPanelViewModelTests
 
         public List<SetFavoriteRequestDto> FavoriteRequests { get; } = [];
 
+        public List<(Guid ItemId, ulong MaxBytes)> CacheRequests { get; } = [];
+
+        public int UncacheCalls { get; private set; }
+
         public List<DeleteRequestDto> DeleteRequests { get; } = [];
 
         public int ClearCalls { get; private set; }
@@ -385,6 +457,23 @@ public sealed class ClipboardPanelViewModelTests
         {
             FavoriteRequests.Add(request);
             return Task.FromResult(new MutationResponseDto(request.ItemId));
+        }
+
+        public Task<MutationResponseDto> CacheFileBundleAsync(
+            Guid itemId,
+            ulong maxBytes,
+            CancellationToken cancellationToken = default)
+        {
+            CacheRequests.Add((itemId, maxBytes));
+            return Task.FromResult(new MutationResponseDto(itemId));
+        }
+
+        public Task<MutationResponseDto> UncacheFileBundleAsync(
+            Guid itemId,
+            CancellationToken cancellationToken = default)
+        {
+            UncacheCalls++;
+            return Task.FromResult(new MutationResponseDto(itemId));
         }
 
         public Task<MutationResponseDto> DeleteAsync(

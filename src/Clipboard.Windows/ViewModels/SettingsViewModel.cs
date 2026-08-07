@@ -11,6 +11,7 @@ internal sealed class SettingsViewModel : ObservableObject
     private readonly IStartupSettingsService _startup;
     private readonly TimeProvider _timeProvider;
     private readonly IRetentionPolicyProvider? _retentionPolicy;
+    private readonly IFavoriteFileCachePolicyProvider? _favoriteFileCachePolicy;
     private ClientSettings _persisted = ClientSettings.Default;
     private bool _maxRegularItemsEnabled = true;
     private int _maxRegularItems = 1000;
@@ -18,6 +19,8 @@ internal sealed class SettingsViewModel : ObservableObject
     private uint _maxAgeDays = 30;
     private bool _maxImageGiBEnabled = true;
     private double _maxImageGiB = 1;
+    private bool _maxFavoriteFileCacheGiBEnabled = true;
+    private double _maxFavoriteFileCacheGiB = 5;
     private bool _interceptWinV = true;
     private string _fallbackHotkey = "Alt+V";
     private bool _startWithWindows;
@@ -30,7 +33,8 @@ internal sealed class SettingsViewModel : ObservableObject
         IGlobalShortcutConfigurator shortcuts,
         IStartupSettingsService startup,
         TimeProvider? timeProvider = null,
-        IRetentionPolicyProvider? retentionPolicy = null)
+        IRetentionPolicyProvider? retentionPolicy = null,
+        IFavoriteFileCachePolicyProvider? favoriteFileCachePolicy = null)
     {
         _store = store;
         _retention = retention;
@@ -38,6 +42,7 @@ internal sealed class SettingsViewModel : ObservableObject
         _startup = startup;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _retentionPolicy = retentionPolicy;
+        _favoriteFileCachePolicy = favoriteFileCachePolicy;
     }
 
     public bool MaxRegularItemsEnabled
@@ -76,6 +81,18 @@ internal sealed class SettingsViewModel : ObservableObject
         set => SetProperty(ref _maxImageGiB, value);
     }
 
+    public bool MaxFavoriteFileCacheGiBEnabled
+    {
+        get => _maxFavoriteFileCacheGiBEnabled;
+        set => SetProperty(ref _maxFavoriteFileCacheGiBEnabled, value);
+    }
+
+    public double MaxFavoriteFileCacheGiB
+    {
+        get => _maxFavoriteFileCacheGiB;
+        set => SetProperty(ref _maxFavoriteFileCacheGiB, value);
+    }
+
     public bool InterceptWinV
     {
         get => _interceptWinV;
@@ -112,6 +129,7 @@ internal sealed class SettingsViewModel : ObservableObject
         Apply(settings);
         _persisted = settings;
         _retentionPolicy?.Update(settings);
+        _favoriteFileCachePolicy?.Update(settings);
         ErrorMessage = null;
     }
 
@@ -161,6 +179,7 @@ internal sealed class SettingsViewModel : ObservableObject
             _shortcuts.Configure(candidate.InterceptWinV, chord);
             _persisted = candidate;
             _retentionPolicy?.Update(candidate);
+            _favoriteFileCachePolicy?.Update(candidate);
             return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -198,6 +217,17 @@ internal sealed class SettingsViewModel : ObservableObject
                 MaxImageGiB * ClientSettings.BytesPerGiB,
                 MidpointRounding.AwayFromZero));
         }
+        ulong? maxFavoriteFileCacheBytes = null;
+        if (MaxFavoriteFileCacheGiBEnabled)
+        {
+            if (!double.IsFinite(MaxFavoriteFileCacheGiB) || MaxFavoriteFileCacheGiB <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(MaxFavoriteFileCacheGiB));
+            }
+            maxFavoriteFileCacheBytes = checked((ulong)Math.Round(
+                MaxFavoriteFileCacheGiB * ClientSettings.BytesPerGiB,
+                MidpointRounding.AwayFromZero));
+        }
         return new ClientSettings(
             MaxRegularItemsEnabled ? MaxRegularItems : null,
             MaxAgeDaysEnabled ? MaxAgeDays : null,
@@ -205,7 +235,8 @@ internal sealed class SettingsViewModel : ObservableObject
             InterceptWinV,
             FallbackHotkey,
             StartWithWindows,
-            Theme);
+            Theme,
+            maxFavoriteFileCacheBytes);
     }
 
     private void Apply(ClientSettings settings)
@@ -218,6 +249,10 @@ internal sealed class SettingsViewModel : ObservableObject
         MaxImageGiB = settings.MaxImageBytes.HasValue
             ? settings.MaxImageBytes.Value / (double)ClientSettings.BytesPerGiB
             : 1;
+        MaxFavoriteFileCacheGiBEnabled = settings.MaxFavoriteFileCacheBytes.HasValue;
+        MaxFavoriteFileCacheGiB = settings.MaxFavoriteFileCacheBytes.HasValue
+            ? settings.MaxFavoriteFileCacheBytes.Value / (double)ClientSettings.BytesPerGiB
+            : ClientSettings.DefaultMaxFavoriteFileCacheBytes / (double)ClientSettings.BytesPerGiB;
         InterceptWinV = settings.InterceptWinV;
         FallbackHotkey = settings.FallbackHotkey;
         StartWithWindows = settings.StartWithWindows;

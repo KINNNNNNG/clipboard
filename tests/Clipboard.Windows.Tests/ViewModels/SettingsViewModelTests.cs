@@ -15,6 +15,7 @@ public sealed class SettingsViewModelTests
         Assert.Equal(1000, settings.MaxRegularItems);
         Assert.Equal((uint)30, settings.MaxAgeDays);
         Assert.Equal(1024UL * 1024 * 1024, settings.MaxImageBytes);
+        Assert.Equal(5UL * ClientSettings.BytesPerGiB, settings.MaxFavoriteFileCacheBytes);
         Assert.True(settings.InterceptWinV);
         Assert.Equal("Alt+V", settings.FallbackHotkey);
         Assert.False(settings.StartWithWindows);
@@ -118,6 +119,31 @@ public sealed class SettingsViewModelTests
         Assert.Equal(2, provider.Current.MaxRegularItems);
         Assert.Equal((uint)3, provider.Current.MaxAgeDays);
         Assert.Equal(2UL * ClientSettings.BytesPerGiB, provider.Current.MaxImageBytes);
+    }
+
+    [Fact]
+    public async Task Loading_and_saving_settings_updates_the_favorite_file_cache_policy()
+    {
+        var provider = new FavoriteFileCachePolicyProvider();
+        var store = new MemorySettingsStore(ClientSettings.Default);
+        var viewModel = new SettingsViewModel(
+            store,
+            new FakeRetentionService(),
+            new FakeShortcutConfigurator(),
+            new FakeStartupSettingsService(),
+            favoriteFileCachePolicy: provider);
+
+        await viewModel.LoadAsync();
+        Assert.True(viewModel.MaxFavoriteFileCacheGiBEnabled);
+        Assert.Equal(5, viewModel.MaxFavoriteFileCacheGiB);
+        Assert.Equal(5UL * ClientSettings.BytesPerGiB, provider.MaxFavoriteFileCacheBytes);
+
+        viewModel.MaxFavoriteFileCacheGiBEnabled = false;
+        bool saved = await viewModel.SaveAsync();
+
+        Assert.True(saved);
+        Assert.Null(store.Current.MaxFavoriteFileCacheBytes);
+        Assert.Null(provider.MaxFavoriteFileCacheBytes);
     }
 
     [Fact]

@@ -9,7 +9,7 @@ mod retention;
 mod state;
 
 pub use file_bundle::{
-    FileBundle, FileBundleError, FileEntry, FileEntryKind, normalize_windows_path,
+    FileBundle, FileBundleCache, FileBundleError, FileEntry, FileEntryKind, normalize_windows_path,
 };
 pub use hlc::Hlc;
 pub use item::{ClipboardContent, ClipboardItem, SyncScope};

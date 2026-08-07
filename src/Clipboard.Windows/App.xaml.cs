@@ -67,13 +67,17 @@ public partial class App : Microsoft.UI.Xaml.Application
             var reader = new WindowsClipboardReader();
             var suppression = new ClipboardSuppression();
             var retentionPolicy = new RetentionPolicyProvider();
+            var favoriteFileCachePolicy = new FavoriteFileCachePolicyProvider();
             var paste = new PasteCoordinator(
                 _core,
                 writer,
                 new ForegroundWindowService(),
                 suppression,
                 MainWindow.HidePanel);
-            var panel = new ClipboardPanelViewModel(_core, paste);
+            var panel = new ClipboardPanelViewModel(
+                _core,
+                paste,
+                favoriteFileCachePolicy: favoriteFileCachePolicy);
             MainWindow.Configure(panel, _presenter, _core, writer);
 
             _capture = new ClipboardCaptureCoordinator(
@@ -90,7 +94,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 _core,
                 _shortcuts,
                 new StartupService(),
-                retentionPolicy: retentionPolicy);
+                retentionPolicy: retentionPolicy,
+                favoriteFileCachePolicy: favoriteFileCachePolicy);
             await _settingsViewModel.LoadAsync();
             ApplyTheme(_settingsViewModel.Theme);
             _shortcuts.Configure(

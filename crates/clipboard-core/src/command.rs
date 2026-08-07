@@ -25,7 +25,10 @@ impl ApiRequest {
 pub enum CoreCommand {
     IngestText(IngestText),
     IngestFileBundle(IngestFileBundle),
+    CacheFileBundle(CacheFileBundle),
+    UncacheFileBundle(UncacheFileBundle),
     ReadFileBundle(ReadFileBundle),
+    SyncDirectory(SyncDirectory),
     Search(SearchRequest),
     SetFavorite(SetFavorite),
     Delete(DeleteRequest),
@@ -54,6 +57,23 @@ pub struct IngestFileBundle {
 #[derive(Debug, Deserialize)]
 pub struct ReadFileBundle {
     pub item_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CacheFileBundle {
+    pub item_id: Uuid,
+    pub max_bytes: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UncacheFileBundle {
+    pub item_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncDirectory {
+    pub remote_path: String,
+    pub device_id: Uuid,
 }
 
 #[derive(Debug, Deserialize)]

@@ -19,3 +19,20 @@ fn local_only_rejection_diagnostic_excludes_file_paths_and_content() {
     assert!(!encoded.contains("report.txt"));
     assert!(!encoded.contains(sensitive_content));
 }
+
+#[test]
+fn segment_diagnostics_record_only_hashed_identifiers_and_numeric_metadata() {
+    let diagnostics = RecordingSyncDiagnostics::default();
+
+    diagnostics.record(SyncDiagnostic::segment_completed(
+        SyncDiagnosticPhase::Upload,
+        Uuid::from_u128(1),
+        2048,
+        3,
+    ));
+    let encoded = serde_json::to_string(&diagnostics.records()).unwrap();
+
+    assert!(encoded.contains("upload"));
+    assert!(!encoded.contains("C:\\remote\\journal"));
+    assert!(!encoded.contains("clipboard contents"));
+}

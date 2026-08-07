@@ -3,6 +3,7 @@ namespace Clipboard.Windows.Core;
 internal static class ClipboardCoreLimits
 {
     public const int MaxImageBytes = 50 * 1024 * 1024;
+    public const ulong DefaultMaxFavoriteFileCacheBytes = 5UL * 1024 * 1024 * 1024;
 }
 
 internal interface IClipboardCaptureSink : ISettingsRetentionService
@@ -29,6 +30,15 @@ internal interface IClipboardPanelCore
 
     Task<MutationResponseDto> SetFavoriteAsync(
         SetFavoriteRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<MutationResponseDto> CacheFileBundleAsync(
+        Guid itemId,
+        ulong maxBytes,
+        CancellationToken cancellationToken = default);
+
+    Task<MutationResponseDto> UncacheFileBundleAsync(
+        Guid itemId,
         CancellationToken cancellationToken = default);
 
     Task<MutationResponseDto> DeleteAsync(
@@ -98,6 +108,10 @@ internal sealed record IngestFileBundleRequestDto(
     string? SourceAppDisplayName = null);
 
 internal sealed record ReadFileBundleRequestDto(Guid ItemId);
+
+internal sealed record CacheFileBundleRequestDto(Guid ItemId, ulong MaxBytes);
+
+internal sealed record UncacheFileBundleRequestDto(Guid ItemId);
 
 internal sealed record FileBundleResponseDto(
     Guid ItemId,

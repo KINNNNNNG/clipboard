@@ -6,12 +6,17 @@ use uuid::Uuid;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SyncDiagnosticPhase {
+    Pull,
+    Decrypt,
+    Merge,
+    Upload,
     RejectLocalOnly,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SyncDiagnosticOutcome {
+    Success,
     Rejected,
 }
 
@@ -34,6 +39,24 @@ pub struct SyncDiagnostic {
 }
 
 impl SyncDiagnostic {
+    pub fn segment_completed(
+        phase: SyncDiagnosticPhase,
+        segment_id: Uuid,
+        ciphertext_length: u64,
+        count: u64,
+    ) -> Self {
+        Self {
+            phase,
+            outcome: SyncDiagnosticOutcome::Success,
+            error_category: None,
+            item_id_hash: Some(short_identifier_hash(segment_id)),
+            count: Some(count),
+            ciphertext_length: Some(ciphertext_length),
+            duration_ms: None,
+            retry: None,
+        }
+    }
+
     pub fn local_only_rejected(item_id: Uuid) -> Self {
         Self {
             phase: SyncDiagnosticPhase::RejectLocalOnly,

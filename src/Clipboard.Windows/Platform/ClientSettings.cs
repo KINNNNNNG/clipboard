@@ -7,9 +7,11 @@ internal sealed record ClientSettings(
     bool InterceptWinV,
     string FallbackHotkey,
     bool StartWithWindows,
-    string Theme)
+    string Theme,
+    ulong? MaxFavoriteFileCacheBytes = 5UL * 1024 * 1024 * 1024)
 {
     public const ulong BytesPerGiB = 1024UL * 1024 * 1024;
+    public const ulong DefaultMaxFavoriteFileCacheBytes = 5UL * BytesPerGiB;
 
     public static ClientSettings Default { get; } = new(
         1000,
@@ -18,7 +20,8 @@ internal sealed record ClientSettings(
         true,
         "Alt+V",
         false,
-        "system");
+        "system",
+        DefaultMaxFavoriteFileCacheBytes);
 
     public void Validate()
     {
@@ -34,10 +37,48 @@ internal sealed record ClientSettings(
         {
             throw new ArgumentOutOfRangeException(nameof(MaxImageBytes));
         }
+        if (MaxFavoriteFileCacheBytes == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MaxFavoriteFileCacheBytes));
+        }
         _ = HotkeyChord.Parse(FallbackHotkey);
         if (Theme is not ("system" or "light" or "dark"))
         {
             throw new ArgumentOutOfRangeException(nameof(Theme));
+        }
+    }
+}
+
+internal interface IFavoriteFileCachePolicyProvider
+{
+    ulong? MaxFavoriteFileCacheBytes { get; }
+
+    void Update(ClientSettings settings);
+}
+
+internal sealed class FavoriteFileCachePolicyProvider : IFavoriteFileCachePolicyProvider
+{
+    private readonly object _sync = new();
+    private ulong? _maxFavoriteFileCacheBytes = ClientSettings.DefaultMaxFavoriteFileCacheBytes;
+
+    public ulong? MaxFavoriteFileCacheBytes
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _maxFavoriteFileCacheBytes;
+            }
+        }
+    }
+
+    public void Update(ClientSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        settings.Validate();
+        lock (_sync)
+        {
+            _maxFavoriteFileCacheBytes = settings.MaxFavoriteFileCacheBytes;
         }
     }
 }

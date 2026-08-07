@@ -181,6 +181,7 @@ dependencies = [
  "clipboard-domain",
  "clipboard-search",
  "clipboard-storage",
+ "clipboard-sync",
  "hex",
  "rusqlite",
  "serde",

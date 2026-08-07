@@ -71,6 +71,22 @@
                         SmallChange="0.1"
                         SpinButtonPlacementMode="Compact" />
                 </Grid>
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="132" />
+                    </Grid.ColumnDefinitions>
+                    <CheckBox
+                        x:Name="MaxFavoriteFileCacheEnabledCheckBox"
+                        VerticalAlignment="Center"
+                        Content="保留收藏文件缓存（GiB）" />
+                    <NumberBox
+                        x:Name="MaxFavoriteFileCacheNumberBox"
+                        Grid.Column="1"
+                        Minimum="0.1"
+                        SmallChange="0.1"
+                        SpinButtonPlacementMode="Compact" />
+                </Grid>
             </StackPanel>
             <StackPanel Grid.Row="2" Margin="0,24,0,0" Spacing="12">
                 <TextBlock FontWeight="SemiBold" Text="快捷键" />

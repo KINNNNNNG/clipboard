@@ -246,6 +246,7 @@
         <Grid Grid.Row="2" MinHeight="280">
             <ListView
                 x:Name="HistoryList"
+                ContainerContentChanging="HistoryList_ContainerContentChanging"
                 IsItemClickEnabled="True"
                 ItemClick="HistoryList_ItemClick"
                 ItemTemplate="{StaticResource ClipboardItemTemplate}"
@@ -271,24 +272,16 @@
                                         x:Name="SelectionRoot"
                                         Padding="2"
                                         Background="Transparent"
-                                        BorderBrush="Transparent"
-                                        BorderThickness="2"
                                         CornerRadius="8">
-                                        <VisualStateManager.VisualStateGroups>
-                                            <VisualStateGroup x:Name="SelectionStates">
-                                                <VisualState x:Name="Unselected" />
-                                                <VisualState x:Name="Selected">
-                                                    <VisualState.Setters>
-                                                        <Setter
-                                                            Target="SelectionRoot.Background"
-                                                            Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
-                                                        <Setter
-                                                            Target="SelectionRoot.BorderBrush"
-                                                            Value="{ThemeResource AccentFillColorDefaultBrush}" />
-                                                    </VisualState.Setters>
-                                                </VisualState>
-                                            </VisualStateGroup>
-                                        </VisualStateManager.VisualStateGroups>
+                                        <Border
+                                            x:Name="SelectionChrome"
+                                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                            BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                                            BorderThickness="2"
+                                            CornerRadius="8"
+                                            IsHitTestVisible="False"
+                                            Margin="0,0,0,8"
+                                            Visibility="{Binding IsSelected, RelativeSource={RelativeSource Mode=TemplatedParent}, Converter={StaticResource BooleanVisibilityConverter}}" />
                                         <ContentPresenter
                                             Content="{TemplateBinding Content}"
                                             ContentTemplate="{TemplateBinding ContentTemplate}"

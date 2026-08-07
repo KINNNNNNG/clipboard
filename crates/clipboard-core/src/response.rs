@@ -19,7 +19,16 @@ pub enum CoreResponse {
         deleted_local: usize,
         tombstones_created: usize,
     },
+    Sync(SyncDirectoryResponse),
     Empty {},
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct SyncDirectoryResponse {
+    pub pulled: usize,
+    pub merged: usize,
+    pub uploaded: usize,
+    pub rejected_local_only: usize,
 }
 
 impl CoreResponse {

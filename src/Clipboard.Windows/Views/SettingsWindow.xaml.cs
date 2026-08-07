@@ -59,6 +59,8 @@ public sealed partial class SettingsWindow : Window
         MaxAgeNumberBox.Value = _viewModel.MaxAgeDays;
         MaxImageEnabledCheckBox.IsChecked = _viewModel.MaxImageGiBEnabled;
         MaxImageNumberBox.Value = _viewModel.MaxImageGiB;
+        MaxFavoriteFileCacheEnabledCheckBox.IsChecked = _viewModel.MaxFavoriteFileCacheGiBEnabled;
+        MaxFavoriteFileCacheNumberBox.Value = _viewModel.MaxFavoriteFileCacheGiB;
         InterceptWinVToggle.IsOn = _viewModel.InterceptWinV;
         FallbackHotkeyTextBox.Text = _viewModel.FallbackHotkey;
         StartWithWindowsToggle.IsOn = _viewModel.StartWithWindows;
@@ -79,6 +81,8 @@ public sealed partial class SettingsWindow : Window
         _viewModel.MaxAgeDays = checked((uint)MaxAgeNumberBox.Value);
         _viewModel.MaxImageGiBEnabled = MaxImageEnabledCheckBox.IsChecked == true;
         _viewModel.MaxImageGiB = MaxImageNumberBox.Value;
+        _viewModel.MaxFavoriteFileCacheGiBEnabled = MaxFavoriteFileCacheEnabledCheckBox.IsChecked == true;
+        _viewModel.MaxFavoriteFileCacheGiB = MaxFavoriteFileCacheNumberBox.Value;
         _viewModel.InterceptWinV = InterceptWinVToggle.IsOn;
         _viewModel.FallbackHotkey = FallbackHotkeyTextBox.Text;
         _viewModel.StartWithWindows = StartWithWindowsToggle.IsOn;
@@ -90,6 +94,6 @@ public sealed partial class SettingsWindow : Window
     {
         nint handle = WindowNative.GetWindowHandle(this);
         var id = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(handle);
-        AppWindow.GetFromWindowId(id).Resize(new SizeInt32(520, 660));
+        AppWindow.GetFromWindowId(id).Resize(new SizeInt32(520, 710));
     }
 }

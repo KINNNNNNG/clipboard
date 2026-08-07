@@ -55,6 +55,14 @@ pub enum FileBundleError {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileBundle {
     pub entries: Vec<FileEntry>,
+    #[serde(default)]
+    pub cache: Option<FileBundleCache>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileBundleCache {
+    pub total_bytes: u64,
+    pub cached_at_ms: i64,
 }
 
 impl FileBundle {
@@ -72,7 +80,10 @@ impl FileBundle {
             entry.path = path;
         }
 
-        Ok(Self { entries })
+        Ok(Self {
+            entries,
+            cache: None,
+        })
     }
 }
 

@@ -104,6 +104,23 @@ internal sealed class ClipboardCoreClient : IDisposable,
             request,
             cancellationToken);
 
+    public Task<MutationResponseDto> CacheFileBundleAsync(
+        Guid itemId,
+        ulong maxBytes,
+        CancellationToken cancellationToken = default) =>
+        ExecuteCommandAsync<MutationResponseDto, CacheFileBundleRequestDto>(
+            "cache_file_bundle",
+            new CacheFileBundleRequestDto(itemId, maxBytes),
+            cancellationToken);
+
+    public Task<MutationResponseDto> UncacheFileBundleAsync(
+        Guid itemId,
+        CancellationToken cancellationToken = default) =>
+        ExecuteCommandAsync<MutationResponseDto, UncacheFileBundleRequestDto>(
+            "uncache_file_bundle",
+            new UncacheFileBundleRequestDto(itemId),
+            cancellationToken);
+
     public Task<MutationResponseDto> DeleteAsync(
         DeleteRequestDto request,
         CancellationToken cancellationToken = default) =>
