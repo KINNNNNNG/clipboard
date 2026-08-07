@@ -8,6 +8,7 @@ mod protocol;
 mod recovery_code;
 mod remote;
 mod transport;
+mod webdav;
 
 pub use diagnostics::{
     NoopSyncDiagnostics, RecordingSyncDiagnostics, SyncDiagnostic, SyncDiagnosticErrorCategory,
@@ -22,5 +23,6 @@ pub use remote::{
     pending_object_name, validate_remote_segment_header,
 };
 pub use transport::{DirectoryTransport, SyncTransport};
+pub use webdav::WebDavStore;
 
 pub const SYNC_PROTOCOL_VERSION: u8 = 1;

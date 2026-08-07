@@ -13,6 +13,8 @@ clipboard-domain = { path = "../clipboard-domain" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+reqwest.workspace = true
+quick-xml.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
 
