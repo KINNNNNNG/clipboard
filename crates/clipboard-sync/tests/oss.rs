@@ -222,11 +222,7 @@ fn oss_does_not_invent_a_prefix_when_prefix_is_empty() {
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
     let worker = thread::spawn(move || {
         let (stream, _) = listener.accept().unwrap();
-        read_request(
-            stream,
-            200,
-            "<ListBucketResult></ListBucketResult>",
-        )
+        read_request(stream, 200, "<ListBucketResult></ListBucketResult>")
     });
     let store = OssStore::new(OssConfig::new(
         &endpoint,
