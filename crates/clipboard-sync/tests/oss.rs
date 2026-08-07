@@ -258,3 +258,13 @@ fn oss_maps_sensitive_remote_failures_to_fixed_categories() {
         fixture.finish();
     }
 }
+
+#[test]
+fn oss_extracts_only_allowlisted_error_codes() {
+    let body = br#"<Error><Code>SignatureDoesNotMatch</Code><Message>secret response</Message><Endpoint>secret.endpoint</Endpoint></Error>"#;
+    let code = clipboard_sync::parse_oss_error_code(body);
+    assert_eq!(code, Some("SignatureDoesNotMatch"));
+
+    let body = br#"<Error><Code>InternalError</Code><Message>must not surface</Message></Error>"#;
+    assert_eq!(clipboard_sync::parse_oss_error_code(body), None);
+}

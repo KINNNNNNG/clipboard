@@ -331,3 +331,37 @@ fn parse_object_keys(body: &str) -> Vec<String> {
     }
     keys
 }
+
+/// Extracts only documented, non-sensitive OSS error codes from a bounded XML body.
+pub fn parse_oss_error_code(body: &[u8]) -> Option<&'static str> {
+    const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
+    if body.len() > MAX_ERROR_BODY_BYTES {
+        return None;
+    }
+    let mut reader = Reader::from_reader(body);
+    reader.config_mut().trim_text(true);
+    let mut in_code = false;
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(element)) if element.local_name().as_ref() == b"Code" => {
+                in_code = true;
+            }
+            Ok(Event::Text(text)) if in_code => {
+                let value = text.unescape().ok()?;
+                return match value.as_ref() {
+                    "SignatureDoesNotMatch" => Some("SignatureDoesNotMatch"),
+                    "AccessDenied" => Some("AccessDenied"),
+                    "NoSuchBucket" => Some("NoSuchBucket"),
+                    "NoSuchKey" => Some("NoSuchKey"),
+                    "InvalidAccessKeyId" => Some("InvalidAccessKeyId"),
+                    _ => None,
+                };
+            }
+            Ok(Event::End(element)) if element.local_name().as_ref() == b"Code" => {
+                in_code = false;
+            }
+            Ok(Event::Eof) | Err(_) => return None,
+            _ => {}
+        }
+    }
+}
