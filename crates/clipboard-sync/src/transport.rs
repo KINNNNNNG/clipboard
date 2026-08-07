@@ -6,7 +6,7 @@ use std::{
 
 use uuid::Uuid;
 
-use crate::{SYNC_PROTOCOL_VERSION, SegmentHeader, SyncError};
+use crate::{RemoteSegmentHeader, RemoteStore, SYNC_PROTOCOL_VERSION, SegmentHeader, SyncError};
 
 pub trait SyncTransport: Send + Sync {
     fn put_segment(&self, header: &SegmentHeader, ciphertext: &[u8]) -> Result<(), SyncError>;
@@ -96,6 +96,32 @@ impl SyncTransport for DirectoryTransport {
 
     fn get_segment(&self, header: &SegmentHeader) -> Result<Vec<u8>, SyncError> {
         fs::read(self.path_for(header, ".enc")).map_err(|_| SyncError::Transport)
+    }
+}
+
+impl RemoteStore for DirectoryTransport {
+    fn list_completed(&self) -> Result<Vec<RemoteSegmentHeader>, SyncError> {
+        Ok(self
+            .list_all_segments()?
+            .into_iter()
+            .filter_map(|header| RemoteSegmentHeader::try_from(header).ok())
+            .collect())
+    }
+
+    fn get_completed(&self, header: &RemoteSegmentHeader) -> Result<Vec<u8>, SyncError> {
+        self.get_segment(header.header())
+    }
+
+    fn put_pending_then_publish(
+        &self,
+        header: &RemoteSegmentHeader,
+        ciphertext: &[u8],
+    ) -> Result<(), SyncError> {
+        self.put_segment(header.header(), ciphertext)
+    }
+
+    fn probe(&self) -> Result<(), SyncError> {
+        self.list_all_segments().map(|_| ())
     }
 }
 

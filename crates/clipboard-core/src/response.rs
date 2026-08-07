@@ -20,6 +20,9 @@ pub enum CoreResponse {
         tombstones_created: usize,
     },
     Sync(SyncDirectoryResponse),
+    RemoteProbe {
+        available: bool,
+    },
     Empty {},
 }
 

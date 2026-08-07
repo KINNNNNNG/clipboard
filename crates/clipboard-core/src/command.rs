@@ -1,6 +1,7 @@
 use crate::CoreError;
 use clipboard_domain::{FileEntry, Hlc, RetentionPolicy};
 use clipboard_search::SearchMode;
+use clipboard_sync::RemoteConfig;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -29,6 +30,8 @@ pub enum CoreCommand {
     UncacheFileBundle(UncacheFileBundle),
     ReadFileBundle(ReadFileBundle),
     SyncDirectory(SyncDirectory),
+    SyncRemote(SyncRemote),
+    ProbeRemote(ProbeRemote),
     Search(SearchRequest),
     SetFavorite(SetFavorite),
     Delete(DeleteRequest),
@@ -74,6 +77,17 @@ pub struct UncacheFileBundle {
 pub struct SyncDirectory {
     pub remote_path: String,
     pub device_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncRemote {
+    pub device_id: Uuid,
+    pub remote: RemoteConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProbeRemote {
+    pub remote: RemoteConfig,
 }
 
 #[derive(Debug, Deserialize)]

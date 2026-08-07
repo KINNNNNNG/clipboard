@@ -11,8 +11,8 @@ mod service;
 
 pub use command::{
     ApiRequest, ApplyRetentionRequest, CacheFileBundle, CoreCommand, DeleteRequest,
-    IngestFileBundle, IngestImage, IngestText, ReadFileBundle, SearchFilters, SearchRequest,
-    SetFavorite, SyncDirectory, UncacheFileBundle,
+    IngestFileBundle, IngestImage, IngestText, ProbeRemote, ReadFileBundle, SearchFilters,
+    SearchRequest, SetFavorite, SyncDirectory, SyncRemote, UncacheFileBundle,
 };
 pub use error::CoreError;
 pub use response::{CoreResponse, SearchItem, SyncDirectoryResponse};

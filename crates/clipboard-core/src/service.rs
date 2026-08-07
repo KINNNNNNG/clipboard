@@ -1,8 +1,9 @@
 use crate::file_cache::FileCache;
 use crate::{
     ApplyRetentionRequest, CacheFileBundle, CoreCommand, CoreError, CoreResponse, DeleteRequest,
-    IngestFileBundle, IngestText, ReadFileBundle, SearchFilters, SearchItem, SearchRequest,
-    SetFavorite, SyncDirectory, SyncDirectoryResponse, UncacheFileBundle,
+    IngestFileBundle, IngestText, ProbeRemote, ReadFileBundle, SearchFilters, SearchItem,
+    SearchRequest, SetFavorite, SyncDirectory, SyncDirectoryResponse, SyncRemote,
+    UncacheFileBundle,
 };
 use crate::{IngestImage, object_store::ObjectStore};
 use clipboard_crypto::{KeyPurpose, VaultKey};
@@ -13,8 +14,9 @@ use clipboard_domain::{
 use clipboard_search::SearchEngine;
 use clipboard_storage::Database;
 use clipboard_sync::{
-    DirectoryTransport, NoopSyncDiagnostics, SYNC_PROTOCOL_VERSION, SegmentHeader, SyncDiagnostic,
-    SyncDiagnostics, SyncEvent, SyncTransport, open_segment, seal_segment,
+    DirectoryTransport, NoopSyncDiagnostics, OssStore, RemoteConfig, RemoteSegmentHeader,
+    RemoteStore, SYNC_PROTOCOL_VERSION, SegmentHeader, SyncDiagnostic, SyncDiagnostics, SyncEvent,
+    WebDavStore, open_segment, seal_segment,
 };
 use std::{collections::HashSet, path::Path, time::SystemTime};
 use uuid::Uuid;
@@ -61,6 +63,12 @@ impl CoreService {
                 self.sync_directory_with_diagnostics(request, &diagnostics)
                     .map(CoreResponse::Sync)
             }
+            CoreCommand::SyncRemote(request) => {
+                let diagnostics = NoopSyncDiagnostics;
+                self.sync_remote_with_diagnostics(request, &diagnostics)
+                    .map(CoreResponse::Sync)
+            }
+            CoreCommand::ProbeRemote(request) => self.probe_remote(request),
             CoreCommand::Search(request) => self.search(request),
             CoreCommand::SetFavorite(request) => self.set_favorite(request),
             CoreCommand::Delete(request) => self.delete(request),
@@ -74,8 +82,31 @@ impl CoreService {
         request: SyncDirectory,
         diagnostics: &dyn SyncDiagnostics,
     ) -> Result<SyncDirectoryResponse, CoreError> {
-        let journal_key = self.vault_key.derive(self.vault_id, KeyPurpose::Journal)?;
         let transport = DirectoryTransport::open(&request.remote_path)?;
+        self.sync_store_with_diagnostics(request.device_id, &transport, diagnostics)
+    }
+
+    pub fn sync_remote_with_diagnostics(
+        &mut self,
+        request: SyncRemote,
+        diagnostics: &dyn SyncDiagnostics,
+    ) -> Result<SyncDirectoryResponse, CoreError> {
+        let store = create_remote_store(request.remote)?;
+        self.sync_store_with_diagnostics(request.device_id, store.as_ref(), diagnostics)
+    }
+
+    fn probe_remote(&self, request: ProbeRemote) -> Result<CoreResponse, CoreError> {
+        create_remote_store(request.remote)?.probe()?;
+        Ok(CoreResponse::RemoteProbe { available: true })
+    }
+
+    fn sync_store_with_diagnostics(
+        &mut self,
+        device_id: Uuid,
+        transport: &dyn RemoteStore,
+        diagnostics: &dyn SyncDiagnostics,
+    ) -> Result<SyncDirectoryResponse, CoreError> {
+        let journal_key = self.vault_key.derive(self.vault_id, KeyPurpose::Journal)?;
         let mut response = SyncDirectoryResponse {
             pulled: 0,
             merged: 0,
@@ -83,9 +114,10 @@ impl CoreService {
             rejected_local_only: 0,
         };
 
-        for header in transport.list_all_segments()? {
+        for remote_header in transport.list_completed()? {
+            let header = *remote_header.header();
             if header.vault_id != self.vault_id
-                || header.device_id == request.device_id
+                || header.device_id == device_id
                 || self
                     .processed_segments
                     .contains(&(header.device_id, header.segment_id))
@@ -93,7 +125,7 @@ impl CoreService {
                 continue;
             }
 
-            let ciphertext = transport.get_segment(&header)?;
+            let ciphertext = transport.get_completed(&remote_header)?;
             diagnostics.record(SyncDiagnostic::segment_completed(
                 clipboard_sync::SyncDiagnosticPhase::Pull,
                 header.segment_id,
@@ -139,11 +171,12 @@ impl CoreService {
             let header = SegmentHeader {
                 protocol_version: SYNC_PROTOCOL_VERSION,
                 vault_id: self.vault_id,
-                device_id: request.device_id,
+                device_id,
                 segment_id: Uuid::now_v7(),
             };
             let ciphertext = seal_segment(&journal_key, &header, &[event])?;
-            transport.put_segment(&header, &ciphertext)?;
+            let remote_header = RemoteSegmentHeader::try_from(header)?;
+            transport.put_pending_then_publish(&remote_header, &ciphertext)?;
             diagnostics.record(SyncDiagnostic::segment_completed(
                 clipboard_sync::SyncDiagnosticPhase::Upload,
                 header.segment_id,
@@ -667,6 +700,13 @@ impl CoreService {
             }
         }
         Ok(())
+    }
+}
+
+fn create_remote_store(config: RemoteConfig) -> Result<Box<dyn RemoteStore>, CoreError> {
+    match config {
+        RemoteConfig::WebDav(config) => Ok(Box::new(WebDavStore::new(config)?)),
+        RemoteConfig::Oss(config) => Ok(Box::new(OssStore::new(config)?)),
     }
 }
 
