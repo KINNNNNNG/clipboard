@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum SyncError {
     #[error("invalid recovery code")]
     InvalidRecoveryCode,
@@ -8,4 +8,14 @@ pub enum SyncError {
     UnsupportedRecoveryCodeVersion(u8),
     #[error("invalid recovery code checksum")]
     InvalidRecoveryCodeChecksum,
+    #[error("unsupported sync protocol version")]
+    UnsupportedProtocolVersion(u8),
+    #[error("local-only clipboard item rejected")]
+    LocalOnlyRejected,
+    #[error("encrypted sync segment is invalid")]
+    InvalidSegment,
+    #[error("sync transport failed")]
+    Transport,
+    #[error(transparent)]
+    Crypto(#[from] clipboard_crypto::CryptoError),
 }

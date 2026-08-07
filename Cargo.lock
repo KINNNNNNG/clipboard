@@ -265,6 +265,7 @@ dependencies = [
  "clipboard-domain",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "uuid",
  "zeroize",
