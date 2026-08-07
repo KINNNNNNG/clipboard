@@ -156,7 +156,10 @@ internal sealed record RetentionResponseDto(int DeletedLocal, int TombstonesCrea
 
 internal sealed record SyncResponseDto(int Pulled, int Merged, int Uploaded, int RejectedLocalOnly);
 
-internal sealed record RemoteProbeResponseDto(bool Available);
+internal sealed record RemoteProbeResponseDto(
+    bool Available,
+    string? ErrorCategory = null,
+    string? ErrorCode = null);
 
 internal sealed record RemoteConfigDto(
     string Provider,

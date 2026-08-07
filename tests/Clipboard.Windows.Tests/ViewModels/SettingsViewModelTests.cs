@@ -325,6 +325,43 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task Probe_sync_surfaces_only_the_sanitized_oss_failure_code()
+    {
+        using var directory = new TemporaryDirectory();
+        await using var log = new FileGlobalLog(directory.Path);
+        var store = new MemorySettingsStore(ClientSettings.Default with
+        {
+            Sync = new SyncSettings(
+                true,
+                "oss",
+                "https://oss-cn-hangzhou.aliyuncs.com",
+                null,
+                "bucket-value",
+                "cn-hangzhou",
+                "clipboard",
+                Guid.NewGuid().ToString("D"),
+                "profile"),
+        });
+        var credentials = new MemoryCredentialStore
+        {
+            Current = new SyncCredentials("account-value", "secret-value"),
+        };
+        var native = new RecordingNative("{\"available\":false,\"error_category\":\"authentication\",\"error_code\":\"SignatureDoesNotMatch\"}"u8.ToArray());
+        using var core = ClipboardCoreClient.Open("C:\\clipboard-test", Guid.NewGuid(), new byte[32], native);
+        var viewModel = CreateViewModel(store, credentials, core, log);
+        await viewModel.LoadAsync();
+
+        await viewModel.ProbeSyncAsync();
+
+        Assert.Contains("SignatureDoesNotMatch", viewModel.SyncStatus, StringComparison.Ordinal);
+        Assert.DoesNotContain("bucket-value", viewModel.SyncStatus, StringComparison.Ordinal);
+        string text = (await log.ReadSnapshotAsync()).Text;
+        Assert.Contains("error_category=authentication", text, StringComparison.Ordinal);
+        Assert.Contains("error_code=SignatureDoesNotMatch", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-value", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task General_save_preserves_existing_sync_profile_without_touching_credentials()
     {
         var sync = new SyncSettings(

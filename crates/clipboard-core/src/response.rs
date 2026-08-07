@@ -22,6 +22,8 @@ pub enum CoreResponse {
     Sync(SyncDirectoryResponse),
     RemoteProbe {
         available: bool,
+        error_category: Option<String>,
+        error_code: Option<String>,
     },
     Empty {},
 }

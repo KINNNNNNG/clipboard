@@ -264,3 +264,18 @@ fn oss_extracts_only_allowlisted_error_codes() {
     let body = br#"<Error><Code>InternalError</Code><Message>must not surface</Message></Error>"#;
     assert_eq!(clipboard_sync::parse_oss_error_code(body), None);
 }
+
+#[test]
+fn oss_probe_retains_only_the_allowlisted_error_code_for_diagnostics() {
+    let fixture = OssFixture::start(vec![(
+        403,
+        "<Error><Code>SignatureDoesNotMatch</Code><Message>secret</Message></Error>".to_owned(),
+    )]);
+    let store = fixture.store();
+    assert_eq!(store.probe(), Err(SyncError::Authentication));
+    assert_eq!(
+        store.last_error_code(),
+        Some("SignatureDoesNotMatch".to_owned())
+    );
+    fixture.finish();
+}

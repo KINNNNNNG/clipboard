@@ -15,8 +15,8 @@ use clipboard_search::SearchEngine;
 use clipboard_storage::Database;
 use clipboard_sync::{
     DirectoryTransport, NoopSyncDiagnostics, OssStore, RemoteConfig, RemoteSegmentHeader,
-    RemoteStore, SYNC_PROTOCOL_VERSION, SegmentHeader, SyncDiagnostic, SyncDiagnostics, SyncEvent,
-    WebDavStore, open_segment, seal_segment,
+    RemoteStore, SYNC_PROTOCOL_VERSION, SegmentHeader, SyncDiagnostic, SyncDiagnostics, SyncError,
+    SyncEvent, WebDavStore, open_segment, seal_segment,
 };
 use std::{collections::HashSet, path::Path, time::SystemTime};
 use uuid::Uuid;
@@ -96,8 +96,19 @@ impl CoreService {
     }
 
     fn probe_remote(&self, request: ProbeRemote) -> Result<CoreResponse, CoreError> {
-        create_remote_store(request.remote)?.probe()?;
-        Ok(CoreResponse::RemoteProbe { available: true })
+        let store = create_remote_store(request.remote)?;
+        match store.probe() {
+            Ok(()) => Ok(CoreResponse::RemoteProbe {
+                available: true,
+                error_category: None,
+                error_code: None,
+            }),
+            Err(error) => Ok(CoreResponse::RemoteProbe {
+                available: false,
+                error_category: Some(sync_error_category(&error)),
+                error_code: store.last_error_code(),
+            }),
+        }
     }
 
     fn sync_store_with_diagnostics(
@@ -708,6 +719,18 @@ fn create_remote_store(config: RemoteConfig) -> Result<Box<dyn RemoteStore>, Cor
         RemoteConfig::WebDav(config) => Ok(Box::new(WebDavStore::new(config)?)),
         RemoteConfig::Oss(config) => Ok(Box::new(OssStore::new(config)?)),
     }
+}
+
+fn sync_error_category(error: &SyncError) -> String {
+    match error {
+        SyncError::Authentication => "authentication",
+        SyncError::Conflict => "conflict",
+        SyncError::RateLimited => "rate_limited",
+        SyncError::RemoteUnavailable => "remote_unavailable",
+        SyncError::Transport => "transport",
+        _ => "sync_error",
+    }
+    .to_owned()
 }
 
 fn matches_filters(item: &ClipboardItem, filters: &SearchFilters) -> bool {

@@ -40,6 +40,10 @@ pub trait RemoteStore: Send + Sync {
         ciphertext: &[u8],
     ) -> Result<(), SyncError>;
     fn probe(&self) -> Result<(), SyncError>;
+
+    fn last_error_code(&self) -> Option<String> {
+        None
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]

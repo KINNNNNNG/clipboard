@@ -446,39 +446,69 @@ internal sealed class SettingsViewModel : ObservableObject
 
     public async Task ProbeSyncAsync(CancellationToken cancellationToken = default)
     {
-        _globalLog?.Write(LogLevel.Info, "sync", "sync.probe.start", new Dictionary<string, string>
+        await WriteLogAsync(LogLevel.Info, "sync", "sync.probe.start", new Dictionary<string, string>
         {
             ["provider"] = SyncProvider,
-        });
+        }, cancellationToken);
         try
         {
             RemoteConfigDto remote = await BuildRemoteAsync(cancellationToken);
-            await (_syncCore ?? throw new InvalidOperationException()).ProbeRemoteAsync(new ProbeRemoteRequestDto(remote), cancellationToken);
+            RemoteProbeResponseDto response = await (_syncCore ?? throw new InvalidOperationException()).ProbeRemoteAsync(
+                new ProbeRemoteRequestDto(remote),
+                cancellationToken);
+            if (!response.Available)
+            {
+                string category = response.ErrorCategory ?? "remote";
+                string? code = response.ErrorCode;
+                SyncStatus = code is null ? "连接失败。" : $"连接失败：{code}。";
+                var fields = new Dictionary<string, string>
+                {
+                    ["provider"] = SyncProvider,
+                    ["status"] = "failure",
+                    ["error_category"] = category,
+                };
+                if (code is not null)
+                {
+                    fields["error_code"] = code;
+                }
+                await WriteLogAsync(LogLevel.Warn, "sync", "sync.probe.end", fields, cancellationToken);
+                return;
+            }
             SyncStatus = "连接成功。";
-            _globalLog?.Write(LogLevel.Info, "sync", "sync.probe.end", new Dictionary<string, string>
+            await WriteLogAsync(LogLevel.Info, "sync", "sync.probe.end", new Dictionary<string, string>
             {
                 ["provider"] = SyncProvider,
                 ["status"] = "success",
-            });
+            }, cancellationToken);
+        }
+        catch (ClipboardCoreException error)
+        {
+            SyncStatus = "连接失败。";
+            await WriteLogAsync(LogLevel.Warn, "sync", "sync.probe.end", new Dictionary<string, string>
+            {
+                ["provider"] = SyncProvider,
+                ["status"] = "failure",
+                ["error_category"] = CoreErrorCategory(error.Status),
+            }, cancellationToken);
         }
         catch
         {
             SyncStatus = "连接失败。";
-            _globalLog?.Write(LogLevel.Warn, "sync", "sync.probe.end", new Dictionary<string, string>
+            await WriteLogAsync(LogLevel.Warn, "sync", "sync.probe.end", new Dictionary<string, string>
             {
                 ["provider"] = SyncProvider,
                 ["status"] = "failure",
                 ["error_category"] = "remote",
-            });
+            }, cancellationToken);
         }
     }
 
     public async Task RunSyncAsync(CancellationToken cancellationToken = default)
     {
-        _globalLog?.Write(LogLevel.Info, "sync", "sync.remote.start", new Dictionary<string, string>
+        await WriteLogAsync(LogLevel.Info, "sync", "sync.remote.start", new Dictionary<string, string>
         {
             ["provider"] = SyncProvider,
-        });
+        }, cancellationToken);
         try
         {
             RemoteConfigDto remote = await BuildRemoteAsync(cancellationToken);
@@ -486,24 +516,59 @@ internal sealed class SettingsViewModel : ObservableObject
             SyncResponseDto response = await (_syncCore ?? throw new InvalidOperationException()).SyncRemoteAsync(
                 new SyncRemoteRequestDto(Guid.Parse(sync.DeviceId), remote), cancellationToken);
             SyncStatus = $"已同步：拉取 {response.Pulled}，合并 {response.Merged}，上传 {response.Uploaded}。";
-            _globalLog?.Write(LogLevel.Info, "sync", "sync.remote.end", new Dictionary<string, string>
+            await WriteLogAsync(LogLevel.Info, "sync", "sync.remote.end", new Dictionary<string, string>
             {
                 ["provider"] = SyncProvider,
                 ["status"] = "success",
                 ["count"] = (response.Pulled + response.Merged + response.Uploaded).ToString(),
-            });
+            }, cancellationToken);
+        }
+        catch (ClipboardCoreException error)
+        {
+            SyncStatus = "同步失败。";
+            await WriteLogAsync(LogLevel.Error, "sync", "sync.remote.end", new Dictionary<string, string>
+            {
+                ["provider"] = SyncProvider,
+                ["status"] = "failure",
+                ["error_category"] = CoreErrorCategory(error.Status),
+            }, cancellationToken);
         }
         catch
         {
             SyncStatus = "同步失败。";
-            _globalLog?.Write(LogLevel.Error, "sync", "sync.remote.end", new Dictionary<string, string>
+            await WriteLogAsync(LogLevel.Error, "sync", "sync.remote.end", new Dictionary<string, string>
             {
                 ["provider"] = SyncProvider,
                 ["status"] = "failure",
                 ["error_category"] = "remote",
-            });
+            }, cancellationToken);
         }
     }
+
+    private async Task WriteLogAsync(
+        LogLevel level,
+        string component,
+        string eventName,
+        IReadOnlyDictionary<string, string> fields,
+        CancellationToken cancellationToken)
+    {
+        if (_globalLog is null)
+        {
+            return;
+        }
+        _globalLog.Write(level, component, eventName, fields);
+        await _globalLog.FlushAsync(cancellationToken);
+    }
+
+    private static string CoreErrorCategory(CoreStatus status) => status switch
+    {
+        CoreStatus.InvalidArgument => "invalid_argument",
+        CoreStatus.InvalidJson => "invalid_json",
+        CoreStatus.InvalidUtf8 => "invalid_utf8",
+        CoreStatus.InvalidRegex => "invalid_regex",
+        CoreStatus.Panic => "panic",
+        _ => "core_error",
+    };
 
     private SyncSettings? BuildSyncSettings() => !SyncEnabled ? null : new(
         true, SyncProvider, SyncEndpoint, SyncRootPath, SyncBucket, SyncRegion, SyncPrefix,

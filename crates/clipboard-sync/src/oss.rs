@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, io::Read, sync::Mutex};
 
 use hmac::{Hmac, Mac};
 use quick_xml::{Reader, events::Event};
@@ -27,6 +27,7 @@ pub struct OssStore {
     access_key_secret: String,
     path_style: bool,
     client: Client,
+    last_error_code: Mutex<Option<&'static str>>,
 }
 
 impl OssStore {
@@ -51,6 +52,7 @@ impl OssStore {
             access_key_secret: config.access_key_secret().to_owned(),
             path_style,
             client,
+            last_error_code: Mutex::new(None),
         })
     }
 
@@ -157,7 +159,15 @@ impl OssStore {
         if response.status().is_success() {
             Ok(response)
         } else {
-            Err(map_status(response.status()))
+            let status = response.status();
+            let mut body = Vec::new();
+            let _ = response.take(64 * 1024).read_to_end(&mut body);
+            let code = parse_oss_error_code(&body);
+            *self
+                .last_error_code
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = code;
+            Err(map_status(status))
         }
     }
 }
@@ -278,6 +288,13 @@ impl RemoteStore for OssStore {
             BTreeMap::new(),
         )?)?;
         Ok(())
+    }
+
+    fn last_error_code(&self) -> Option<String> {
+        self.last_error_code
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .map(str::to_owned)
     }
 }
 
