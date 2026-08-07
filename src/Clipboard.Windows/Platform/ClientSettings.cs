@@ -8,7 +8,8 @@ internal sealed record ClientSettings(
     string FallbackHotkey,
     bool StartWithWindows,
     string Theme,
-    ulong? MaxFavoriteFileCacheBytes = 5UL * 1024 * 1024 * 1024)
+    ulong? MaxFavoriteFileCacheBytes = 5UL * 1024 * 1024 * 1024,
+    SyncSettings? Sync = null)
 {
     public const ulong BytesPerGiB = 1024UL * 1024 * 1024;
     public const ulong DefaultMaxFavoriteFileCacheBytes = 5UL * BytesPerGiB;
@@ -46,6 +47,7 @@ internal sealed record ClientSettings(
         {
             throw new ArgumentOutOfRangeException(nameof(Theme));
         }
+        Sync?.Validate();
     }
 }
 
@@ -79,6 +81,42 @@ internal sealed class FavoriteFileCachePolicyProvider : IFavoriteFileCachePolicy
         lock (_sync)
         {
             _maxFavoriteFileCacheBytes = settings.MaxFavoriteFileCacheBytes;
+        }
+    }
+}
+
+internal sealed record SyncSettings(
+    bool Enabled,
+    string Provider,
+    string Endpoint,
+    string? RootPath,
+    string? Bucket,
+    string? Region,
+    string? Prefix,
+    string DeviceId,
+    string? CredentialProfileId)
+{
+    public void Validate()
+    {
+        if (!Enabled)
+        {
+            return;
+        }
+        if (Provider is not ("webdav" or "oss")
+            || !Uri.TryCreate(Endpoint, UriKind.Absolute, out Uri? endpoint)
+            || endpoint.Scheme != Uri.UriSchemeHttps
+            || !Guid.TryParse(DeviceId, out _)
+            || string.IsNullOrWhiteSpace(CredentialProfileId))
+        {
+            throw new ArgumentOutOfRangeException(nameof(SyncSettings));
+        }
+        if (Provider == "webdav" && string.IsNullOrWhiteSpace(RootPath))
+        {
+            throw new ArgumentOutOfRangeException(nameof(RootPath));
+        }
+        if (Provider == "oss" && (string.IsNullOrWhiteSpace(Bucket) || string.IsNullOrWhiteSpace(Region)))
+        {
+            throw new ArgumentOutOfRangeException(nameof(Bucket));
         }
     }
 }
