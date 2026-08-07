@@ -22,6 +22,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private FileGlobalLog? _globalLog;
     private readonly ClientSettingsStore _settingsStore = new();
     private readonly SingleWindowLifetime<SettingsWindow> _settingsWindows = new();
+    private readonly SingleWindowLifetime<LogWindow> _logWindows = new();
     private bool _showOnLaunch;
 
     public App()
@@ -119,6 +120,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 handle,
                 MainWindow.ShowPanel,
                 OpenSettings,
+                OpenLogs,
                 ExitApplication);
             _tray.Start();
             if (_showOnLaunch)
@@ -183,9 +185,39 @@ public partial class App : Microsoft.UI.Xaml.Application
         return window;
     }
 
+    private async void OpenLogs()
+    {
+        if (_settingsViewModel is null || _globalLog is null)
+        {
+            return;
+        }
+        LogWindow window = _logWindows.GetOrCreate(
+            () => new LogWindow(new LogViewModel(
+                _globalLog,
+                _settingsViewModel.SaveLoggingLevelAsync)),
+            out bool created);
+        if (!created)
+        {
+            window.Activate();
+            return;
+        }
+        window.Closed += (_, _) => _logWindows.Release(window);
+        try
+        {
+            await window.ShowAsync();
+        }
+        catch
+        {
+            _logWindows.Release(window);
+            window.Close();
+            MainWindow?.SetStatus("无法打开日志");
+        }
+    }
+
     private void ExitApplication()
     {
         _settingsWindows.Current?.Close();
+        _logWindows.Current?.Close();
         MainWindow?.Close();
     }
 
@@ -204,6 +236,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (_settingsWindows.Current?.Content is FrameworkElement settingsRoot)
         {
             settingsRoot.RequestedTheme = requestedTheme;
+        }
+        if (_logWindows.Current?.Content is FrameworkElement logRoot)
+        {
+            logRoot.RequestedTheme = requestedTheme;
         }
     }
 

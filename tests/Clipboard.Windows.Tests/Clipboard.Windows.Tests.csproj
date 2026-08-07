@@ -35,5 +35,8 @@
     <Content Include="..\..\src\Clipboard.Windows\Views\SettingsWindow.xaml"
              Link="Fixtures\SettingsWindow.xaml"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\src\Clipboard.Windows\Views\LogWindow.xaml"
+             Link="Fixtures\LogWindow.xaml"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

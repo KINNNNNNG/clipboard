@@ -7,6 +7,7 @@ internal enum TrayCommand
 {
     OpenClipboard,
     Settings,
+    Logs,
     Exit,
 }
 
@@ -20,6 +21,7 @@ internal sealed class TrayIconService : IDisposable
     private readonly ITrayIconBackend _backend;
     private readonly Action _openClipboard;
     private readonly Action _openSettings;
+    private readonly Action _openLogs;
     private readonly Action _exit;
     private int _started;
 
@@ -28,10 +30,21 @@ internal sealed class TrayIconService : IDisposable
         Action openClipboard,
         Action openSettings,
         Action exit)
+        : this(window, openClipboard, openSettings, static () => { }, exit)
+    {
+    }
+
+    public TrayIconService(
+        nint window,
+        Action openClipboard,
+        Action openSettings,
+        Action openLogs,
+        Action exit)
         : this(
             new WindowsTrayIconBackend(window),
             openClipboard,
             openSettings,
+            openLogs,
             exit)
     {
     }
@@ -40,11 +53,13 @@ internal sealed class TrayIconService : IDisposable
         ITrayIconBackend backend,
         Action openClipboard,
         Action openSettings,
+        Action openLogs,
         Action exit)
     {
         _backend = backend;
         _openClipboard = openClipboard;
         _openSettings = openSettings;
+        _openLogs = openLogs;
         _exit = exit;
     }
 
@@ -69,6 +84,9 @@ internal sealed class TrayIconService : IDisposable
             case TrayCommand.Settings:
                 _openSettings();
                 break;
+            case TrayCommand.Logs:
+                _openLogs();
+                break;
             case TrayCommand.Exit:
                 _exit();
                 break;
@@ -81,7 +99,8 @@ internal sealed class WindowsTrayIconBackend : ITrayIconBackend
     private const uint IconId = 1;
     private const uint OpenCommand = 1;
     private const uint SettingsCommand = 2;
-    private const uint ExitCommand = 3;
+    private const uint LogsCommand = 3;
+    private const uint ExitCommand = 4;
     private readonly nint _window;
     private readonly NativeMethods.SubclassProc _subclassProc;
     private Action<TrayCommand>? _handler;
@@ -175,6 +194,7 @@ internal sealed class WindowsTrayIconBackend : ITrayIconBackend
         {
             NativeMethods.AppendMenu(menu, NativeMethods.MenuString, OpenCommand, "打开剪贴板");
             NativeMethods.AppendMenu(menu, NativeMethods.MenuString, SettingsCommand, "设置");
+            NativeMethods.AppendMenu(menu, NativeMethods.MenuString, LogsCommand, "日志");
             NativeMethods.AppendMenu(menu, NativeMethods.MenuSeparator, 0, null);
             NativeMethods.AppendMenu(menu, NativeMethods.MenuString, ExitCommand, "退出");
             if (!NativeMethods.GetCursorPos(out NativeMethods.POINT point))
@@ -194,6 +214,7 @@ internal sealed class WindowsTrayIconBackend : ITrayIconBackend
             {
                 OpenCommand => TrayCommand.OpenClipboard,
                 SettingsCommand => TrayCommand.Settings,
+                LogsCommand => TrayCommand.Logs,
                 ExitCommand => TrayCommand.Exit,
                 _ => (TrayCommand)(-1),
             });

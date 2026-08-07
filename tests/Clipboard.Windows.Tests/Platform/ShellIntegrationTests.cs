@@ -24,25 +24,29 @@ public sealed class ShellIntegrationTests
     }
 
     [Fact]
-    public void Tray_commands_route_to_open_settings_and_exit_actions()
+    public void Tray_commands_route_to_open_settings_logs_and_exit_actions()
     {
         var backend = new FakeTrayIconBackend();
         int open = 0;
         int settings = 0;
+        int logs = 0;
         int exit = 0;
         using var service = new TrayIconService(
             backend,
             () => open++,
             () => settings++,
+            () => logs++,
             () => exit++);
         service.Start();
 
         backend.Emit(TrayCommand.OpenClipboard);
         backend.Emit(TrayCommand.Settings);
+        backend.Emit(TrayCommand.Logs);
         backend.Emit(TrayCommand.Exit);
 
         Assert.Equal(1, open);
         Assert.Equal(1, settings);
+        Assert.Equal(1, logs);
         Assert.Equal(1, exit);
     }
 

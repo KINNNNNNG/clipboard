@@ -156,4 +156,21 @@ public sealed class XamlResourceConfigurationTests
             document.Descendants(),
             element => element.Name.LocalName == "DesktopAcrylicBackdrop");
     }
+
+    [Fact]
+    public void Log_window_exposes_filter_refresh_copy_and_clear_controls()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "LogWindow.xaml");
+        XDocument document = XDocument.Load(path);
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+
+        Assert.NotNull(document.Descendants().SingleOrDefault(
+            element => element.Attribute(x + "Name")?.Value == "LevelComboBox"));
+        Assert.NotNull(document.Descendants().SingleOrDefault(
+            element => element.Attribute(x + "Name")?.Value == "FilterComboBox"));
+        Assert.NotNull(document.Descendants().SingleOrDefault(
+            element => element.Attribute(x + "Name")?.Value == "AutoRefreshToggle"));
+        Assert.Contains(document.Descendants(), element => element.Attribute("Click")?.Value == "CopyButton_Click");
+        Assert.Contains(document.Descendants(), element => element.Attribute("Click")?.Value == "ClearButton_Click");
+    }
 }
