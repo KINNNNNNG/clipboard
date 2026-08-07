@@ -19,6 +19,8 @@ public partial class App : Microsoft.UI.Xaml.Application
     private TrayIconService? _tray;
     private WindowPresenter? _presenter;
     private SettingsViewModel? _settingsViewModel;
+    private FileGlobalLog? _globalLog;
+    private readonly ClientSettingsStore _settingsStore = new();
     private readonly SingleWindowLifetime<SettingsWindow> _settingsWindows = new();
     private bool _showOnLaunch;
 
@@ -54,6 +56,11 @@ public partial class App : Microsoft.UI.Xaml.Application
         {
             DispatcherQueue dispatcher = DispatcherQueue.GetForCurrentThread()
                 ?? throw new InvalidOperationException("Unable to access the UI dispatcher.");
+            _globalLog = new FileGlobalLog(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Clipboard",
+                "logs"));
+            _globalLog.Write(LogLevel.Info, "app", "app.start");
             _vault = new VaultBootstrapper().LoadOrCreate();
             _core = ClipboardCoreClient.Open(
                 _vault.DataDirectory,
@@ -90,14 +97,15 @@ public partial class App : Microsoft.UI.Xaml.Application
 
             _shortcuts = new GlobalShortcutService(dispatcher, MainWindow.ShowPanel);
             _settingsViewModel = new SettingsViewModel(
-                new ClientSettingsStore(),
+                _settingsStore,
                 _core,
                 _shortcuts,
                 new StartupService(),
                 retentionPolicy: retentionPolicy,
                 favoriteFileCachePolicy: favoriteFileCachePolicy,
                 syncCore: _core,
-                credentials: new SyncCredentialStore());
+                credentials: new SyncCredentialStore(),
+                globalLog: _globalLog);
             await _settingsViewModel.LoadAsync();
             ApplyTheme(_settingsViewModel.Theme);
             _shortcuts.Configure(
@@ -124,6 +132,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         catch
         {
+            _globalLog?.Write(LogLevel.Error, "app", "app.exception", new Dictionary<string, string>
+            {
+                ["error_category"] = "initialization",
+            });
             MainWindow.SetStatus("无法初始化剪贴板服务");
         }
     }
@@ -202,5 +214,6 @@ public partial class App : Microsoft.UI.Xaml.Application
         _shortcuts?.Dispose();
         _core?.Dispose();
         _vault?.Dispose();
+        _globalLog?.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }

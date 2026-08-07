@@ -268,6 +268,63 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task Probe_and_run_sync_record_sanitized_global_log_events()
+    {
+        using var directory = new TemporaryDirectory();
+        await using var log = new FileGlobalLog(directory.Path);
+        var store = new MemorySettingsStore(ClientSettings.Default with
+        {
+            Sync = new SyncSettings(
+                true,
+                "webdav",
+                "https://sync.example.test",
+                "/clipboard",
+                null,
+                null,
+                null,
+                Guid.NewGuid().ToString("D"),
+                "profile"),
+        });
+        var credentials = new MemoryCredentialStore
+        {
+            Current = new SyncCredentials("account-value", "secret-value"),
+        };
+        var native = new RecordingNative("{\"available\":true}"u8.ToArray());
+        using var core = ClipboardCoreClient.Open("C:\\clipboard-test", Guid.NewGuid(), new byte[32], native);
+        var viewModel = CreateViewModel(store, credentials, core, log);
+        await viewModel.LoadAsync();
+
+        await viewModel.ProbeSyncAsync();
+        await viewModel.RunSyncAsync();
+        await log.FlushAsync();
+
+        string text = (await log.ReadSnapshotAsync()).Text;
+        Assert.Contains("sync.probe.start", text, StringComparison.Ordinal);
+        Assert.Contains("sync.probe.end", text, StringComparison.Ordinal);
+        Assert.Contains("sync.remote.start", text, StringComparison.Ordinal);
+        Assert.Contains("sync.remote.end", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("sync.example.test", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("account-value", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-value", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Saving_log_level_persists_and_updates_the_running_log()
+    {
+        using var directory = new TemporaryDirectory();
+        await using var log = new FileGlobalLog(directory.Path);
+        var store = new MemorySettingsStore(ClientSettings.Default);
+        var viewModel = CreateViewModel(store, new MemoryCredentialStore(), globalLog: log);
+        await viewModel.LoadAsync();
+
+        bool saved = await viewModel.SaveLoggingLevelAsync("debug");
+
+        Assert.True(saved);
+        Assert.Equal("debug", store.Current.Logging?.Level);
+        Assert.Equal(LogLevel.Debug, log.Level);
+    }
+
+    [Fact]
     public async Task General_save_preserves_existing_sync_profile_without_touching_credentials()
     {
         var sync = new SyncSettings(
@@ -441,14 +498,16 @@ public sealed class SettingsViewModelTests
     private static SettingsViewModel CreateViewModel(
         IClientSettingsStore store,
         ISyncCredentialStore credentials,
-        ClipboardCoreClient? syncCore = null) =>
+        ClipboardCoreClient? syncCore = null,
+        IGlobalLog? globalLog = null) =>
         new(
             store,
             new FakeRetentionService(),
             new FakeShortcutConfigurator(),
             new FakeStartupSettingsService(),
             syncCore: syncCore,
-            credentials: credentials);
+            credentials: credentials,
+            globalLog: globalLog);
 
     private static void AssertRedacted(string status)
     {

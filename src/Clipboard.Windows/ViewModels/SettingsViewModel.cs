@@ -14,6 +14,7 @@ internal sealed class SettingsViewModel : ObservableObject
     private readonly IFavoriteFileCachePolicyProvider? _favoriteFileCachePolicy;
     private readonly ClipboardCoreClient? _syncCore;
     private readonly ISyncCredentialStore? _credentials;
+    private readonly IGlobalLog? _globalLog;
     private ClientSettings _persisted = ClientSettings.Default;
     private bool _maxRegularItemsEnabled = true;
     private int _maxRegularItems = 1000;
@@ -38,6 +39,9 @@ internal sealed class SettingsViewModel : ObservableObject
     private string _syncAccount = string.Empty;
     private string _syncSecret = string.Empty;
     private string _syncStatus = string.Empty;
+    private string _loggingLevel = "info";
+    private int _loggingRetentionDays = 7;
+    private ulong _loggingMaxSizeBytes = 200UL * 1024 * 1024;
 
     public SettingsViewModel(
         IClientSettingsStore store,
@@ -48,7 +52,8 @@ internal sealed class SettingsViewModel : ObservableObject
         IRetentionPolicyProvider? retentionPolicy = null,
         IFavoriteFileCachePolicyProvider? favoriteFileCachePolicy = null,
         ClipboardCoreClient? syncCore = null,
-        ISyncCredentialStore? credentials = null)
+        ISyncCredentialStore? credentials = null,
+        IGlobalLog? globalLog = null)
     {
         _store = store;
         _retention = retention;
@@ -59,6 +64,7 @@ internal sealed class SettingsViewModel : ObservableObject
         _favoriteFileCachePolicy = favoriteFileCachePolicy;
         _syncCore = syncCore;
         _credentials = credentials;
+        _globalLog = globalLog;
     }
 
     public bool MaxRegularItemsEnabled
@@ -149,6 +155,10 @@ internal sealed class SettingsViewModel : ObservableObject
     public string SyncAccount { get => _syncAccount; set => SetProperty(ref _syncAccount, value); }
     public string SyncSecret { get => _syncSecret; set => SetProperty(ref _syncSecret, value); }
     public string SyncStatus { get => _syncStatus; private set => SetProperty(ref _syncStatus, value); }
+    public string LoggingLevel { get => _loggingLevel; set => SetProperty(ref _loggingLevel, value); }
+    public int LoggingRetentionDays { get => _loggingRetentionDays; set => SetProperty(ref _loggingRetentionDays, value); }
+    public ulong LoggingMaxSizeBytes { get => _loggingMaxSizeBytes; private set => SetProperty(ref _loggingMaxSizeBytes, value); }
+    public LoggingSettings CurrentLoggingSettings => new(LoggingLevel, LoggingRetentionDays, LoggingMaxSizeBytes);
 
     public async Task LoadAsync(CancellationToken cancellationToken = default)
     {
@@ -157,6 +167,7 @@ internal sealed class SettingsViewModel : ObservableObject
         _persisted = settings;
         _retentionPolicy?.Update(settings);
         _favoriteFileCachePolicy?.Update(settings);
+        _globalLog?.ApplySettings(settings.Logging ?? LoggingSettings.Default);
         ErrorMessage = null;
     }
 
@@ -168,6 +179,7 @@ internal sealed class SettingsViewModel : ObservableObject
         CancellationToken cancellationToken)
     {
         ErrorMessage = null;
+        _globalLog?.Write(LogLevel.Debug, "settings", "settings.save.start");
         ClientSettings candidate;
         HotkeyChord chord;
         try
@@ -212,6 +224,11 @@ internal sealed class SettingsViewModel : ObservableObject
             _persisted = candidate;
             _retentionPolicy?.Update(candidate);
             _favoriteFileCachePolicy?.Update(candidate);
+            _globalLog?.ApplySettings(candidate.Logging ?? LoggingSettings.Default);
+            _globalLog?.Write(LogLevel.Info, "settings", "settings.save.end", new Dictionary<string, string>
+            {
+                ["status"] = "success",
+            });
             return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -232,6 +249,11 @@ internal sealed class SettingsViewModel : ObservableObject
                 StartWithWindows = _persisted.StartWithWindows;
             }
             ErrorMessage = "无法保存或应用设置。";
+            _globalLog?.Write(LogLevel.Error, "settings", "settings.save.end", new Dictionary<string, string>
+            {
+                ["status"] = "failure",
+                ["error_category"] = "settings",
+            });
             return false;
         }
     }
@@ -269,7 +291,8 @@ internal sealed class SettingsViewModel : ObservableObject
             StartWithWindows,
             Theme,
             maxFavoriteFileCacheBytes,
-            sync);
+            sync,
+            CurrentLoggingSettings);
     }
 
     private void Apply(ClientSettings settings)
@@ -301,6 +324,10 @@ internal sealed class SettingsViewModel : ObservableObject
         SyncAccount = string.Empty;
         SyncSecret = string.Empty;
         SyncStatus = string.Empty;
+        LoggingSettings logging = settings.Logging ?? LoggingSettings.Default;
+        LoggingLevel = logging.Level;
+        LoggingRetentionDays = logging.RetentionDays;
+        LoggingMaxSizeBytes = logging.MaxSizeBytes;
     }
 
     public async Task<bool> SaveSyncAsync(CancellationToken cancellationToken = default)
@@ -405,19 +432,53 @@ internal sealed class SettingsViewModel : ObservableObject
         return saved;
     }
 
+    public async Task<bool> SaveLoggingLevelAsync(
+        string level,
+        CancellationToken cancellationToken = default)
+    {
+        if (level is not ("trace" or "debug" or "info" or "warn" or "error"))
+        {
+            throw new ArgumentOutOfRangeException(nameof(level));
+        }
+        LoggingLevel = level;
+        return await SaveAsync(cancellationToken);
+    }
+
     public async Task ProbeSyncAsync(CancellationToken cancellationToken = default)
     {
+        _globalLog?.Write(LogLevel.Info, "sync", "sync.probe.start", new Dictionary<string, string>
+        {
+            ["provider"] = SyncProvider,
+        });
         try
         {
             RemoteConfigDto remote = await BuildRemoteAsync(cancellationToken);
             await (_syncCore ?? throw new InvalidOperationException()).ProbeRemoteAsync(new ProbeRemoteRequestDto(remote), cancellationToken);
             SyncStatus = "连接成功。";
+            _globalLog?.Write(LogLevel.Info, "sync", "sync.probe.end", new Dictionary<string, string>
+            {
+                ["provider"] = SyncProvider,
+                ["status"] = "success",
+            });
         }
-        catch { SyncStatus = "连接失败。"; }
+        catch
+        {
+            SyncStatus = "连接失败。";
+            _globalLog?.Write(LogLevel.Warn, "sync", "sync.probe.end", new Dictionary<string, string>
+            {
+                ["provider"] = SyncProvider,
+                ["status"] = "failure",
+                ["error_category"] = "remote",
+            });
+        }
     }
 
     public async Task RunSyncAsync(CancellationToken cancellationToken = default)
     {
+        _globalLog?.Write(LogLevel.Info, "sync", "sync.remote.start", new Dictionary<string, string>
+        {
+            ["provider"] = SyncProvider,
+        });
         try
         {
             RemoteConfigDto remote = await BuildRemoteAsync(cancellationToken);
@@ -425,8 +486,23 @@ internal sealed class SettingsViewModel : ObservableObject
             SyncResponseDto response = await (_syncCore ?? throw new InvalidOperationException()).SyncRemoteAsync(
                 new SyncRemoteRequestDto(Guid.Parse(sync.DeviceId), remote), cancellationToken);
             SyncStatus = $"已同步：拉取 {response.Pulled}，合并 {response.Merged}，上传 {response.Uploaded}。";
+            _globalLog?.Write(LogLevel.Info, "sync", "sync.remote.end", new Dictionary<string, string>
+            {
+                ["provider"] = SyncProvider,
+                ["status"] = "success",
+                ["count"] = (response.Pulled + response.Merged + response.Uploaded).ToString(),
+            });
         }
-        catch { SyncStatus = "同步失败。"; }
+        catch
+        {
+            SyncStatus = "同步失败。";
+            _globalLog?.Write(LogLevel.Error, "sync", "sync.remote.end", new Dictionary<string, string>
+            {
+                ["provider"] = SyncProvider,
+                ["status"] = "failure",
+                ["error_category"] = "remote",
+            });
+        }
     }
 
     private SyncSettings? BuildSyncSettings() => !SyncEnabled ? null : new(
