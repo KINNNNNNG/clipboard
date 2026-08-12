@@ -20,6 +20,7 @@ pub struct SegmentHeader {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SyncEvent {
     TextUpsert { item: ClipboardItem },
+    ImageUpsert { item: ClipboardItem },
     Favorite { item_id: Uuid, state: FavoriteState },
     Delete { item_id: Uuid, state: DeleteState },
 }
@@ -39,11 +40,11 @@ impl TryFrom<&ClipboardItem> for SyncEvent {
             });
         }
 
-        if !matches!(&item.content, ClipboardContent::Text(_)) {
-            return Err(SyncError::LocalOnlyRejected);
+        match &item.content {
+            ClipboardContent::Text(_) => Ok(Self::TextUpsert { item: item.clone() }),
+            ClipboardContent::Image { .. } => Ok(Self::ImageUpsert { item: item.clone() }),
+            ClipboardContent::FileBundle(_) => Err(SyncError::LocalOnlyRejected),
         }
-
-        Ok(Self::TextUpsert { item: item.clone() })
     }
 }
 
@@ -100,11 +101,14 @@ fn validate_header(header: &SegmentHeader) -> Result<(), SyncError> {
 
 fn validate_events(header: &SegmentHeader, events: &[SyncEvent]) -> Result<(), SyncError> {
     for event in events {
-        if let SyncEvent::TextUpsert { item } = event {
-            SyncEvent::try_from(item)?;
-            if item.vault_id != header.vault_id {
-                return Err(SyncError::InvalidSegment);
+        match event {
+            SyncEvent::TextUpsert { item } | SyncEvent::ImageUpsert { item } => {
+                SyncEvent::try_from(item)?;
+                if item.vault_id != header.vault_id {
+                    return Err(SyncError::InvalidSegment);
+                }
             }
+            SyncEvent::Favorite { .. } | SyncEvent::Delete { .. } => {}
         }
     }
     Ok(())

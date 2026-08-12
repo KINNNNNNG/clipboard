@@ -1,5 +1,5 @@
 use clipboard_core::{
-    CoreCommand, CoreResponse, CoreService, DeleteRequest, IngestText, SearchFilters,
+    CoreCommand, CoreResponse, CoreService, DeleteRequest, IngestImage, IngestText, SearchFilters,
     SearchRequest, SyncDirectory,
 };
 use clipboard_crypto::{KeyPurpose, VaultKey};
@@ -116,6 +116,202 @@ fn remote_ciphertext_and_diagnostics_do_not_contain_sensitive_content() {
     ));
     assert!(!diagnostics_json.contains("secret synchronization text"));
     assert!(!diagnostics_json.contains("C:\\private\\file.txt"));
+}
+
+#[test]
+fn image_object_is_uploaded_before_metadata_and_can_be_read_on_second_core() {
+    let remote = tempdir().unwrap();
+    let first_data = tempdir().unwrap();
+    let second_data = tempdir().unwrap();
+    let mut first = CoreService::open(first_data.path(), VAULT_ID, &KEY).unwrap();
+    let mut second = CoreService::open(second_data.path(), VAULT_ID, &KEY).unwrap();
+    let png = b"synthetic-png-bytes";
+    let item_id = match first
+        .ingest_image(
+            IngestImage {
+                width: 2,
+                height: 3,
+                source_app: "paint.exe".to_owned(),
+                captured_ms: 100,
+                source_app_display_name: None,
+            },
+            png,
+        )
+        .unwrap()
+    {
+        CoreResponse::Mutation { item_id } => item_id,
+        _ => panic!("expected mutation response"),
+    };
+
+    sync(&mut first, remote.path(), 1).unwrap();
+    let remote_bytes = remote
+        .path()
+        .read_dir()
+        .unwrap()
+        .flat_map(|entry| std::fs::read(entry.unwrap().path()).unwrap())
+        .collect::<Vec<_>>();
+    assert!(!contains_bytes(&remote_bytes, png));
+    assert_eq!(remote.path().read_dir().unwrap().count(), 2);
+
+    sync(&mut second, remote.path(), 2).unwrap();
+    assert_eq!(second.read_image(item_id).unwrap(), png);
+}
+
+#[test]
+fn missing_image_object_does_not_block_text_in_same_remote_segment() {
+    let remote = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let mut core = CoreService::open(data.path(), VAULT_ID, &KEY).unwrap();
+    let image_id = Uuid::from_u128(0x201);
+    let image_object_id = Uuid::from_u128(0x202);
+    let image = ClipboardItem::new(
+        image_id,
+        VAULT_ID,
+        ClipboardContent::Image {
+            object_id: image_object_id,
+            width: 2,
+            height: 3,
+            bytes: 12,
+        },
+        "paint.exe".to_owned(),
+        100,
+    );
+    let text = ClipboardItem::new(
+        Uuid::from_u128(0x203),
+        VAULT_ID,
+        ClipboardContent::Text("text survives missing image".to_owned()),
+        "editor.exe".to_owned(),
+        101,
+    );
+    let header = SegmentHeader {
+        protocol_version: SYNC_PROTOCOL_VERSION,
+        vault_id: VAULT_ID,
+        device_id: Uuid::from_u128(0x204),
+        segment_id: Uuid::from_u128(0x205),
+    };
+    let journal_key = VaultKey::from_bytes(KEY)
+        .derive(VAULT_ID, KeyPurpose::Journal)
+        .unwrap();
+    let transport = DirectoryTransport::open(remote.path()).unwrap();
+    transport
+        .put_segment(
+            &header,
+            &seal_segment(
+                &journal_key,
+                &header,
+                &[
+                    SyncEvent::ImageUpsert { item: image },
+                    SyncEvent::TextUpsert { item: text },
+                ],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+    let response = sync(&mut core, remote.path(), 0x206).unwrap();
+
+    assert_eq!(response.merged, 1);
+    assert_eq!(previews(&mut core), vec!["text survives missing image"]);
+    assert!(core.read_image(image_id).is_err());
+}
+
+#[test]
+fn missing_local_image_object_keeps_outbox_entry_pending() {
+    let remote = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let mut core = CoreService::open(data.path(), VAULT_ID, &KEY).unwrap();
+    let item_id = match core
+        .ingest_image(
+            IngestImage {
+                width: 2,
+                height: 3,
+                source_app: "paint.exe".to_owned(),
+                captured_ms: 100,
+                source_app_display_name: None,
+            },
+            b"image bytes",
+        )
+        .unwrap()
+    {
+        CoreResponse::Mutation { item_id } => item_id,
+        _ => panic!("expected mutation response"),
+    };
+    let database = Database::open(&data.path().join("history.db"), &KEY).unwrap();
+    let item = database
+        .items()
+        .list_all()
+        .unwrap()
+        .into_iter()
+        .find(|item| item.id == item_id)
+        .unwrap();
+    let ClipboardContent::Image { object_id, .. } = item.content else {
+        panic!("expected image item");
+    };
+    std::fs::remove_file(
+        data.path()
+            .join("objects")
+            .join(format!("{object_id}.clipobj")),
+    )
+    .unwrap();
+    drop(database);
+
+    assert!(sync(&mut core, remote.path(), 0x301).is_err());
+
+    let database = Database::open(&data.path().join("history.db"), &KEY).unwrap();
+    assert_eq!(database.outbox().pending_count().unwrap(), 1);
+    assert_eq!(remote.path().read_dir().unwrap().count(), 0);
+}
+
+#[test]
+fn tampered_remote_image_object_is_not_inserted_into_history() {
+    let remote = tempdir().unwrap();
+    let first_data = tempdir().unwrap();
+    let second_data = tempdir().unwrap();
+    let mut first = CoreService::open(first_data.path(), VAULT_ID, &KEY).unwrap();
+    let mut second = CoreService::open(second_data.path(), VAULT_ID, &KEY).unwrap();
+    let item_id = match first
+        .ingest_image(
+            IngestImage {
+                width: 2,
+                height: 3,
+                source_app: "paint.exe".to_owned(),
+                captured_ms: 100,
+                source_app_display_name: None,
+            },
+            b"image bytes",
+        )
+        .unwrap()
+    {
+        CoreResponse::Mutation { item_id } => item_id,
+        _ => panic!("expected mutation response"),
+    };
+    sync(&mut first, remote.path(), 0x401).unwrap();
+    let object_id = Database::open(&first_data.path().join("history.db"), &KEY)
+        .unwrap()
+        .items()
+        .list_all()
+        .unwrap()
+        .into_iter()
+        .find(|item| item.id == item_id)
+        .and_then(|item| match item.content {
+            ClipboardContent::Image { object_id, .. } => Some(object_id),
+            _ => None,
+        })
+        .unwrap();
+    let transport = DirectoryTransport::open(remote.path()).unwrap();
+    let object_name = clipboard_sync::completed_image_object_name(
+        &clipboard_sync::RemoteImageObject::new(VAULT_ID, object_id),
+    );
+    let mut encrypted = transport.get_object(&object_name).unwrap();
+    let last_index = encrypted.len() - 1;
+    encrypted[last_index] ^= 0x80;
+    std::fs::write(remote.path().join(object_name), encrypted).unwrap();
+
+    let response = sync(&mut second, remote.path(), 0x402).unwrap();
+
+    assert_eq!(response.merged, 0);
+    assert!(previews(&mut second).is_empty());
+    assert!(second.read_image(item_id).is_err());
 }
 
 #[test]

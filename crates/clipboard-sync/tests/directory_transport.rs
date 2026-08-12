@@ -55,3 +55,19 @@ fn directory_transport_publishes_encrypted_segments_in_filename_order() {
             .ends_with(".pending")
     }));
 }
+
+#[test]
+fn directory_transport_publishes_image_objects_without_listing_them_as_segments() {
+    let directory = tempdir().unwrap();
+    let transport = DirectoryTransport::open(directory.path()).unwrap();
+    let object_name = "image-00000000-0000-0000-0000-000000000009.enc";
+    transport
+        .put_object(object_name, b"encrypted-image")
+        .unwrap();
+
+    assert_eq!(
+        transport.get_object(object_name).unwrap(),
+        b"encrypted-image"
+    );
+    assert!(transport.list_all_segments().unwrap().is_empty());
+}

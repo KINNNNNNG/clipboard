@@ -20,8 +20,9 @@ pub use oss::{OssStore, parse_oss_error_code};
 pub use protocol::{SegmentHeader, SyncEvent, open_segment, seal_segment};
 pub use recovery_code::{RecoveryMaterial, decode_recovery_code, encode_recovery_code};
 pub use remote::{
-    OssConfig, PENDING_OBJECT_SUFFIX, REMOTE_CONFIG_VERSION, RemoteConfig, RemoteSegmentHeader,
-    RemoteStore, WebDavConfig, completed_object_name, parse_completed_object_name,
+    OssConfig, PENDING_OBJECT_SUFFIX, REMOTE_CONFIG_VERSION, RemoteConfig, RemoteImageObject,
+    RemoteSegmentHeader, RemoteStore, WebDavConfig, completed_image_object_name,
+    completed_object_name, parse_completed_object_name, pending_image_object_name,
     pending_object_name, validate_remote_segment_header,
 };
 pub use transport::{DirectoryTransport, SyncTransport};

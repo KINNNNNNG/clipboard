@@ -95,6 +95,28 @@ fn deleted_vault_image_is_encoded_as_a_delete_event() {
 }
 
 #[test]
+fn image_item_is_encoded_as_metadata_only_image_event() {
+    let image = ClipboardItem::new(
+        Uuid::from_u128(7),
+        Uuid::from_u128(2),
+        ClipboardContent::Image {
+            object_id: Uuid::from_u128(8),
+            width: 640,
+            height: 480,
+            bytes: 1234,
+        },
+        "editor.exe".to_owned(),
+        100,
+    );
+
+    let event = SyncEvent::try_from(&image).unwrap();
+    assert_eq!(event, SyncEvent::ImageUpsert { item: image });
+    let encoded = serde_json::to_string(&event).unwrap();
+    assert!(!encoded.contains("PNG"));
+    assert!(encoded.contains("object_id"));
+}
+
+#[test]
 fn encrypted_segment_rejects_tampering_and_wrong_vault() {
     let event = SyncEvent::try_from(&text_item()).unwrap();
     let expected_header = header(SYNC_PROTOCOL_VERSION);
@@ -122,7 +144,7 @@ fn segment_rejects_an_unsupported_protocol_version() {
 }
 
 #[test]
-fn sync_event_rejects_non_text_and_local_only_items() {
+fn sync_event_rejects_local_only_items_but_accepts_images() {
     let image = ClipboardItem::new(
         Uuid::from_u128(6),
         Uuid::from_u128(2),
@@ -136,10 +158,10 @@ fn sync_event_rejects_non_text_and_local_only_items() {
         100,
     );
     assert_eq!(image.sync_scope(), SyncScope::Vault);
-    assert_eq!(
+    assert!(matches!(
         SyncEvent::try_from(&image),
-        Err(SyncError::LocalOnlyRejected)
-    );
+        Ok(SyncEvent::ImageUpsert { .. })
+    ));
 
     let local_only = ClipboardItem::new(
         Uuid::from_u128(8),

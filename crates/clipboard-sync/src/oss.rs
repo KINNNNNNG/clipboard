@@ -10,8 +10,9 @@ use sha2::{Digest, Sha256};
 use time::{OffsetDateTime, macros::format_description};
 
 use crate::{
-    OssConfig, RemoteSegmentHeader, RemoteStore, SyncError, completed_object_name,
-    parse_completed_object_name, pending_object_name,
+    OssConfig, RemoteImageObject, RemoteSegmentHeader, RemoteStore, SyncError,
+    completed_image_object_name, completed_object_name, parse_completed_object_name,
+    pending_image_object_name, pending_object_name,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -369,6 +370,71 @@ impl RemoteStore for OssStore {
 
         self.send(
             "oss_delete_pending",
+            self.signed_request(
+                Method::DELETE,
+                self.object_url(&pending_key)?,
+                &[],
+                BTreeMap::new(),
+            )?,
+        )?;
+        Ok(())
+    }
+
+    fn get_image_object(&self, object: &RemoteImageObject) -> Result<Vec<u8>, SyncError> {
+        let name = completed_image_object_name(object);
+        self.send(
+            "oss_get_image",
+            self.signed_request(
+                Method::GET,
+                self.object_url(&self.object_key(&name))?,
+                &[],
+                BTreeMap::new(),
+            )?,
+        )?
+        .bytes()
+        .map(|bytes| bytes.to_vec())
+        .map_err(|_| SyncError::RemoteUnavailable)
+    }
+
+    fn put_image_object(
+        &self,
+        object: &RemoteImageObject,
+        ciphertext: &[u8],
+    ) -> Result<(), SyncError> {
+        let pending_name = pending_image_object_name(object);
+        let completed_name = completed_image_object_name(object);
+        let pending_key = self.object_key(&pending_name);
+        let completed_key = self.object_key(&completed_name);
+
+        let mut create_headers = BTreeMap::new();
+        create_headers.insert("x-oss-forbid-overwrite".to_owned(), "true".to_owned());
+        self.send(
+            "oss_put_image_pending",
+            self.signed_request(
+                Method::PUT,
+                self.object_url(&pending_key)?,
+                ciphertext,
+                create_headers,
+            )?,
+        )?;
+
+        let mut copy_headers = BTreeMap::new();
+        copy_headers.insert("x-oss-forbid-overwrite".to_owned(), "true".to_owned());
+        copy_headers.insert(
+            "x-oss-copy-source".to_owned(),
+            format!("/{}/{}", self.bucket, pending_key),
+        );
+        self.send(
+            "oss_copy_image_publish",
+            self.signed_request(
+                Method::PUT,
+                self.object_url(&completed_key)?,
+                &[],
+                copy_headers,
+            )?,
+        )?;
+        self.send(
+            "oss_delete_image_pending",
             self.signed_request(
                 Method::DELETE,
                 self.object_url(&pending_key)?,

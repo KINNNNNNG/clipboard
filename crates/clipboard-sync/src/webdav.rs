@@ -6,8 +6,9 @@ use reqwest::{
 use std::sync::Mutex;
 
 use crate::{
-    PENDING_OBJECT_SUFFIX, RemoteSegmentHeader, RemoteStore, SyncError, WebDavConfig,
-    completed_object_name, parse_completed_object_name,
+    PENDING_OBJECT_SUFFIX, RemoteImageObject, RemoteSegmentHeader, RemoteStore, SyncError,
+    WebDavConfig, completed_image_object_name, completed_object_name, parse_completed_object_name,
+    pending_image_object_name,
 };
 
 const CSTCLOUD_WEB_DAV_HOST: &str = "data.cstcloud.cn";
@@ -158,6 +159,42 @@ impl RemoteStore for WebDavStore {
         let destination = self.object_url(&completed)?;
         self.send(
             "webdav_move_publish",
+            self.object_request(
+                Method::from_bytes(b"MOVE").map_err(|_| SyncError::RemoteUnavailable)?,
+                &pending,
+            )?
+            .header("Destination", destination.as_str())
+            .header("Overwrite", "F"),
+        )?;
+        Ok(())
+    }
+
+    fn get_image_object(&self, object: &RemoteImageObject) -> Result<Vec<u8>, SyncError> {
+        self.send(
+            "webdav_get_image",
+            self.object_request(Method::GET, &completed_image_object_name(object))?,
+        )?
+        .bytes()
+        .map(|bytes| bytes.to_vec())
+        .map_err(|_| SyncError::RemoteUnavailable)
+    }
+
+    fn put_image_object(
+        &self,
+        object: &RemoteImageObject,
+        ciphertext: &[u8],
+    ) -> Result<(), SyncError> {
+        let pending = pending_image_object_name(object);
+        let completed = completed_image_object_name(object);
+        self.send(
+            "webdav_put_image_pending",
+            self.object_request(Method::PUT, &pending)?
+                .header("If-None-Match", "*")
+                .body(ciphertext.to_vec()),
+        )?;
+        let destination = self.object_url(&completed)?;
+        self.send(
+            "webdav_move_image_publish",
             self.object_request(
                 Method::from_bytes(b"MOVE").map_err(|_| SyncError::RemoteUnavailable)?,
                 &pending,

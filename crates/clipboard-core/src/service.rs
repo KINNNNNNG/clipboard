@@ -14,9 +14,9 @@ use clipboard_domain::{
 use clipboard_search::SearchEngine;
 use clipboard_storage::Database;
 use clipboard_sync::{
-    DirectoryTransport, NoopSyncDiagnostics, OssStore, RemoteConfig, RemoteSegmentHeader,
-    RemoteStore, SYNC_PROTOCOL_VERSION, SegmentHeader, SyncDiagnostic, SyncDiagnostics, SyncError,
-    SyncEvent, WebDavStore, open_segment, seal_segment,
+    DirectoryTransport, NoopSyncDiagnostics, OssStore, RemoteConfig, RemoteImageObject,
+    RemoteSegmentHeader, RemoteStore, SYNC_PROTOCOL_VERSION, SegmentHeader, SyncDiagnostic,
+    SyncDiagnostics, SyncError, SyncEvent, WebDavStore, open_segment, seal_segment,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -181,10 +181,12 @@ impl CoreService {
             ));
             response.pulled += 1;
             let mut merged_in_segment = 0_u64;
+            let mut segment_complete = true;
             for event in events {
-                let merged = self.merge_inbound_event(event)?;
+                let (merged, complete) = self.merge_inbound_event(event, transport)?;
                 response.merged += usize::from(merged);
                 merged_in_segment += u64::from(merged);
+                segment_complete &= complete;
             }
             diagnostics.record(SyncDiagnostic::segment_completed(
                 clipboard_sync::SyncDiagnosticPhase::Merge,
@@ -192,8 +194,10 @@ impl CoreService {
                 ciphertext.len() as u64,
                 merged_in_segment,
             ));
-            self.processed_segments
-                .insert((header.device_id, header.segment_id));
+            if segment_complete {
+                self.processed_segments
+                    .insert((header.device_id, header.segment_id));
+            }
         }
 
         for entry in self.database.outbox().pending()? {
@@ -208,6 +212,14 @@ impl CoreService {
                 }
                 Err(error) => return Err(error.into()),
             };
+            if matches!(event, SyncEvent::ImageUpsert { .. })
+                && let ClipboardContent::Image { object_id, .. } = &item.content
+            {
+                let object = RemoteImageObject::new(self.vault_id, *object_id);
+                let encrypted = self.object_store.read_encrypted_image(*object_id)?;
+                transport.put_image_object(&object, &encrypted)?;
+            }
+
             let header = SegmentHeader {
                 protocol_version: SYNC_PROTOCOL_VERSION,
                 vault_id: self.vault_id,
@@ -230,22 +242,27 @@ impl CoreService {
         Ok(response)
     }
 
-    fn merge_inbound_event(&mut self, event: SyncEvent) -> Result<bool, CoreError> {
+    fn merge_inbound_event(
+        &mut self,
+        event: SyncEvent,
+        transport: &dyn RemoteStore,
+    ) -> Result<(bool, bool), CoreError> {
         match event {
-            SyncEvent::TextUpsert { item } => self.merge_inbound_text(item),
+            SyncEvent::TextUpsert { item } => Ok((self.merge_inbound_text(item)?, true)),
+            SyncEvent::ImageUpsert { item } => self.merge_inbound_image(item, transport),
             SyncEvent::Favorite { item_id, state } => {
                 let Some(mut item) = self.find_inbound_item(item_id)? else {
-                    return Ok(false);
+                    return Ok((false, true));
                 };
                 let merged = item
                     .favorite_state
                     .map_or(state, |existing| existing.merge(&state));
                 if item.favorite_state == Some(merged) {
-                    return Ok(false);
+                    return Ok((false, true));
                 }
                 item.favorite_state = Some(merged);
                 self.database.items().update(&item)?;
-                Ok(true)
+                Ok((true, true))
             }
             SyncEvent::Delete { item_id, state } => {
                 let Some(mut item) = self.find_inbound_item(item_id)? else {
@@ -253,19 +270,107 @@ impl CoreService {
                         .entry(item_id)
                         .and_modify(|existing| *existing = existing.merge(&state))
                         .or_insert(state);
-                    return Ok(false);
+                    return Ok((false, true));
                 };
                 let merged = item
                     .delete_state
                     .map_or(state, |existing| existing.merge(&state));
                 if item.delete_state == Some(merged) {
-                    return Ok(false);
+                    return Ok((false, true));
                 }
                 item.delete_state = Some(merged);
                 self.database.items().update(&item)?;
-                Ok(true)
+                Ok((true, true))
             }
         }
+    }
+
+    fn merge_inbound_image(
+        &mut self,
+        mut incoming: ClipboardItem,
+        transport: &dyn RemoteStore,
+    ) -> Result<(bool, bool), CoreError> {
+        let ClipboardContent::Image {
+            object_id,
+            width,
+            height,
+            bytes,
+        } = &incoming.content
+        else {
+            return Err(CoreError::InvalidCommand("non-image sync item".to_owned()));
+        };
+        let object = RemoteImageObject::new(self.vault_id, *object_id);
+        let encrypted = match transport.get_image_object(&object) {
+            Ok(encrypted) => encrypted,
+            Err(SyncError::Transport | SyncError::RemoteUnavailable) => return Ok((false, false)),
+            Err(error) => return Err(error.into()),
+        };
+        if self
+            .object_store
+            .store_encrypted_image(*object_id, &encrypted)
+            .is_err()
+        {
+            return Ok((false, true));
+        }
+        if let Some(pending) = self.pending_delete_states.remove(&incoming.id) {
+            incoming.delete_state = Some(
+                incoming
+                    .delete_state
+                    .map_or(pending, |existing| existing.merge(&pending)),
+            );
+        }
+        let Some(mut existing) = self.find_inbound_item(incoming.id)? else {
+            self.database.items().insert(&incoming)?;
+            return Ok((true, true));
+        };
+        let ClipboardContent::Image {
+            object_id: existing_object_id,
+            width: existing_width,
+            height: existing_height,
+            bytes: existing_bytes,
+        } = existing.content
+        else {
+            return Err(CoreError::InvalidCommand(
+                "incompatible sync item".to_owned(),
+            ));
+        };
+        if existing_object_id != *object_id
+            || existing_width != *width
+            || existing_height != *height
+            || existing_bytes != *bytes
+        {
+            return Err(CoreError::InvalidCommand(
+                "incompatible sync item".to_owned(),
+            ));
+        }
+        let mut changed = false;
+        if existing.last_used_ms < incoming.last_used_ms {
+            existing.last_used_ms = incoming.last_used_ms;
+            existing.source_app = incoming.source_app;
+            existing.source_app_display_name = incoming.source_app_display_name;
+            existing.content_fingerprint = incoming.content_fingerprint;
+            changed = true;
+        }
+        if let Some(state) = incoming.favorite_state {
+            let merged = existing
+                .favorite_state
+                .map_or(state, |old| old.merge(&state));
+            if existing.favorite_state != Some(merged) {
+                existing.favorite_state = Some(merged);
+                changed = true;
+            }
+        }
+        if let Some(state) = incoming.delete_state {
+            let merged = existing.delete_state.map_or(state, |old| old.merge(&state));
+            if existing.delete_state != Some(merged) {
+                existing.delete_state = Some(merged);
+                changed = true;
+            }
+        }
+        if changed {
+            self.database.items().update(&existing)?;
+        }
+        Ok((changed, true))
     }
 
     fn merge_inbound_text(&mut self, mut incoming: ClipboardItem) -> Result<bool, CoreError> {

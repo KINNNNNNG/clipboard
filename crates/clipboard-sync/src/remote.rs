@@ -7,6 +7,7 @@ use crate::{SYNC_PROTOCOL_VERSION, SegmentHeader, SyncError};
 
 pub const REMOTE_CONFIG_VERSION: u8 = 1;
 pub const PENDING_OBJECT_SUFFIX: &str = ".pending";
+const IMAGE_OBJECT_VERSION: u8 = 1;
 
 /// A segment header admitted to the remote-store boundary.
 ///
@@ -18,6 +19,33 @@ pub struct RemoteSegmentHeader(SegmentHeader);
 impl RemoteSegmentHeader {
     pub fn header(&self) -> &SegmentHeader {
         &self.0
+    }
+}
+
+/// Identifies a versioned encrypted image object admitted to the remote-store boundary.
+///
+/// Image ciphertext is not interpreted by remote stores. The vault and object identifiers are
+/// nevertheless explicit so a store cannot be asked to fetch an arbitrary path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RemoteImageObject {
+    vault_id: Uuid,
+    object_id: Uuid,
+}
+
+impl RemoteImageObject {
+    pub fn new(vault_id: Uuid, object_id: Uuid) -> Self {
+        Self {
+            vault_id,
+            object_id,
+        }
+    }
+
+    pub fn vault_id(&self) -> Uuid {
+        self.vault_id
+    }
+
+    pub fn object_id(&self) -> Uuid {
+        self.object_id
     }
 }
 
@@ -37,6 +65,12 @@ pub trait RemoteStore: Send + Sync {
     fn put_pending_then_publish(
         &self,
         header: &RemoteSegmentHeader,
+        ciphertext: &[u8],
+    ) -> Result<(), SyncError>;
+    fn get_image_object(&self, object: &RemoteImageObject) -> Result<Vec<u8>, SyncError>;
+    fn put_image_object(
+        &self,
+        object: &RemoteImageObject,
         ciphertext: &[u8],
     ) -> Result<(), SyncError>;
     fn probe(&self) -> Result<(), SyncError>;
@@ -315,6 +349,21 @@ pub fn pending_object_name(header: &SegmentHeader) -> Result<String, SyncError> 
         completed_object_name(header)?,
         PENDING_OBJECT_SUFFIX
     ))
+}
+
+pub fn completed_image_object_name(object: &RemoteImageObject) -> String {
+    format!(
+        "image-{:02x}-{}-{}.enc",
+        IMAGE_OBJECT_VERSION, object.vault_id, object.object_id
+    )
+}
+
+pub fn pending_image_object_name(object: &RemoteImageObject) -> String {
+    format!(
+        "{}{}",
+        completed_image_object_name(object),
+        PENDING_OBJECT_SUFFIX
+    )
 }
 
 pub fn parse_completed_object_name(name: &str) -> Option<RemoteSegmentHeader> {

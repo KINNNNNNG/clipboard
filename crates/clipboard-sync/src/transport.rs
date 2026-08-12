@@ -6,7 +6,11 @@ use std::{
 
 use uuid::Uuid;
 
-use crate::{RemoteSegmentHeader, RemoteStore, SYNC_PROTOCOL_VERSION, SegmentHeader, SyncError};
+use crate::{
+    PENDING_OBJECT_SUFFIX, RemoteImageObject, RemoteSegmentHeader, RemoteStore,
+    SYNC_PROTOCOL_VERSION, SegmentHeader, SyncError, completed_image_object_name,
+    pending_image_object_name,
+};
 
 pub trait SyncTransport: Send + Sync {
     fn put_segment(&self, header: &SegmentHeader, ciphertext: &[u8]) -> Result<(), SyncError>;
@@ -56,6 +60,42 @@ impl DirectoryTransport {
     fn path_for(&self, header: &SegmentHeader, suffix: &str) -> PathBuf {
         self.directory
             .join(format!("{}{}", segment_name(header), suffix))
+    }
+
+    pub fn put_object(&self, object_name: &str, ciphertext: &[u8]) -> Result<(), SyncError> {
+        self.put_named_object(
+            object_name,
+            &format!("{object_name}{PENDING_OBJECT_SUFFIX}"),
+            ciphertext,
+        )
+    }
+
+    pub fn get_object(&self, object_name: &str) -> Result<Vec<u8>, SyncError> {
+        fs::read(self.directory.join(object_name)).map_err(|_| SyncError::Transport)
+    }
+
+    fn put_named_object(
+        &self,
+        completed_name: &str,
+        pending_name: &str,
+        ciphertext: &[u8],
+    ) -> Result<(), SyncError> {
+        let final_path = self.directory.join(completed_name);
+        if final_path.exists() {
+            return Ok(());
+        }
+        let pending_path = self.directory.join(pending_name);
+        let mut pending = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&pending_path)
+            .map_err(|_| SyncError::Transport)?;
+        pending
+            .write_all(ciphertext)
+            .map_err(|_| SyncError::Transport)?;
+        pending.sync_all().map_err(|_| SyncError::Transport)?;
+        drop(pending);
+        fs::rename(&pending_path, final_path).map_err(|_| SyncError::Transport)
     }
 }
 
@@ -118,6 +158,22 @@ impl RemoteStore for DirectoryTransport {
         ciphertext: &[u8],
     ) -> Result<(), SyncError> {
         self.put_segment(header.header(), ciphertext)
+    }
+
+    fn get_image_object(&self, object: &RemoteImageObject) -> Result<Vec<u8>, SyncError> {
+        self.get_object(&completed_image_object_name(object))
+    }
+
+    fn put_image_object(
+        &self,
+        object: &RemoteImageObject,
+        ciphertext: &[u8],
+    ) -> Result<(), SyncError> {
+        self.put_named_object(
+            &completed_image_object_name(object),
+            &pending_image_object_name(object),
+            ciphertext,
+        )
     }
 
     fn probe(&self) -> Result<(), SyncError> {
