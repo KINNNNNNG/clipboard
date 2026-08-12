@@ -8,6 +8,19 @@ namespace Clipboard.Windows.Tests.Platform;
 public sealed class ClipboardCaptureCoordinatorTests
 {
     [Fact]
+    public void Composite_observer_forwards_capture_notifications_to_each_observer()
+    {
+        var first = new FakeObserver();
+        var second = new FakeObserver();
+        var observer = new CompositeCaptureObserver(first, second);
+
+        observer.OnCaptured(new CaptureNotification(Guid.NewGuid(), "text"));
+
+        Assert.Single(first.Captured);
+        Assert.Single(second.Captured);
+    }
+
+    [Fact]
     public async Task Unicode_text_is_ingested_once_and_unknown_source_is_preserved()
     {
         var reader = new FakeReader(ClipboardPayload.Text("跨设备剪贴板"));

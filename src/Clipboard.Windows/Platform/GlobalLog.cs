@@ -55,6 +55,8 @@ internal sealed class FileGlobalLog : IGlobalLog
         "count",
         "error_category",
         "error_code",
+        "error_detail",
+        "error_operation",
         "operation",
         "command",
     };

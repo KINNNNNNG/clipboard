@@ -152,6 +152,37 @@ public sealed class ClipboardCoreClientTests
     }
 
     [Fact]
+    public async Task Sync_remote_deserializes_sanitized_remote_failure_details()
+    {
+        var native = new FakeNative
+        {
+            ExecuteResponse = "{\"pulled\":0,\"merged\":0,\"uploaded\":0,\"rejected_local_only\":0,\"error_category\":\"authentication\",\"error_code\":\"SignatureDoesNotMatch\",\"error_detail\":\"http_403_oss_error\",\"error_operation\":\"oss_put_pending\"}"u8.ToArray(),
+        };
+        using var client = ClipboardCoreClient.Open(
+            "C:\\clipboard-data",
+            Guid.NewGuid(),
+            new byte[32],
+            native);
+
+        SyncResponseDto response = await client.SyncRemoteAsync(new SyncRemoteRequestDto(
+            Guid.NewGuid(),
+            new RemoteConfigDto(
+                "oss",
+                1,
+                "https://oss-cn-hangzhou.aliyuncs.com",
+                Region: "cn-hangzhou",
+                Bucket: "bucket-value",
+                Prefix: "clipboard",
+                AccessKeyId: "account-value",
+                AccessKeySecret: "secret-value")));
+
+        Assert.Equal("authentication", response.ErrorCategory);
+        Assert.Equal("SignatureDoesNotMatch", response.ErrorCode);
+        Assert.Equal("http_403_oss_error", response.ErrorDetail);
+        Assert.Equal("oss_put_pending", response.ErrorOperation);
+    }
+
+    [Fact]
     public async Task File_bundle_commands_use_json_execute_and_round_trip_structured_entries()
     {
         var native = new FakeNative

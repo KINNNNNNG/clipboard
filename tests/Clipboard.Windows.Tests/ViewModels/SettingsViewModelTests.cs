@@ -361,6 +361,75 @@ public sealed class SettingsViewModelTests
         Assert.DoesNotContain("secret-value", text, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("http_secret-value")]
+    [InlineData("https://account-value:secret-value@sync.example.test")]
+    public async Task Probe_sync_does_not_display_or_log_unsafe_remote_error_detail(string detail)
+    {
+        using var directory = new TemporaryDirectory();
+        await using var log = new FileGlobalLog(directory.Path);
+        var store = new MemorySettingsStore(ClientSettings.Default with { Sync = WebDavSettings("https://sync.example.test") });
+        var credentials = new MemoryCredentialStore
+        {
+            Current = new SyncCredentials("account-value", "secret-value"),
+        };
+        byte[] response = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            available = false,
+            error_category = "remote",
+            error_detail = detail,
+        });
+        var native = new RecordingNative(response);
+        using var core = ClipboardCoreClient.Open("C:\\clipboard-test", Guid.NewGuid(), new byte[32], native);
+        var viewModel = CreateViewModel(store, credentials, core, log);
+        await viewModel.LoadAsync();
+
+        await viewModel.ProbeSyncAsync();
+        await log.FlushAsync();
+
+        string text = (await log.ReadSnapshotAsync()).Text;
+        Assert.Equal("连接失败。", viewModel.SyncStatus);
+        Assert.DoesNotContain(detail, viewModel.SyncStatus, StringComparison.Ordinal);
+        Assert.DoesNotContain(detail, text, StringComparison.Ordinal);
+        Assert.DoesNotContain("error_detail=", text, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("http_secret-value")]
+    [InlineData("https://account-value:secret-value@sync.example.test")]
+    public async Task Run_sync_does_not_display_or_log_unsafe_remote_error_detail(string detail)
+    {
+        using var directory = new TemporaryDirectory();
+        await using var log = new FileGlobalLog(directory.Path);
+        var store = new MemorySettingsStore(ClientSettings.Default with { Sync = WebDavSettings("https://sync.example.test") });
+        var credentials = new MemoryCredentialStore
+        {
+            Current = new SyncCredentials("account-value", "secret-value"),
+        };
+        byte[] response = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            pulled = 0,
+            merged = 0,
+            uploaded = 0,
+            rejected_local_only = 0,
+            error_category = "remote",
+            error_detail = detail,
+        });
+        var native = new RecordingNative(response);
+        using var core = ClipboardCoreClient.Open("C:\\clipboard-test", Guid.NewGuid(), new byte[32], native);
+        var viewModel = CreateViewModel(store, credentials, core, log);
+        await viewModel.LoadAsync();
+
+        await viewModel.RunSyncAsync();
+        await log.FlushAsync();
+
+        string text = (await log.ReadSnapshotAsync()).Text;
+        Assert.Equal("同步失败。", viewModel.SyncStatus);
+        Assert.DoesNotContain(detail, viewModel.SyncStatus, StringComparison.Ordinal);
+        Assert.DoesNotContain(detail, text, StringComparison.Ordinal);
+        Assert.DoesNotContain("error_detail=", text, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task General_save_preserves_existing_sync_profile_without_touching_credentials()
     {
@@ -476,6 +545,42 @@ public sealed class SettingsViewModelTests
         using JsonDocument request = JsonDocument.Parse(native.Request!);
         JsonElement remote = request.RootElement.GetProperty("payload").GetProperty("remote");
         Assert.Equal("https://sync.example.test/new/changed", remote.GetProperty("endpoint").GetString());
+    }
+
+    [Fact]
+    public async Task Remote_request_factory_builds_webdav_endpoint_from_saved_credentials()
+    {
+        var settings = new SyncSettings(
+            true,
+            "webdav",
+            "https://sync.example.test",
+            "/folder/",
+            null,
+            null,
+            null,
+            Guid.NewGuid().ToString("D"),
+            "profile");
+        var credentials = new MemoryCredentialStore
+        {
+            Current = new SyncCredentials("alice", "secret"),
+        };
+
+        RemoteConfigDto remote = await RemoteSyncRequestFactory.CreateAsync(settings, credentials);
+
+        Assert.Equal("https://sync.example.test/folder/", remote.Endpoint);
+        Assert.Equal("alice", remote.Username);
+    }
+
+    [Theory]
+    [InlineData("//other.example/path")]
+    [InlineData("http://other.example/path")]
+    [InlineData("https://sync.example.test:8443/path")]
+    public async Task Remote_request_factory_rejects_non_relative_webdav_root_paths(string rootPath)
+    {
+        SyncSettings settings = WebDavSettings("https://sync.example.test") with { RootPath = rootPath };
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => RemoteSyncRequestFactory.CreateAsync(settings, new MemoryCredentialStore()));
     }
 
     [Fact]

@@ -44,6 +44,16 @@ pub trait RemoteStore: Send + Sync {
     fn last_error_code(&self) -> Option<String> {
         None
     }
+
+    /// Returns a fixed, non-sensitive transport detail for the latest failed request.
+    fn last_error_detail(&self) -> Option<String> {
+        None
+    }
+
+    /// Returns a fixed operation identifier for the latest failed remote request.
+    fn last_error_operation(&self) -> Option<String> {
+        None
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]

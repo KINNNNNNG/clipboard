@@ -28,9 +28,18 @@ impl TryFrom<&ClipboardItem> for SyncEvent {
     type Error = SyncError;
 
     fn try_from(item: &ClipboardItem) -> Result<Self, Self::Error> {
-        if item.sync_scope() != SyncScope::Vault
-            || !matches!(&item.content, ClipboardContent::Text(_))
-        {
+        if item.sync_scope() != SyncScope::Vault {
+            return Err(SyncError::LocalOnlyRejected);
+        }
+
+        if let Some(state) = item.delete_state.filter(|state| state.deleted) {
+            return Ok(Self::Delete {
+                item_id: item.id,
+                state,
+            });
+        }
+
+        if !matches!(&item.content, ClipboardContent::Text(_)) {
             return Err(SyncError::LocalOnlyRejected);
         }
 

@@ -154,12 +154,21 @@ internal sealed record MutationResponseDto(Guid ItemId);
 
 internal sealed record RetentionResponseDto(int DeletedLocal, int TombstonesCreated);
 
-internal sealed record SyncResponseDto(int Pulled, int Merged, int Uploaded, int RejectedLocalOnly);
+internal sealed record SyncResponseDto(
+    int Pulled,
+    int Merged,
+    int Uploaded,
+    int RejectedLocalOnly,
+    string? ErrorCategory = null,
+    string? ErrorCode = null,
+    string? ErrorDetail = null,
+    string? ErrorOperation = null);
 
 internal sealed record RemoteProbeResponseDto(
     bool Available,
     string? ErrorCategory = null,
-    string? ErrorCode = null);
+    string? ErrorCode = null,
+    string? ErrorDetail = null);
 
 internal sealed record RemoteConfigDto(
     string Provider,

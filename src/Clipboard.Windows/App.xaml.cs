@@ -20,6 +20,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private WindowPresenter? _presenter;
     private SettingsViewModel? _settingsViewModel;
     private FileGlobalLog? _globalLog;
+    private RealtimeSyncCoordinator? _realtimeSync;
     private readonly ClientSettingsStore _settingsStore = new();
     private readonly SingleWindowLifetime<SettingsWindow> _settingsWindows = new();
     private readonly SingleWindowLifetime<LogWindow> _logWindows = new();
@@ -76,6 +77,12 @@ public partial class App : Microsoft.UI.Xaml.Application
             var suppression = new ClipboardSuppression();
             var retentionPolicy = new RetentionPolicyProvider();
             var favoriteFileCachePolicy = new FavoriteFileCachePolicyProvider();
+            var credentials = new SyncCredentialStore();
+            _realtimeSync = new RealtimeSyncCoordinator(
+                _core,
+                _settingsStore,
+                credentials,
+                globalLog: _globalLog);
             var paste = new PasteCoordinator(
                 _core,
                 writer,
@@ -85,7 +92,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             var panel = new ClipboardPanelViewModel(
                 _core,
                 paste,
-                favoriteFileCachePolicy: favoriteFileCachePolicy);
+                favoriteFileCachePolicy: favoriteFileCachePolicy,
+                realtimeSync: _realtimeSync);
             MainWindow.Configure(panel, _presenter, _core, writer);
 
             _capture = new ClipboardCaptureCoordinator(
@@ -93,7 +101,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 _core,
                 new SourceApplicationResolver(),
                 suppression,
-                MainWindow,
+                new CompositeCaptureObserver(MainWindow, _realtimeSync),
                 retentionPolicy: retentionPolicy);
 
             _shortcuts = new GlobalShortcutService(dispatcher, MainWindow.ShowPanel);
@@ -105,8 +113,9 @@ public partial class App : Microsoft.UI.Xaml.Application
                 retentionPolicy: retentionPolicy,
                 favoriteFileCachePolicy: favoriteFileCachePolicy,
                 syncCore: _core,
-                credentials: new SyncCredentialStore(),
-                globalLog: _globalLog);
+                credentials: credentials,
+                globalLog: _globalLog,
+                syncSettingsNotifier: _realtimeSync);
             await _settingsViewModel.LoadAsync();
             ApplyTheme(_settingsViewModel.Theme);
             _shortcuts.Configure(
@@ -221,6 +230,15 @@ public partial class App : Microsoft.UI.Xaml.Application
         MainWindow?.Close();
     }
 
+    private async Task DisposeRealtimeSyncAsync()
+    {
+        if (_realtimeSync is not null)
+        {
+            await _realtimeSync.DisposeAsync();
+            _realtimeSync = null;
+        }
+    }
+
     private void ApplyTheme(string theme)
     {
         ElementTheme requestedTheme = theme switch
@@ -248,6 +266,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         _tray?.Dispose();
         _capture?.Dispose();
         _shortcuts?.Dispose();
+        DisposeRealtimeSyncAsync().GetAwaiter().GetResult();
         _core?.Dispose();
         _vault?.Dispose();
         _globalLog?.DisposeAsync().AsTask().GetAwaiter().GetResult();

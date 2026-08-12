@@ -185,3 +185,18 @@ fn webdav_maps_authentication_conflict_rate_limit_and_network_errors_without_det
         assert_eq!(requests[0].headers["depth"], "0");
     }
 }
+
+#[test]
+fn webdav_records_a_sanitized_failure_status_and_operation() {
+    let fixture = WebDavFixture::start(vec![(401, "must not surface".to_owned())]);
+    let store = fixture.store();
+
+    assert_eq!(store.probe(), Err(SyncError::Authentication));
+    assert_eq!(store.last_error_detail(), Some("http_401".to_owned()));
+    assert_eq!(
+        store.last_error_operation(),
+        Some("webdav_probe".to_owned())
+    );
+
+    fixture.finish();
+}

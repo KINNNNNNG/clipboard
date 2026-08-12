@@ -13,6 +13,7 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
     private readonly IRetryDelay _delay;
     private readonly TimeProvider _timeProvider;
     private readonly IFavoriteFileCachePolicyProvider _favoriteFileCachePolicy;
+    private readonly IRealtimeSyncNotifier? _realtimeSync;
     private readonly Guid _nodeId;
     private CancellationTokenSource? _debounceCancellation;
     private CancellationTokenSource? _activeSearchCancellation;
@@ -36,7 +37,8 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
         IRetryDelay? delay = null,
         TimeProvider? timeProvider = null,
         Guid? nodeId = null,
-        IFavoriteFileCachePolicyProvider? favoriteFileCachePolicy = null)
+        IFavoriteFileCachePolicyProvider? favoriteFileCachePolicy = null,
+        IRealtimeSyncNotifier? realtimeSync = null)
     {
         _core = core;
         _paste = paste;
@@ -44,6 +46,7 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
         _timeProvider = timeProvider ?? TimeProvider.System;
         _nodeId = nodeId ?? Guid.NewGuid();
         _favoriteFileCachePolicy = favoriteFileCachePolicy ?? new FavoriteFileCachePolicyProvider();
+        _realtimeSync = realtimeSync;
         Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsEmpty));
     }
 
@@ -217,6 +220,7 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
         await _core.DeleteAsync(
             new DeleteRequestDto(item.Id, NextHlc()),
             cancellationToken);
+        _realtimeSync?.NotifyChanged(item.Kind);
         int index = Items.IndexOf(item);
         if (index >= 0)
         {

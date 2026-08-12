@@ -1,5 +1,7 @@
 use clipboard_crypto::{KeyPurpose, VaultKey};
-use clipboard_domain::{ClipboardContent, ClipboardItem, FileBundle, FileEntry, SyncScope};
+use clipboard_domain::{
+    ClipboardContent, ClipboardItem, DeleteState, FileBundle, FileEntry, Hlc, SyncScope,
+};
 use clipboard_sync::{
     SYNC_PROTOCOL_VERSION, SegmentHeader, SyncError, SyncEvent, open_segment, seal_segment,
 };
@@ -43,6 +45,52 @@ fn encrypted_segment_round_trips_text_event() {
     assert_eq!(
         open_segment(&journal_key(), &header(SYNC_PROTOCOL_VERSION), &sealed).unwrap(),
         vec![event]
+    );
+}
+
+#[test]
+fn deleted_text_item_is_encoded_as_a_delete_event() {
+    let mut item = text_item();
+    item.delete_state = Some(DeleteState {
+        deleted: true,
+        updated: Hlc::new(200, 0, Uuid::from_u128(6)),
+    });
+
+    assert_eq!(
+        SyncEvent::try_from(&item),
+        Ok(SyncEvent::Delete {
+            item_id: item.id,
+            state: item.delete_state.unwrap(),
+        })
+    );
+}
+
+#[test]
+fn deleted_vault_image_is_encoded_as_a_delete_event() {
+    let mut item = ClipboardItem::new(
+        Uuid::from_u128(7),
+        Uuid::from_u128(2),
+        ClipboardContent::Image {
+            object_id: Uuid::from_u128(8),
+            width: 1,
+            height: 1,
+            bytes: 1,
+        },
+        "editor.exe".to_owned(),
+        100,
+    );
+    let state = DeleteState {
+        deleted: true,
+        updated: Hlc::new(200, 0, Uuid::from_u128(6)),
+    };
+    item.delete_state = Some(state);
+
+    assert_eq!(
+        SyncEvent::try_from(&item),
+        Ok(SyncEvent::Delete {
+            item_id: item.id,
+            state,
+        })
     );
 }
 

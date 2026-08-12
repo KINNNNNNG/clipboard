@@ -28,6 +28,9 @@ pub struct OssStore {
     path_style: bool,
     client: Client,
     last_error_code: Mutex<Option<&'static str>>,
+    last_error_detail: Mutex<Option<String>>,
+    last_error_operation: Mutex<Option<&'static str>>,
+    last_string_to_sign: Mutex<Option<Vec<u8>>>,
 }
 
 impl OssStore {
@@ -53,6 +56,9 @@ impl OssStore {
             path_style,
             client,
             last_error_code: Mutex::new(None),
+            last_error_detail: Mutex::new(None),
+            last_error_operation: Mutex::new(None),
+            last_string_to_sign: Mutex::new(None),
         })
     }
 
@@ -61,6 +67,15 @@ impl OssStore {
             object_name.to_owned()
         } else {
             format!("{}/{}", self.prefix, object_name)
+        }
+    }
+
+    fn canonical_uri(&self, url: &Url) -> String {
+        let path = url.path();
+        if self.path_style {
+            path.to_owned()
+        } else {
+            format!("/{}{}", self.bucket, path)
         }
     }
 
@@ -105,30 +120,30 @@ impl OssStore {
         let date = now
             .format(&format_description!("[year][month][day]"))
             .map_err(|_| SyncError::RemoteUnavailable)?;
-        let payload_hash = hex::encode(Sha256::digest(body));
         let additional_header_names = additional_headers
             .keys()
             .map(|name| name.to_ascii_lowercase())
+            .filter(|name| !is_default_signed_header(name))
             .collect::<Vec<_>>();
         let mut headers = additional_headers
             .into_iter()
             .map(|(name, value)| (name.to_ascii_lowercase(), normalize_header_value(&value)))
             .collect::<BTreeMap<_, _>>();
-        headers.insert("host".to_owned(), host_header(&url)?);
+        // OSS V4 uses this literal for regular API requests; it does not hash the payload.
+        let payload_hash = "UNSIGNED-PAYLOAD".to_owned();
         headers.insert("x-oss-content-sha256".to_owned(), payload_hash.clone());
         headers.insert("x-oss-date".to_owned(), timestamp.clone());
         let canonical_headers = headers
             .iter()
             .map(|(name, value)| format!("{name}:{value}\n"))
             .collect::<String>();
-        let signed_headers = headers.keys().cloned().collect::<Vec<_>>().join(";");
         let canonical_request = format!(
             "{}\n{}\n{}\n{}\n{}\n{}",
             method.as_str(),
-            canonical_uri(&url),
+            self.canonical_uri(&url),
             canonical_query(&url),
             canonical_headers,
-            signed_headers,
+            additional_header_names.join(";"),
             payload_hash
         );
         let scope = format!("{date}/{}/{OSS_SERVICE}/{OSS_TERMINATOR}", self.region);
@@ -141,21 +156,44 @@ impl OssStore {
         let service_key = hmac_bytes(&region_key, OSS_SERVICE)?;
         let signing_key = hmac_bytes(&service_key, OSS_TERMINATOR)?;
         let signature = hex::encode(hmac_bytes(&signing_key, &string_to_sign)?);
-        let authorization = format!(
-            "OSS4-HMAC-SHA256 Credential={}/{scope},AdditionalHeaders={},Signature={signature}",
-            self.access_key_id,
-            additional_header_names.join(";")
-        );
+        let authorization = if additional_header_names.is_empty() {
+            format!(
+                "OSS4-HMAC-SHA256 Credential={}/{scope},Signature={signature}",
+                self.access_key_id
+            )
+        } else {
+            format!(
+                "OSS4-HMAC-SHA256 Credential={}/{scope},AdditionalHeaders={},Signature={signature}",
+                self.access_key_id,
+                additional_header_names.join(";")
+            )
+        };
 
         let mut request = self.client.request(method, url).body(body.to_vec());
         for (name, value) in headers {
             request = request.header(name, value);
         }
+        *self
+            .last_string_to_sign
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(string_to_sign.into_bytes());
         Ok(request.header("Authorization", authorization))
     }
 
-    fn send(&self, request: RequestBuilder) -> Result<Response, SyncError> {
-        let response = request.send().map_err(|_| SyncError::RemoteUnavailable)?;
+    fn send(
+        &self,
+        operation: &'static str,
+        request: RequestBuilder,
+    ) -> Result<Response, SyncError> {
+        self.clear_last_error();
+        *self
+            .last_error_operation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(operation);
+        let response = request.send().map_err(|error| {
+            self.set_last_error_detail(network_error_detail(&error));
+            SyncError::RemoteUnavailable
+        })?;
         if response.status().is_success() {
             Ok(response)
         } else {
@@ -167,13 +205,54 @@ impl OssStore {
                 .last_error_code
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner()) = code;
+            let response_kind = if is_oss_error_body(&body) {
+                "oss_error"
+            } else {
+                "non_oss"
+            };
+            self.set_last_error_detail(format!("http_{}_{}", status.as_u16(), response_kind));
+            if code == Some("SignatureDoesNotMatch") {
+                self.record_signature_diagnostic(&body);
+            }
             Err(map_status(status))
         }
     }
-}
 
-fn canonical_uri(url: &Url) -> String {
-    url.path().to_owned()
+    fn clear_last_error(&self) {
+        *self
+            .last_error_code
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+        *self
+            .last_error_detail
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    }
+
+    fn set_last_error_detail(&self, detail: impl Into<String>) {
+        *self
+            .last_error_detail
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(detail.into());
+    }
+
+    fn record_signature_diagnostic(&self, body: &[u8]) {
+        let Some(server_string_to_sign) = parse_oss_decimal_bytes(body, b"StringToSignBytes")
+        else {
+            return;
+        };
+        let expected = self
+            .last_string_to_sign
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        let detail = if expected.as_deref() == Some(server_string_to_sign.as_slice()) {
+            "signature_key_mismatch"
+        } else {
+            "signature_request_mismatch"
+        };
+        self.set_last_error_detail(detail);
+    }
 }
 
 fn canonical_query(url: &Url) -> String {
@@ -184,13 +263,23 @@ fn canonical_query(url: &Url) -> String {
     pairs.sort_unstable();
     pairs
         .into_iter()
-        .map(|(name, value)| format!("{name}={value}"))
+        .map(|(name, value)| {
+            if value.is_empty() {
+                name
+            } else {
+                format!("{name}={value}")
+            }
+        })
         .collect::<Vec<_>>()
         .join("&")
 }
 
 fn normalize_header_value(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn is_default_signed_header(name: &str) -> bool {
+    name == "content-type" || name == "content-md5" || name.starts_with("x-oss-")
 }
 
 fn percent_encode(value: &str) -> String {
@@ -207,12 +296,10 @@ fn percent_encode(value: &str) -> String {
 
 impl RemoteStore for OssStore {
     fn list_completed(&self) -> Result<Vec<RemoteSegmentHeader>, SyncError> {
-        let response = self.send(self.signed_request(
-            Method::GET,
-            self.list_url(None)?,
-            &[],
-            BTreeMap::new(),
-        )?)?;
+        let response = self.send(
+            "oss_list",
+            self.signed_request(Method::GET, self.list_url(None)?, &[], BTreeMap::new())?,
+        )?;
         let body = response.text().map_err(|_| SyncError::RemoteUnavailable)?;
         let prefix = (!self.prefix.is_empty()).then(|| format!("{}/", self.prefix));
         Ok(parse_object_keys(&body)
@@ -227,12 +314,15 @@ impl RemoteStore for OssStore {
 
     fn get_completed(&self, header: &RemoteSegmentHeader) -> Result<Vec<u8>, SyncError> {
         let name = completed_object_name(header.header())?;
-        let response = self.send(self.signed_request(
-            Method::GET,
-            self.object_url(&self.object_key(&name))?,
-            &[],
-            BTreeMap::new(),
-        )?)?;
+        let response = self.send(
+            "oss_get",
+            self.signed_request(
+                Method::GET,
+                self.object_url(&self.object_key(&name))?,
+                &[],
+                BTreeMap::new(),
+            )?,
+        )?;
         response
             .bytes()
             .map(|bytes| bytes.to_vec())
@@ -250,43 +340,50 @@ impl RemoteStore for OssStore {
         let completed_key = self.object_key(&completed_name);
 
         let mut create_headers = BTreeMap::new();
-        create_headers.insert("if-none-match".to_owned(), "*".to_owned());
-        self.send(self.signed_request(
-            Method::PUT,
-            self.object_url(&pending_key)?,
-            ciphertext,
-            create_headers,
-        )?)?;
+        create_headers.insert("x-oss-forbid-overwrite".to_owned(), "true".to_owned());
+        self.send(
+            "oss_put_pending",
+            self.signed_request(
+                Method::PUT,
+                self.object_url(&pending_key)?,
+                ciphertext,
+                create_headers,
+            )?,
+        )?;
 
         let mut copy_headers = BTreeMap::new();
-        copy_headers.insert("if-none-match".to_owned(), "*".to_owned());
+        copy_headers.insert("x-oss-forbid-overwrite".to_owned(), "true".to_owned());
         copy_headers.insert(
             "x-oss-copy-source".to_owned(),
             format!("/{}/{}", self.bucket, pending_key),
         );
-        self.send(self.signed_request(
-            Method::PUT,
-            self.object_url(&completed_key)?,
-            &[],
-            copy_headers,
-        )?)?;
+        self.send(
+            "oss_copy_publish",
+            self.signed_request(
+                Method::PUT,
+                self.object_url(&completed_key)?,
+                &[],
+                copy_headers,
+            )?,
+        )?;
 
-        self.send(self.signed_request(
-            Method::DELETE,
-            self.object_url(&pending_key)?,
-            &[],
-            BTreeMap::new(),
-        )?)?;
+        self.send(
+            "oss_delete_pending",
+            self.signed_request(
+                Method::DELETE,
+                self.object_url(&pending_key)?,
+                &[],
+                BTreeMap::new(),
+            )?,
+        )?;
         Ok(())
     }
 
     fn probe(&self) -> Result<(), SyncError> {
-        self.send(self.signed_request(
-            Method::GET,
-            self.list_url(Some(1))?,
-            &[],
-            BTreeMap::new(),
-        )?)?;
+        self.send(
+            "oss_list",
+            self.signed_request(Method::GET, self.list_url(Some(1))?, &[], BTreeMap::new())?,
+        )?;
         Ok(())
     }
 
@@ -295,6 +392,30 @@ impl RemoteStore for OssStore {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .map(str::to_owned)
+    }
+
+    fn last_error_detail(&self) -> Option<String> {
+        self.last_error_detail
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    fn last_error_operation(&self) -> Option<String> {
+        self.last_error_operation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .map(str::to_owned)
+    }
+}
+
+fn network_error_detail(error: &reqwest::Error) -> &'static str {
+    if error.is_timeout() {
+        "network_timeout"
+    } else if error.is_connect() {
+        "network_connect"
+    } else {
+        "network_request"
     }
 }
 
@@ -306,13 +427,6 @@ fn hmac_bytes(secret: &[u8], message: &str) -> Result<Vec<u8>, SyncError> {
     let mut mac = HmacSha256::new_from_slice(secret).map_err(|_| SyncError::RemoteUnavailable)?;
     mac.update(message.as_bytes());
     Ok(mac.finalize().into_bytes().to_vec())
-}
-
-fn host_header(url: &Url) -> Result<String, SyncError> {
-    let host = url.host_str().ok_or(SyncError::RemoteUnavailable)?;
-    Ok(url
-        .port()
-        .map_or_else(|| host.to_owned(), |port| format!("{host}:{port}")))
 }
 
 fn map_status(status: StatusCode) -> SyncError {
@@ -349,6 +463,42 @@ fn parse_object_keys(body: &str) -> Vec<String> {
     keys
 }
 
+fn is_oss_error_body(body: &[u8]) -> bool {
+    let mut reader = Reader::from_reader(body);
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(element)) => return element.local_name().as_ref() == b"Error",
+            Ok(Event::Eof) | Err(_) => return false,
+            _ => {}
+        }
+    }
+}
+
+fn parse_oss_decimal_bytes(body: &[u8], element_name: &[u8]) -> Option<Vec<u8>> {
+    let mut reader = Reader::from_reader(body);
+    let mut inside = false;
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(element)) if element.local_name().as_ref() == element_name => {
+                inside = true;
+            }
+            Ok(Event::Text(text)) if inside => {
+                let value = text.unescape().ok()?;
+                return value
+                    .split_whitespace()
+                    .map(str::parse::<u8>)
+                    .collect::<Result<Vec<_>, _>>()
+                    .ok();
+            }
+            Ok(Event::End(element)) if element.local_name().as_ref() == element_name => {
+                inside = false;
+            }
+            Ok(Event::Eof) | Err(_) => return None,
+            _ => {}
+        }
+    }
+}
+
 /// Extracts only documented, non-sensitive OSS error codes from a bounded XML body.
 pub fn parse_oss_error_code(body: &[u8]) -> Option<&'static str> {
     const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
@@ -371,6 +521,16 @@ pub fn parse_oss_error_code(body: &[u8]) -> Option<&'static str> {
                     "NoSuchBucket" => Some("NoSuchBucket"),
                     "NoSuchKey" => Some("NoSuchKey"),
                     "InvalidAccessKeyId" => Some("InvalidAccessKeyId"),
+                    "InvalidRequest" => Some("InvalidRequest"),
+                    "AuthorizationHeaderMalformed" => Some("AuthorizationHeaderMalformed"),
+                    "InvalidArgument" => Some("InvalidArgument"),
+                    "InvalidBucketName" => Some("InvalidBucketName"),
+                    "InvalidObjectName" => Some("InvalidObjectName"),
+                    "InvalidURI" => Some("InvalidURI"),
+                    "InvalidSecurityToken" => Some("InvalidSecurityToken"),
+                    "RequestTimeTooSkewed" => Some("RequestTimeTooSkewed"),
+                    "MalformedXML" => Some("MalformedXML"),
+                    "MissingArgument" => Some("MissingArgument"),
                     _ => None,
                 };
             }
@@ -380,5 +540,26 @@ pub fn parse_oss_error_code(body: &[u8]) -> Option<&'static str> {
             Ok(Event::Eof) | Err(_) => return None,
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn v4_virtual_host_canonical_uri_includes_the_bucket() {
+        let store = OssStore::new(OssConfig::new(
+            "https://bucket.oss-cn-hangzhou.aliyuncs.com",
+            "cn-hangzhou",
+            "bucket",
+            "",
+            "AKIDEXAMPLE",
+            "secret",
+        ))
+        .unwrap();
+        let url = store.list_url(Some(1)).unwrap();
+
+        assert_eq!(store.canonical_uri(&url), "/bucket/");
     }
 }

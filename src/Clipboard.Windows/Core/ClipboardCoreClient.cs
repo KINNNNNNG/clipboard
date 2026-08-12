@@ -11,7 +11,8 @@ internal sealed class ClipboardCoreClient : IDisposable,
     IClipboardCaptureSink,
     IClipboardItemContentReader,
     ISettingsRetentionService,
-    IClipboardPanelCore
+    IClipboardPanelCore,
+    IRealtimeSyncClient
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private readonly IClipboardCoreNative _native;
@@ -148,6 +149,11 @@ internal sealed class ClipboardCoreClient : IDisposable,
         SyncRemoteRequestDto request,
         CancellationToken cancellationToken = default) =>
         ExecuteCommandAsync<SyncResponseDto, SyncRemoteRequestDto>("sync_remote", request, cancellationToken);
+
+    public Task<SyncResponseDto> SyncAsync(
+        SyncRemoteRequestDto request,
+        CancellationToken cancellationToken = default) =>
+        SyncRemoteAsync(request, cancellationToken);
 
     public Task<RemoteProbeResponseDto> ProbeRemoteAsync(
         ProbeRemoteRequestDto request,

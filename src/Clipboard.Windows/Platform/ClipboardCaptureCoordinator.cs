@@ -32,6 +32,30 @@ internal sealed record CaptureNotification(Guid ItemId, string Kind);
 
 internal sealed record CaptureFailure(string Message);
 
+internal sealed class CompositeCaptureObserver : IClipboardCaptureObserver
+{
+    private readonly IClipboardCaptureObserver[] _observers;
+
+    public CompositeCaptureObserver(params IClipboardCaptureObserver[] observers) =>
+        _observers = observers ?? throw new ArgumentNullException(nameof(observers));
+
+    public void OnCaptured(CaptureNotification notification)
+    {
+        foreach (IClipboardCaptureObserver observer in _observers)
+        {
+            observer.OnCaptured(notification);
+        }
+    }
+
+    public void OnFailure(CaptureFailure failure)
+    {
+        foreach (IClipboardCaptureObserver observer in _observers)
+        {
+            observer.OnFailure(failure);
+        }
+    }
+}
+
 internal sealed class ClipboardCaptureCoordinator : IDisposable
 {
     private static readonly TimeSpan[] RetryDelays =

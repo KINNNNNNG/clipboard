@@ -20,6 +20,8 @@ public sealed class GlobalLogTests
         {
             ["provider"] = "oss",
             ["status"] = "authentication",
+            ["error_detail"] = "http_403",
+            ["error_operation"] = "webdav_probe",
             ["authorization"] = "must-not-be-written",
             ["path"] = "must-not-be-written",
         });
@@ -29,6 +31,8 @@ public sealed class GlobalLogTests
         Assert.DoesNotContain("sync.probe.start", text, StringComparison.Ordinal);
         Assert.Contains("sync.probe.end", text, StringComparison.Ordinal);
         Assert.Contains("provider=oss", text, StringComparison.Ordinal);
+        Assert.Contains("error_detail=http_403", text, StringComparison.Ordinal);
+        Assert.Contains("error_operation=webdav_probe", text, StringComparison.Ordinal);
         Assert.DoesNotContain("must-not-be-written", text, StringComparison.Ordinal);
     }
 

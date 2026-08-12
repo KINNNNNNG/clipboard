@@ -1,5 +1,6 @@
 use clipboard_core::{
-    CoreCommand, CoreResponse, CoreService, IngestText, SearchFilters, SearchRequest, SyncDirectory,
+    CoreCommand, CoreResponse, CoreService, DeleteRequest, IngestText, SearchFilters,
+    SearchRequest, SyncDirectory,
 };
 use clipboard_crypto::{KeyPurpose, VaultKey};
 use clipboard_domain::{
@@ -166,6 +167,92 @@ fn inbound_state_events_merge_without_creating_a_new_outbox_entry() {
     assert_eq!(stored.len(), 1);
     assert!(stored[0].favorite_state.unwrap().value);
     assert!(stored[0].delete_state.unwrap().deleted);
+}
+
+#[test]
+fn deleted_item_is_removed_from_a_second_core_after_remote_sync() {
+    let remote = tempdir().unwrap();
+    let first_data = tempdir().unwrap();
+    let second_data = tempdir().unwrap();
+    let mut first = CoreService::open(first_data.path(), VAULT_ID, &KEY).unwrap();
+    let mut second = CoreService::open(second_data.path(), VAULT_ID, &KEY).unwrap();
+
+    let item_id = ingest(&mut first, "delete across devices", 100);
+    sync(&mut first, remote.path(), 1).unwrap();
+    sync(&mut second, remote.path(), 2).unwrap();
+    assert_eq!(previews(&mut second), vec!["delete across devices"]);
+
+    first
+        .execute(CoreCommand::Delete(DeleteRequest {
+            item_id,
+            updated: Hlc::new(200, 0, Uuid::from_u128(1)),
+        }))
+        .unwrap();
+    sync(&mut first, remote.path(), 1).unwrap();
+    sync(&mut second, remote.path(), 2).unwrap();
+
+    assert!(previews(&mut second).is_empty());
+}
+
+#[test]
+fn delete_event_received_before_upsert_is_preserved() {
+    let remote = tempdir().unwrap();
+    let data = tempdir().unwrap();
+    let mut core = CoreService::open(data.path(), VAULT_ID, &KEY).unwrap();
+    let item = ClipboardItem::new(
+        Uuid::from_u128(100),
+        VAULT_ID,
+        ClipboardContent::Text("delete arrives first".to_owned()),
+        "editor.exe".to_owned(),
+        100,
+    );
+    let delete_state = DeleteState {
+        deleted: true,
+        updated: Hlc::new(200, 0, Uuid::from_u128(10)),
+    };
+    let journal_key = VaultKey::from_bytes(KEY)
+        .derive(VAULT_ID, KeyPurpose::Journal)
+        .unwrap();
+    let transport = DirectoryTransport::open(remote.path()).unwrap();
+    let delete_header = SegmentHeader {
+        protocol_version: SYNC_PROTOCOL_VERSION,
+        vault_id: VAULT_ID,
+        device_id: Uuid::from_u128(10),
+        segment_id: Uuid::from_u128(1),
+    };
+    transport
+        .put_segment(
+            &delete_header,
+            &seal_segment(
+                &journal_key,
+                &delete_header,
+                &[SyncEvent::Delete {
+                    item_id: item.id,
+                    state: delete_state,
+                }],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let upsert_header = SegmentHeader {
+        segment_id: Uuid::from_u128(2),
+        ..delete_header
+    };
+    transport
+        .put_segment(
+            &upsert_header,
+            &seal_segment(
+                &journal_key,
+                &upsert_header,
+                &[SyncEvent::TextUpsert { item }],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+    sync(&mut core, remote.path(), 9).unwrap();
+
+    assert!(previews(&mut core).is_empty());
 }
 
 fn ingest(core: &mut CoreService, text: &str, captured_ms: i64) -> Uuid {

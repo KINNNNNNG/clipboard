@@ -178,18 +178,10 @@ fn oss_publishes_by_copying_completed_object_then_deleting_pending() {
         requests[0].path_and_query,
         format!("/bucket/encrypted/segments/{pending}")
     );
-    assert_eq!(requests[0].headers["if-none-match"], "*");
+    assert_eq!(requests[0].headers["x-oss-forbid-overwrite"], "true");
+    assert!(!requests[0].headers.contains_key("if-none-match"));
     assert_eq!(requests[0].body, b"ciphertext");
-    assert_eq!(
-        requests[0].headers["authorization"]
-            .split("AdditionalHeaders=")
-            .nth(1)
-            .unwrap()
-            .split(',')
-            .next()
-            .unwrap(),
-        "if-none-match"
-    );
+    assert!(!requests[0].headers["authorization"].contains("AdditionalHeaders="));
     assert_eq!(requests[1].method, "PUT");
     assert_eq!(
         requests[1].path_and_query,
@@ -199,16 +191,9 @@ fn oss_publishes_by_copying_completed_object_then_deleting_pending() {
         requests[1].headers["x-oss-copy-source"],
         format!("/bucket/encrypted/segments/{pending}")
     );
-    assert_eq!(
-        requests[1].headers["authorization"]
-            .split("AdditionalHeaders=")
-            .nth(1)
-            .unwrap()
-            .split(',')
-            .next()
-            .unwrap(),
-        "if-none-match;x-oss-copy-source"
-    );
+    assert_eq!(requests[1].headers["x-oss-forbid-overwrite"], "true");
+    assert!(!requests[1].headers.contains_key("if-none-match"));
+    assert!(!requests[1].headers["authorization"].contains("AdditionalHeaders="));
     assert_eq!(requests[2].method, "DELETE");
     assert_eq!(
         requests[2].path_and_query,
@@ -240,6 +225,19 @@ fn oss_does_not_invent_a_prefix_when_prefix_is_empty() {
 }
 
 #[test]
+fn oss_get_signing_uses_the_official_v4_default_headers() {
+    let fixture = OssFixture::start(vec![(
+        200,
+        "<ListBucketResult></ListBucketResult>".to_owned(),
+    )]);
+    fixture.store().probe().unwrap();
+
+    let request = fixture.finish().remove(0);
+    assert_eq!(request.headers["x-oss-content-sha256"], "UNSIGNED-PAYLOAD");
+    assert!(!request.headers["authorization"].contains("AdditionalHeaders="));
+}
+
+#[test]
 fn oss_maps_sensitive_remote_failures_to_fixed_categories() {
     for (status, expected) in [
         (403, SyncError::Authentication),
@@ -266,6 +264,46 @@ fn oss_extracts_only_allowlisted_error_codes() {
 }
 
 #[test]
+fn oss_extracts_the_allowlisted_invalid_request_code() {
+    let body = br#"<Error><Code>InvalidRequest</Code><Message>must not surface</Message></Error>"#;
+
+    assert_eq!(
+        clipboard_sync::parse_oss_error_code(body),
+        Some("InvalidRequest")
+    );
+}
+
+#[test]
+fn oss_extracts_the_allowlisted_authorization_header_error_code() {
+    let body = br#"<Error><Code>AuthorizationHeaderMalformed</Code><Message>must not surface</Message></Error>"#;
+
+    assert_eq!(
+        clipboard_sync::parse_oss_error_code(body),
+        Some("AuthorizationHeaderMalformed")
+    );
+}
+
+#[test]
+fn oss_extracts_allowlisted_oss_request_validation_codes() {
+    for code in [
+        "InvalidArgument",
+        "InvalidBucketName",
+        "InvalidObjectName",
+        "InvalidURI",
+        "InvalidSecurityToken",
+        "RequestTimeTooSkewed",
+        "MalformedXML",
+        "MissingArgument",
+    ] {
+        let body = format!("<Error><Code>{code}</Code><Message>must not surface</Message></Error>");
+        assert_eq!(
+            clipboard_sync::parse_oss_error_code(body.as_bytes()),
+            Some(code)
+        );
+    }
+}
+
+#[test]
 fn oss_probe_retains_only_the_allowlisted_error_code_for_diagnostics() {
     let fixture = OssFixture::start(vec![(
         403,
@@ -277,5 +315,22 @@ fn oss_probe_retains_only_the_allowlisted_error_code_for_diagnostics() {
         store.last_error_code(),
         Some("SignatureDoesNotMatch".to_owned())
     );
+    fixture.finish();
+}
+
+#[test]
+fn oss_probe_retains_a_sanitized_http_failure_detail_for_diagnostics() {
+    let fixture = OssFixture::start(vec![(
+        301,
+        "<Error><Code>PermanentRedirect</Code><Message>secret</Message></Error>".to_owned(),
+    )]);
+    let store = fixture.store();
+
+    assert_eq!(store.probe(), Err(SyncError::RemoteUnavailable));
+    assert_eq!(
+        store.last_error_detail(),
+        Some("http_301_oss_error".to_owned())
+    );
+
     fixture.finish();
 }

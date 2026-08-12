@@ -18,7 +18,11 @@ use clipboard_sync::{
     RemoteStore, SYNC_PROTOCOL_VERSION, SegmentHeader, SyncDiagnostic, SyncDiagnostics, SyncError,
     SyncEvent, WebDavStore, open_segment, seal_segment,
 };
-use std::{collections::HashSet, path::Path, time::SystemTime};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    time::SystemTime,
+};
 use uuid::Uuid;
 
 pub const MAX_IMAGE_BYTES: usize = 50 * 1024 * 1024;
@@ -30,6 +34,7 @@ pub struct CoreService {
     object_store: ObjectStore,
     file_cache: FileCache,
     processed_segments: HashSet<(Uuid, Uuid)>,
+    pending_delete_states: HashMap<Uuid, DeleteState>,
 }
 
 impl CoreService {
@@ -48,6 +53,7 @@ impl CoreService {
             object_store,
             file_cache,
             processed_segments: HashSet::new(),
+            pending_delete_states: HashMap::new(),
         })
     }
 
@@ -65,8 +71,7 @@ impl CoreService {
             }
             CoreCommand::SyncRemote(request) => {
                 let diagnostics = NoopSyncDiagnostics;
-                self.sync_remote_with_diagnostics(request, &diagnostics)
-                    .map(CoreResponse::Sync)
+                self.sync_remote_response(request, &diagnostics)
             }
             CoreCommand::ProbeRemote(request) => self.probe_remote(request),
             CoreCommand::Search(request) => self.search(request),
@@ -95,6 +100,28 @@ impl CoreService {
         self.sync_store_with_diagnostics(request.device_id, store.as_ref(), diagnostics)
     }
 
+    fn sync_remote_response(
+        &mut self,
+        request: SyncRemote,
+        diagnostics: &dyn SyncDiagnostics,
+    ) -> Result<CoreResponse, CoreError> {
+        let store = create_remote_store(request.remote)?;
+        match self.sync_store_with_diagnostics(request.device_id, store.as_ref(), diagnostics) {
+            Ok(response) => Ok(CoreResponse::Sync(response)),
+            Err(CoreError::Sync(error)) => Ok(CoreResponse::RemoteSync {
+                pulled: 0,
+                merged: 0,
+                uploaded: 0,
+                rejected_local_only: 0,
+                error_category: Some(sync_error_category(&error)),
+                error_code: store.last_error_code(),
+                error_detail: store.last_error_detail(),
+                error_operation: store.last_error_operation(),
+            }),
+            Err(error) => Err(error),
+        }
+    }
+
     fn probe_remote(&self, request: ProbeRemote) -> Result<CoreResponse, CoreError> {
         let store = create_remote_store(request.remote)?;
         match store.probe() {
@@ -102,11 +129,13 @@ impl CoreService {
                 available: true,
                 error_category: None,
                 error_code: None,
+                error_detail: None,
             }),
             Err(error) => Ok(CoreResponse::RemoteProbe {
                 available: false,
                 error_category: Some(sync_error_category(&error)),
                 error_code: store.last_error_code(),
+                error_detail: store.last_error_detail(),
             }),
         }
     }
@@ -201,7 +230,7 @@ impl CoreService {
         Ok(response)
     }
 
-    fn merge_inbound_event(&self, event: SyncEvent) -> Result<bool, CoreError> {
+    fn merge_inbound_event(&mut self, event: SyncEvent) -> Result<bool, CoreError> {
         match event {
             SyncEvent::TextUpsert { item } => self.merge_inbound_text(item),
             SyncEvent::Favorite { item_id, state } => {
@@ -220,6 +249,10 @@ impl CoreService {
             }
             SyncEvent::Delete { item_id, state } => {
                 let Some(mut item) = self.find_inbound_item(item_id)? else {
+                    self.pending_delete_states
+                        .entry(item_id)
+                        .and_modify(|existing| *existing = existing.merge(&state))
+                        .or_insert(state);
                     return Ok(false);
                 };
                 let merged = item
@@ -235,7 +268,14 @@ impl CoreService {
         }
     }
 
-    fn merge_inbound_text(&self, incoming: ClipboardItem) -> Result<bool, CoreError> {
+    fn merge_inbound_text(&mut self, mut incoming: ClipboardItem) -> Result<bool, CoreError> {
+        if let Some(pending) = self.pending_delete_states.remove(&incoming.id) {
+            incoming.delete_state = Some(
+                incoming
+                    .delete_state
+                    .map_or(pending, |existing| existing.merge(&pending)),
+            );
+        }
         let Some(mut existing) = self.find_inbound_item(incoming.id)? else {
             self.database.items().insert(&incoming)?;
             return Ok(true);

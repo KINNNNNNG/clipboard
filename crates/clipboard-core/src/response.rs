@@ -20,10 +20,21 @@ pub enum CoreResponse {
         tombstones_created: usize,
     },
     Sync(SyncDirectoryResponse),
+    RemoteSync {
+        pulled: usize,
+        merged: usize,
+        uploaded: usize,
+        rejected_local_only: usize,
+        error_category: Option<String>,
+        error_code: Option<String>,
+        error_detail: Option<String>,
+        error_operation: Option<String>,
+    },
     RemoteProbe {
         available: bool,
         error_category: Option<String>,
         error_code: Option<String>,
+        error_detail: Option<String>,
     },
     Empty {},
 }

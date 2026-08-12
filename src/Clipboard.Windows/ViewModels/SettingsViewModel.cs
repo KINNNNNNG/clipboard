@@ -15,6 +15,7 @@ internal sealed class SettingsViewModel : ObservableObject
     private readonly ClipboardCoreClient? _syncCore;
     private readonly ISyncCredentialStore? _credentials;
     private readonly IGlobalLog? _globalLog;
+    private readonly IRealtimeSyncSettingsNotifier? _syncSettingsNotifier;
     private ClientSettings _persisted = ClientSettings.Default;
     private bool _maxRegularItemsEnabled = true;
     private int _maxRegularItems = 1000;
@@ -53,7 +54,8 @@ internal sealed class SettingsViewModel : ObservableObject
         IFavoriteFileCachePolicyProvider? favoriteFileCachePolicy = null,
         ClipboardCoreClient? syncCore = null,
         ISyncCredentialStore? credentials = null,
-        IGlobalLog? globalLog = null)
+        IGlobalLog? globalLog = null,
+        IRealtimeSyncSettingsNotifier? syncSettingsNotifier = null)
     {
         _store = store;
         _retention = retention;
@@ -65,6 +67,7 @@ internal sealed class SettingsViewModel : ObservableObject
         _syncCore = syncCore;
         _credentials = credentials;
         _globalLog = globalLog;
+        _syncSettingsNotifier = syncSettingsNotifier;
     }
 
     public bool MaxRegularItemsEnabled
@@ -339,6 +342,7 @@ internal sealed class SettingsViewModel : ObservableObject
             if (disabledSyncSaved)
             {
                 SyncStatus = "同步设置已保存。";
+                _syncSettingsNotifier?.OnSyncSettingsSaved(false);
             }
             return disabledSyncSaved;
         }
@@ -428,6 +432,7 @@ internal sealed class SettingsViewModel : ObservableObject
         if (saved)
         {
             SyncStatus = "同步设置已保存。";
+            _syncSettingsNotifier?.OnSyncSettingsSaved(sync.Enabled);
         }
         return saved;
     }
@@ -460,7 +465,9 @@ internal sealed class SettingsViewModel : ObservableObject
             {
                 string category = response.ErrorCategory ?? "remote";
                 string? code = response.ErrorCode;
-                SyncStatus = code is null ? "连接失败。" : $"连接失败：{code}。";
+                string? detail = SanitizeRemoteErrorDetail(response.ErrorDetail);
+                string? display = code ?? FormatRemoteErrorDetail(detail);
+                SyncStatus = display is null ? "连接失败。" : $"连接失败：{display}。";
                 var fields = new Dictionary<string, string>
                 {
                     ["provider"] = SyncProvider,
@@ -470,6 +477,10 @@ internal sealed class SettingsViewModel : ObservableObject
                 if (code is not null)
                 {
                     fields["error_code"] = code;
+                }
+                if (detail is not null)
+                {
+                    fields["error_detail"] = detail;
                 }
                 await WriteLogAsync(LogLevel.Warn, "sync", "sync.probe.end", fields, cancellationToken);
                 return;
@@ -515,6 +526,32 @@ internal sealed class SettingsViewModel : ObservableObject
             SyncSettings sync = BuildSyncSettings() ?? throw new InvalidOperationException();
             SyncResponseDto response = await (_syncCore ?? throw new InvalidOperationException()).SyncRemoteAsync(
                 new SyncRemoteRequestDto(Guid.Parse(sync.DeviceId), remote), cancellationToken);
+            if (response.ErrorCategory is not null)
+            {
+                string? detail = SanitizeRemoteErrorDetail(response.ErrorDetail);
+                string? display = response.ErrorCode ?? FormatRemoteErrorDetail(detail);
+                SyncStatus = display is null ? "同步失败。" : $"同步失败：{display}。";
+                var fields = new Dictionary<string, string>
+                {
+                    ["provider"] = SyncProvider,
+                    ["status"] = "failure",
+                    ["error_category"] = response.ErrorCategory,
+                };
+                if (response.ErrorCode is not null)
+                {
+                    fields["error_code"] = response.ErrorCode;
+                }
+                if (detail is not null)
+                {
+                    fields["error_detail"] = detail;
+                }
+                if (response.ErrorOperation is not null)
+                {
+                    fields["error_operation"] = response.ErrorOperation;
+                }
+                await WriteLogAsync(LogLevel.Error, "sync", "sync.remote.end", fields, cancellationToken);
+                return;
+            }
             SyncStatus = $"已同步：拉取 {response.Pulled}，合并 {response.Merged}，上传 {response.Uploaded}。";
             await WriteLogAsync(LogLevel.Info, "sync", "sync.remote.end", new Dictionary<string, string>
             {
@@ -570,6 +607,27 @@ internal sealed class SettingsViewModel : ObservableObject
         _ => "core_error",
     };
 
+    private static string? FormatRemoteErrorDetail(string? detail) => SanitizeRemoteErrorDetail(detail) switch
+    {
+        null => null,
+        var value when value.StartsWith("http_", StringComparison.Ordinal) =>
+            $"HTTP {value[5..]}",
+        "network_timeout" => "网络超时",
+        "network_connect" => "网络连接失败",
+        "network_request" => "网络请求失败",
+        _ => null,
+    };
+
+    private static string? SanitizeRemoteErrorDetail(string? detail) => detail switch
+    {
+        "network_timeout" or "network_connect" or "network_request" => detail,
+        { Length: 8 } when detail.StartsWith("http_", StringComparison.Ordinal) &&
+            detail[5] is >= '0' and <= '9' &&
+            detail[6] is >= '0' and <= '9' &&
+            detail[7] is >= '0' and <= '9' => detail,
+        _ => null,
+    };
+
     private SyncSettings? BuildSyncSettings() => !SyncEnabled ? null : new(
         true, SyncProvider, SyncEndpoint, SyncRootPath, SyncBucket, SyncRegion, SyncPrefix,
         _persisted.Sync?.DeviceId ?? Guid.NewGuid().ToString("D"),
@@ -578,36 +636,11 @@ internal sealed class SettingsViewModel : ObservableObject
     private async Task<RemoteConfigDto> BuildRemoteAsync(CancellationToken cancellationToken)
     {
         SyncSettings sync = BuildSyncSettings() ?? throw new InvalidOperationException();
-        sync.Validate();
-        SyncCredentials? saved = _credentials is null ? null : await _credentials.LoadAsync(sync.CredentialProfileId!, cancellationToken);
-        string account = string.IsNullOrWhiteSpace(SyncAccount) ? saved?.Account ?? string.Empty : SyncAccount;
-        string secret = string.IsNullOrWhiteSpace(SyncSecret) ? saved?.Secret ?? string.Empty : SyncSecret;
-        if (sync.Provider == "oss")
-        {
-            return new RemoteConfigDto(
-                "oss",
-                1,
-                sync.Endpoint,
-                Region: sync.Region,
-                Bucket: sync.Bucket,
-                Prefix: sync.Prefix,
-                AccessKeyId: account,
-                AccessKeySecret: secret);
-        }
-
-        Uri endpoint = new(sync.Endpoint.TrimEnd('/') + "/");
-        Uri remoteEndpoint = new(endpoint, sync.RootPath!.TrimStart('/'));
-        if (remoteEndpoint.Scheme != endpoint.Scheme ||
-            remoteEndpoint.Host != endpoint.Host ||
-            remoteEndpoint.Port != endpoint.Port)
-        {
-            throw new InvalidOperationException();
-        }
-        return new RemoteConfigDto(
-            "webdav",
-            1,
-            remoteEndpoint.ToString(),
-            Username: account,
-            Password: secret);
+        return await RemoteSyncRequestFactory.CreateAsync(
+            sync,
+            _credentials ?? throw new InvalidOperationException(),
+            SyncAccount,
+            SyncSecret,
+            cancellationToken);
     }
 }
