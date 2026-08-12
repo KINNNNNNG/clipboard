@@ -3,6 +3,13 @@ use clipboard_domain::ClipboardItem;
 use rusqlite::params;
 use uuid::Uuid;
 
+pub struct OutboxEntry {
+    pub id: i64,
+    pub item_id: Uuid,
+    pub event_json: String,
+    pub created_ms: i64,
+}
+
 pub struct OutboxRepository<'database> {
     database: &'database Database,
 }
@@ -41,5 +48,34 @@ impl<'database> OutboxRepository<'database> {
             |row| row.get::<_, i64>(0),
         )?;
         Ok(count as usize)
+    }
+
+    pub fn pending(&self) -> Result<Vec<OutboxEntry>, OutboxError> {
+        let connection = self.database.connection.borrow();
+        let mut statement = connection.prepare(
+            "SELECT sequence, item_id, event_json, created_ms \
+             FROM sync_outbox \
+             ORDER BY created_ms ASC, sequence ASC",
+        )?;
+        let entries = statement
+            .query_map([], |row| {
+                Ok(OutboxEntry {
+                    id: row.get(0)?,
+                    item_id: row.get(1)?,
+                    event_json: row.get(2)?,
+                    created_ms: row.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(entries)
+    }
+
+    pub fn acknowledge(&self, id: i64) -> Result<bool, OutboxError> {
+        let removed = self
+            .database
+            .connection
+            .borrow_mut()
+            .execute("DELETE FROM sync_outbox WHERE sequence = ?1", params![id])?;
+        Ok(removed == 1)
     }
 }

@@ -7,9 +7,13 @@ internal sealed record ClientSettings(
     bool InterceptWinV,
     string FallbackHotkey,
     bool StartWithWindows,
-    string Theme)
+    string Theme,
+    ulong? MaxFavoriteFileCacheBytes = 5UL * 1024 * 1024 * 1024,
+    SyncSettings? Sync = null,
+    LoggingSettings? Logging = null)
 {
     public const ulong BytesPerGiB = 1024UL * 1024 * 1024;
+    public const ulong DefaultMaxFavoriteFileCacheBytes = 5UL * BytesPerGiB;
 
     public static ClientSettings Default { get; } = new(
         1000,
@@ -18,7 +22,10 @@ internal sealed record ClientSettings(
         true,
         "Alt+V",
         false,
-        "system");
+        "system",
+        DefaultMaxFavoriteFileCacheBytes,
+        null,
+        LoggingSettings.Default);
 
     public void Validate()
     {
@@ -34,10 +41,113 @@ internal sealed record ClientSettings(
         {
             throw new ArgumentOutOfRangeException(nameof(MaxImageBytes));
         }
+        if (MaxFavoriteFileCacheBytes == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MaxFavoriteFileCacheBytes));
+        }
         _ = HotkeyChord.Parse(FallbackHotkey);
         if (Theme is not ("system" or "light" or "dark"))
         {
             throw new ArgumentOutOfRangeException(nameof(Theme));
+        }
+        Sync?.Validate();
+        Logging?.Validate();
+    }
+}
+
+internal sealed record LoggingSettings(
+    string Level,
+    int RetentionDays,
+    ulong MaxSizeBytes)
+{
+    public const ulong MinimumSizeBytes = 10UL * 1024 * 1024;
+    public const ulong MaximumSizeBytes = 1024UL * 1024 * 1024;
+
+    public static LoggingSettings Default { get; } = new("info", 7, 200UL * 1024 * 1024);
+
+    public void Validate()
+    {
+        if (Level is not ("trace" or "debug" or "info" or "warn" or "error")
+            || RetentionDays is < 1 or > 30
+            || MaxSizeBytes is < MinimumSizeBytes or > MaximumSizeBytes)
+        {
+            throw new ArgumentOutOfRangeException(nameof(LoggingSettings));
+        }
+    }
+}
+
+internal interface IFavoriteFileCachePolicyProvider
+{
+    ulong? MaxFavoriteFileCacheBytes { get; }
+
+    void Update(ClientSettings settings);
+}
+
+internal sealed class FavoriteFileCachePolicyProvider : IFavoriteFileCachePolicyProvider
+{
+    private readonly object _sync = new();
+    private ulong? _maxFavoriteFileCacheBytes = ClientSettings.DefaultMaxFavoriteFileCacheBytes;
+
+    public ulong? MaxFavoriteFileCacheBytes
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _maxFavoriteFileCacheBytes;
+            }
+        }
+    }
+
+    public void Update(ClientSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        settings.Validate();
+        lock (_sync)
+        {
+            _maxFavoriteFileCacheBytes = settings.MaxFavoriteFileCacheBytes;
+        }
+    }
+}
+
+internal sealed record SyncSettings(
+    bool Enabled,
+    string Provider,
+    string Endpoint,
+    string? RootPath,
+    string? Bucket,
+    string? Region,
+    string? Prefix,
+    string DeviceId,
+    string? CredentialProfileId)
+{
+    public void Validate()
+    {
+        if (!Enabled)
+        {
+            return;
+        }
+        if (Provider is not ("webdav" or "oss")
+            || !Uri.TryCreate(Endpoint, UriKind.Absolute, out Uri? endpoint)
+            || endpoint.Scheme != Uri.UriSchemeHttps
+            || !Guid.TryParse(DeviceId, out _)
+            || string.IsNullOrWhiteSpace(CredentialProfileId))
+        {
+            throw new ArgumentOutOfRangeException(nameof(SyncSettings));
+        }
+        if (Provider == "webdav" &&
+            (string.IsNullOrWhiteSpace(RootPath) ||
+             !Uri.TryCreate(RootPath, UriKind.Relative, out _) ||
+             RootPath.StartsWith("//", StringComparison.Ordinal) ||
+             RootPath.Contains('\\') ||
+             RootPath.Contains('?') ||
+             RootPath.Contains('#')))
+        {
+            throw new ArgumentOutOfRangeException(nameof(RootPath));
+        }
+        if (Provider == "oss" && (string.IsNullOrWhiteSpace(Bucket) || string.IsNullOrWhiteSpace(Region)))
+        {
+            throw new ArgumentOutOfRangeException(nameof(Bucket));
         }
     }
 }

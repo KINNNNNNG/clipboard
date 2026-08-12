@@ -1,0 +1,331 @@
+use quick_xml::{Reader, events::Event};
+use reqwest::{
+    Method, StatusCode, Url,
+    blocking::{Client, Response},
+};
+use std::sync::Mutex;
+
+use crate::{
+    PENDING_OBJECT_SUFFIX, RemoteSegmentHeader, RemoteStore, SyncError, WebDavConfig,
+    completed_object_name, parse_completed_object_name,
+};
+
+const CSTCLOUD_WEB_DAV_HOST: &str = "data.cstcloud.cn";
+const CSTCLOUD_WEB_DAV_PATH: &str = "/dav";
+const CSTCLOUD_ZOTERO_USER_AGENT: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0 Zotero/7.0";
+const CSTCLOUD_OBJECT_PREFIX: &str = "clipboard-sync-";
+
+pub struct WebDavStore {
+    endpoint: Url,
+    client: Client,
+    username: String,
+    password: String,
+    last_error_detail: Mutex<Option<String>>,
+    last_error_operation: Mutex<Option<&'static str>>,
+}
+
+impl WebDavStore {
+    pub fn new(config: WebDavConfig) -> Result<Self, SyncError> {
+        let mut endpoint =
+            Url::parse(config.endpoint()).map_err(|_| SyncError::RemoteUnavailable)?;
+        endpoint.set_query(None);
+        endpoint.set_fragment(None);
+        if !endpoint.path().ends_with('/') {
+            endpoint.set_path(&format!("{}/", endpoint.path()));
+        }
+
+        let mut client = Client::builder();
+        if let Some(user_agent) = user_agent_for_endpoint(&endpoint) {
+            client = client.user_agent(user_agent);
+        }
+        let client = client.build().map_err(|_| SyncError::RemoteUnavailable)?;
+        Ok(Self {
+            endpoint,
+            client,
+            username: config.username().to_owned(),
+            password: config.password().to_owned(),
+            last_error_detail: Mutex::new(None),
+            last_error_operation: Mutex::new(None),
+        })
+    }
+
+    fn root_request(&self, method: Method) -> reqwest::blocking::RequestBuilder {
+        self.client
+            .request(method, self.endpoint.clone())
+            .basic_auth(&self.username, Some(&self.password))
+    }
+
+    fn object_url(&self, object_name: &str) -> Result<Url, SyncError> {
+        self.endpoint
+            .join(object_name)
+            .map_err(|_| SyncError::RemoteUnavailable)
+    }
+
+    fn object_request(
+        &self,
+        method: Method,
+        object_name: &str,
+    ) -> Result<reqwest::blocking::RequestBuilder, SyncError> {
+        Ok(self
+            .client
+            .request(method, self.object_url(object_name)?)
+            .basic_auth(&self.username, Some(&self.password)))
+    }
+
+    fn send(
+        &self,
+        operation: &'static str,
+        request: reqwest::blocking::RequestBuilder,
+    ) -> Result<Response, SyncError> {
+        *self
+            .last_error_detail
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+        *self
+            .last_error_operation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(operation);
+        let response = request.send().map_err(|error| {
+            let detail = if error.is_timeout() {
+                "network_timeout"
+            } else if error.is_connect() {
+                "network_connect"
+            } else {
+                "network_request"
+            };
+            *self
+                .last_error_detail
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(detail.to_owned());
+            SyncError::RemoteUnavailable
+        })?;
+        if response.status().is_success() {
+            Ok(response)
+        } else {
+            let status = response.status();
+            *self
+                .last_error_detail
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                Some(format!("http_{}", status.as_u16()));
+            Err(map_status(status))
+        }
+    }
+}
+
+impl RemoteStore for WebDavStore {
+    fn list_completed(&self) -> Result<Vec<RemoteSegmentHeader>, SyncError> {
+        let response = self.send(
+            "webdav_list",
+            self.root_request(
+                Method::from_bytes(b"PROPFIND").map_err(|_| SyncError::RemoteUnavailable)?,
+            )
+            .header("Depth", "1"),
+        )?;
+        let body = response.text().map_err(|_| SyncError::RemoteUnavailable)?;
+        Ok(parse_href_names(&body)
+            .into_iter()
+            .filter_map(|name| parse_completed_name_for_endpoint(&self.endpoint, &name))
+            .collect())
+    }
+
+    fn get_completed(&self, header: &RemoteSegmentHeader) -> Result<Vec<u8>, SyncError> {
+        let object_name = completed_name_for_endpoint(&self.endpoint, header)?;
+        self.send(
+            "webdav_get",
+            self.object_request(Method::GET, &object_name)?,
+        )?
+        .bytes()
+        .map(|bytes| bytes.to_vec())
+        .map_err(|_| SyncError::RemoteUnavailable)
+    }
+
+    fn put_pending_then_publish(
+        &self,
+        header: &RemoteSegmentHeader,
+        ciphertext: &[u8],
+    ) -> Result<(), SyncError> {
+        let pending = pending_name_for_endpoint(&self.endpoint, header)?;
+        let completed = completed_name_for_endpoint(&self.endpoint, header)?;
+        let mut request = self
+            .object_request(Method::PUT, &pending)?
+            .header("If-None-Match", "*");
+        if is_cstcloud_zotero_endpoint(&self.endpoint) {
+            request = request.header("Content-Type", "application/zip");
+        }
+        self.send("webdav_put_pending", request.body(ciphertext.to_vec()))?;
+        let destination = self.object_url(&completed)?;
+        self.send(
+            "webdav_move_publish",
+            self.object_request(
+                Method::from_bytes(b"MOVE").map_err(|_| SyncError::RemoteUnavailable)?,
+                &pending,
+            )?
+            .header("Destination", destination.as_str())
+            .header("Overwrite", "F"),
+        )?;
+        Ok(())
+    }
+
+    fn probe(&self) -> Result<(), SyncError> {
+        self.send(
+            "webdav_probe",
+            self.root_request(
+                Method::from_bytes(b"PROPFIND").map_err(|_| SyncError::RemoteUnavailable)?,
+            )
+            .header("Depth", "0"),
+        )?;
+        Ok(())
+    }
+
+    fn last_error_detail(&self) -> Option<String> {
+        self.last_error_detail
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    fn last_error_operation(&self) -> Option<String> {
+        self.last_error_operation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .map(str::to_owned)
+    }
+}
+
+fn map_status(status: StatusCode) -> SyncError {
+    match status {
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => SyncError::Authentication,
+        StatusCode::CONFLICT | StatusCode::PRECONDITION_FAILED => SyncError::Conflict,
+        StatusCode::TOO_MANY_REQUESTS => SyncError::RateLimited,
+        _ => SyncError::RemoteUnavailable,
+    }
+}
+
+fn user_agent_for_endpoint(endpoint: &Url) -> Option<&'static str> {
+    is_cstcloud_zotero_endpoint(endpoint).then_some(CSTCLOUD_ZOTERO_USER_AGENT)
+}
+
+fn is_cstcloud_zotero_endpoint(endpoint: &Url) -> bool {
+    endpoint.host_str() == Some(CSTCLOUD_WEB_DAV_HOST)
+        && endpoint.path().trim_end_matches('/') == CSTCLOUD_WEB_DAV_PATH
+}
+
+fn completed_name_for_endpoint(
+    endpoint: &Url,
+    header: &RemoteSegmentHeader,
+) -> Result<String, SyncError> {
+    let completed = completed_object_name(header.header())?;
+    if !is_cstcloud_zotero_endpoint(endpoint) {
+        return Ok(completed);
+    }
+
+    let stem = completed
+        .strip_suffix(".enc")
+        .ok_or(SyncError::RemoteUnavailable)?;
+    Ok(format!("{CSTCLOUD_OBJECT_PREFIX}{stem}.zip"))
+}
+
+fn pending_name_for_endpoint(
+    endpoint: &Url,
+    header: &RemoteSegmentHeader,
+) -> Result<String, SyncError> {
+    let completed = completed_name_for_endpoint(endpoint, header)?;
+    if is_cstcloud_zotero_endpoint(endpoint) {
+        let stem = completed
+            .strip_suffix(".zip")
+            .ok_or(SyncError::RemoteUnavailable)?;
+        return Ok(format!("{stem}.pending.zip"));
+    }
+
+    Ok(format!("{completed}{PENDING_OBJECT_SUFFIX}"))
+}
+
+fn parse_completed_name_for_endpoint(endpoint: &Url, name: &str) -> Option<RemoteSegmentHeader> {
+    if !is_cstcloud_zotero_endpoint(endpoint) {
+        return parse_completed_object_name(name);
+    }
+
+    let stem = name
+        .strip_prefix(CSTCLOUD_OBJECT_PREFIX)?
+        .strip_suffix(".zip")?;
+    parse_completed_object_name(&format!("{stem}.enc"))
+}
+
+fn parse_href_names(body: &str) -> Vec<String> {
+    let mut reader = Reader::from_str(body);
+    reader.config_mut().trim_text(true);
+    let mut href_depth = 0_u8;
+    let mut names = Vec::new();
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(element)) if element.local_name().as_ref() == b"href" => {
+                href_depth = href_depth.saturating_add(1);
+            }
+            Ok(Event::End(element)) if element.local_name().as_ref() == b"href" => {
+                href_depth = href_depth.saturating_sub(1);
+            }
+            Ok(Event::Text(text)) if href_depth > 0 => {
+                if let Ok(href) = text.unescape() {
+                    let path = Url::parse(&href)
+                        .ok()
+                        .map(|url| url.path().to_owned())
+                        .unwrap_or_else(|| href.into_owned());
+                    if let Some(name) = path.rsplit('/').find(|part| !part.is_empty()) {
+                        names.push(name.to_owned());
+                    }
+                }
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+
+    names
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::SegmentHeader;
+    use uuid::Uuid;
+
+    #[test]
+    fn cstcloud_zotero_endpoint_uses_the_required_user_agent() {
+        let endpoint = Url::parse("https://data.cstcloud.cn/dav/").unwrap();
+        let unrelated = Url::parse("https://webdav.example.test/root/").unwrap();
+
+        assert_eq!(
+            user_agent_for_endpoint(&endpoint),
+            Some(CSTCLOUD_ZOTERO_USER_AGENT)
+        );
+        assert_eq!(user_agent_for_endpoint(&unrelated), None);
+    }
+
+    #[test]
+    fn cstcloud_zotero_endpoint_maps_segments_to_an_isolated_zip_namespace() {
+        let endpoint = Url::parse("https://data.cstcloud.cn/dav/").unwrap();
+        let header = RemoteSegmentHeader::try_from(SegmentHeader {
+            protocol_version: 1,
+            vault_id: Uuid::from_u128(1),
+            device_id: Uuid::from_u128(2),
+            segment_id: Uuid::from_u128(3),
+        })
+        .unwrap();
+        let ordinary_name = completed_object_name(header.header()).unwrap();
+        let stem = ordinary_name.strip_suffix(".enc").unwrap();
+        let completed = completed_name_for_endpoint(&endpoint, &header).unwrap();
+
+        assert_eq!(completed, format!("clipboard-sync-{stem}.zip"));
+        assert_eq!(
+            pending_name_for_endpoint(&endpoint, &header).unwrap(),
+            format!("clipboard-sync-{stem}.pending.zip")
+        );
+        assert_eq!(
+            parse_completed_name_for_endpoint(&endpoint, &completed),
+            Some(header)
+        );
+    }
+}

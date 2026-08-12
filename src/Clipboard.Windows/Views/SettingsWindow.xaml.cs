@@ -59,6 +59,8 @@ public sealed partial class SettingsWindow : Window
         MaxAgeNumberBox.Value = _viewModel.MaxAgeDays;
         MaxImageEnabledCheckBox.IsChecked = _viewModel.MaxImageGiBEnabled;
         MaxImageNumberBox.Value = _viewModel.MaxImageGiB;
+        MaxFavoriteFileCacheEnabledCheckBox.IsChecked = _viewModel.MaxFavoriteFileCacheGiBEnabled;
+        MaxFavoriteFileCacheNumberBox.Value = _viewModel.MaxFavoriteFileCacheGiB;
         InterceptWinVToggle.IsOn = _viewModel.InterceptWinV;
         FallbackHotkeyTextBox.Text = _viewModel.FallbackHotkey;
         StartWithWindowsToggle.IsOn = _viewModel.StartWithWindows;
@@ -69,6 +71,17 @@ public sealed partial class SettingsWindow : Window
             _ => 0,
         };
         ErrorText.Text = string.Empty;
+        SyncEnabledToggle.IsOn = _viewModel.SyncEnabled;
+        SyncProviderComboBox.SelectedIndex = _viewModel.SyncProvider == "oss" ? 1 : 0;
+        UpdateSyncProviderVisibility();
+        SyncEndpointTextBox.Text = _viewModel.SyncEndpoint;
+        SyncRootPathTextBox.Text = _viewModel.SyncRootPath;
+        SyncBucketTextBox.Text = _viewModel.SyncBucket;
+        SyncRegionTextBox.Text = _viewModel.SyncRegion;
+        SyncPrefixTextBox.Text = _viewModel.SyncPrefix;
+        SyncAccountTextBox.Text = _viewModel.SyncAccount;
+        SyncSecretPasswordBox.Password = _viewModel.SyncSecret;
+        SyncStatusText.Text = _viewModel.SyncStatus;
     }
 
     private void SyncViewModelFromControls()
@@ -79,17 +92,68 @@ public sealed partial class SettingsWindow : Window
         _viewModel.MaxAgeDays = checked((uint)MaxAgeNumberBox.Value);
         _viewModel.MaxImageGiBEnabled = MaxImageEnabledCheckBox.IsChecked == true;
         _viewModel.MaxImageGiB = MaxImageNumberBox.Value;
+        _viewModel.MaxFavoriteFileCacheGiBEnabled = MaxFavoriteFileCacheEnabledCheckBox.IsChecked == true;
+        _viewModel.MaxFavoriteFileCacheGiB = MaxFavoriteFileCacheNumberBox.Value;
         _viewModel.InterceptWinV = InterceptWinVToggle.IsOn;
         _viewModel.FallbackHotkey = FallbackHotkeyTextBox.Text;
         _viewModel.StartWithWindows = StartWithWindowsToggle.IsOn;
         _viewModel.Theme = (ThemeComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()
             ?? "system";
+        SyncViewModelFromSyncControls();
+    }
+
+    private void SyncViewModelFromSyncControls()
+    {
+        _viewModel.SyncEnabled = SyncEnabledToggle.IsOn;
+        _viewModel.SyncProvider = (SyncProviderComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "webdav";
+        _viewModel.SyncEndpoint = SyncEndpointTextBox.Text;
+        _viewModel.SyncRootPath = SyncRootPathTextBox.Text;
+        _viewModel.SyncBucket = SyncBucketTextBox.Text;
+        _viewModel.SyncRegion = SyncRegionTextBox.Text;
+        _viewModel.SyncPrefix = SyncPrefixTextBox.Text;
+        _viewModel.SyncAccount = SyncAccountTextBox.Text;
+        _viewModel.SyncSecret = SyncSecretPasswordBox.Password;
+    }
+
+    private void SyncProviderComboBox_SelectionChanged(object sender, SelectionChangedEventArgs args) =>
+        UpdateSyncProviderVisibility();
+
+    private void UpdateSyncProviderVisibility()
+    {
+        if (WebDavFields is null || OssFields is null)
+        {
+            return;
+        }
+        bool isOss = (SyncProviderComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() == "oss";
+        WebDavFields.Visibility = isOss ? Visibility.Collapsed : Visibility.Visible;
+        OssFields.Visibility = isOss ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void SaveSyncButton_Click(object sender, RoutedEventArgs args)
+    {
+        SyncViewModelFromSyncControls();
+        bool saved = await _viewModel.SaveSyncAsync();
+        SyncStatusText.Text = saved ? _viewModel.SyncStatus : _viewModel.ErrorMessage ?? "无法保存同步设置。";
+    }
+
+    private async void ProbeSyncButton_Click(object sender, RoutedEventArgs args)
+    {
+        SyncViewModelFromSyncControls();
+        await _viewModel.ProbeSyncAsync();
+        SyncStatusText.Text = _viewModel.SyncStatus;
+    }
+
+    private async void RunSyncButton_Click(object sender, RoutedEventArgs args)
+    {
+        SyncViewModelFromSyncControls();
+        await _viewModel.RunSyncAsync();
+        SyncStatusText.Text = _viewModel.SyncStatus;
     }
 
     private void ResizeWindow()
     {
         nint handle = WindowNative.GetWindowHandle(this);
         var id = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(handle);
-        AppWindow.GetFromWindowId(id).Resize(new SizeInt32(520, 660));
+        AppWindow.GetFromWindowId(id).Resize(new SizeInt32(600, 760));
     }
 }

@@ -46,6 +46,14 @@ impl VaultKey {
 pub struct DerivedKey([u8; 32]);
 
 impl DerivedKey {
+    pub fn derive_scoped(&self, context: &[u8]) -> Result<Self, CryptoError> {
+        let hkdf = Hkdf::<Sha256>::new(Some(b"clipboard-scoped-key-v1"), &self.0);
+        let mut output = [0_u8; 32];
+        hkdf.expand(context, &mut output)
+            .map_err(|_| CryptoError::KeyDerivation)?;
+        Ok(Self(output))
+    }
+
     pub fn keyed_hash(&self, content: &[u8]) -> [u8; 32] {
         *blake3::keyed_hash(&self.0, content).as_bytes()
     }

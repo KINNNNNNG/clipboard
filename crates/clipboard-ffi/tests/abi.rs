@@ -152,3 +152,22 @@ fn execute_reports_invalid_regex_separately_from_other_core_errors() {
 
     unsafe { clipboard_core_close(handle) };
 }
+
+#[test]
+fn execute_accepts_remote_sync_json_and_does_not_return_credentials_on_setup_failure() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().to_string_lossy();
+    let handle = unsafe { open_handle(&path) };
+    let request = br#"{"api_version":1,"type":"probe_remote","payload":{"remote":{"provider":"webdav","version":1,"endpoint":"not-a-url","username":"alice","password":"secret"}}}"#;
+    let mut response = CoreBuffer::default();
+
+    assert_eq!(
+        unsafe { clipboard_core_execute(handle, request.as_ptr(), request.len(), &mut response) },
+        CoreStatus::CoreError
+    );
+    assert!(response.ptr.is_null());
+    assert_eq!(response.len, 0);
+    assert_eq!(response.capacity, 0);
+
+    unsafe { clipboard_core_close(handle) };
+}

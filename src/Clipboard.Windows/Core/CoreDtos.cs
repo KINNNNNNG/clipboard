@@ -3,6 +3,7 @@ namespace Clipboard.Windows.Core;
 internal static class ClipboardCoreLimits
 {
     public const int MaxImageBytes = 50 * 1024 * 1024;
+    public const ulong DefaultMaxFavoriteFileCacheBytes = 5UL * 1024 * 1024 * 1024;
 }
 
 internal interface IClipboardCaptureSink : ISettingsRetentionService
@@ -29,6 +30,15 @@ internal interface IClipboardPanelCore
 
     Task<MutationResponseDto> SetFavoriteAsync(
         SetFavoriteRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<MutationResponseDto> CacheFileBundleAsync(
+        Guid itemId,
+        ulong maxBytes,
+        CancellationToken cancellationToken = default);
+
+    Task<MutationResponseDto> UncacheFileBundleAsync(
+        Guid itemId,
         CancellationToken cancellationToken = default);
 
     Task<MutationResponseDto> DeleteAsync(
@@ -99,6 +109,10 @@ internal sealed record IngestFileBundleRequestDto(
 
 internal sealed record ReadFileBundleRequestDto(Guid ItemId);
 
+internal sealed record CacheFileBundleRequestDto(Guid ItemId, ulong MaxBytes);
+
+internal sealed record UncacheFileBundleRequestDto(Guid ItemId);
+
 internal sealed record FileBundleResponseDto(
     Guid ItemId,
     IReadOnlyList<FileEntryDto> Entries);
@@ -139,6 +153,38 @@ internal sealed record SearchResponseDto(IReadOnlyList<ClipboardItemDto> Items);
 internal sealed record MutationResponseDto(Guid ItemId);
 
 internal sealed record RetentionResponseDto(int DeletedLocal, int TombstonesCreated);
+
+internal sealed record SyncResponseDto(
+    int Pulled,
+    int Merged,
+    int Uploaded,
+    int RejectedLocalOnly,
+    string? ErrorCategory = null,
+    string? ErrorCode = null,
+    string? ErrorDetail = null,
+    string? ErrorOperation = null);
+
+internal sealed record RemoteProbeResponseDto(
+    bool Available,
+    string? ErrorCategory = null,
+    string? ErrorCode = null,
+    string? ErrorDetail = null);
+
+internal sealed record RemoteConfigDto(
+    string Provider,
+    int Version,
+    string Endpoint,
+    string? Username = null,
+    string? Password = null,
+    string? Region = null,
+    string? Bucket = null,
+    string? Prefix = null,
+    string? AccessKeyId = null,
+    string? AccessKeySecret = null);
+
+internal sealed record SyncRemoteRequestDto(Guid DeviceId, RemoteConfigDto Remote);
+
+internal sealed record ProbeRemoteRequestDto(RemoteConfigDto Remote);
 
 internal sealed record CommandEnvelope<T>(int ApiVersion, string Type, T Payload);
 

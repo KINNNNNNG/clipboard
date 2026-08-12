@@ -48,3 +48,18 @@ fn keyed_hash_is_isolated_by_master_key_vault_and_purpose() {
             .keyed_hash(content)
     );
 }
+
+#[test]
+fn scoped_key_derivation_isolated_by_object_context() {
+    let key = VaultKey::from_bytes([0x51; 32]);
+    let vault_id = Uuid::from_u128(42);
+    let base = key.derive(vault_id, KeyPurpose::FileCache).unwrap();
+
+    let first = base.derive_scoped(b"bundle-a/file-0/chunk-0").unwrap();
+    let second = base.derive_scoped(b"bundle-a/file-0/chunk-1").unwrap();
+
+    assert_ne!(
+        first.keyed_hash(b"same bytes"),
+        second.keyed_hash(b"same bytes")
+    );
+}

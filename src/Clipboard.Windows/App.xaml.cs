@@ -19,7 +19,11 @@ public partial class App : Microsoft.UI.Xaml.Application
     private TrayIconService? _tray;
     private WindowPresenter? _presenter;
     private SettingsViewModel? _settingsViewModel;
+    private FileGlobalLog? _globalLog;
+    private RealtimeSyncCoordinator? _realtimeSync;
+    private readonly ClientSettingsStore _settingsStore = new();
     private readonly SingleWindowLifetime<SettingsWindow> _settingsWindows = new();
+    private readonly SingleWindowLifetime<LogWindow> _logWindows = new();
     private bool _showOnLaunch;
 
     public App()
@@ -54,6 +58,11 @@ public partial class App : Microsoft.UI.Xaml.Application
         {
             DispatcherQueue dispatcher = DispatcherQueue.GetForCurrentThread()
                 ?? throw new InvalidOperationException("Unable to access the UI dispatcher.");
+            _globalLog = new FileGlobalLog(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Clipboard",
+                "logs"));
+            _globalLog.Write(LogLevel.Info, "app", "app.start");
             _vault = new VaultBootstrapper().LoadOrCreate();
             _core = ClipboardCoreClient.Open(
                 _vault.DataDirectory,
@@ -67,13 +76,24 @@ public partial class App : Microsoft.UI.Xaml.Application
             var reader = new WindowsClipboardReader();
             var suppression = new ClipboardSuppression();
             var retentionPolicy = new RetentionPolicyProvider();
+            var favoriteFileCachePolicy = new FavoriteFileCachePolicyProvider();
+            var credentials = new SyncCredentialStore();
+            _realtimeSync = new RealtimeSyncCoordinator(
+                _core,
+                _settingsStore,
+                credentials,
+                globalLog: _globalLog);
             var paste = new PasteCoordinator(
                 _core,
                 writer,
                 new ForegroundWindowService(),
                 suppression,
                 MainWindow.HidePanel);
-            var panel = new ClipboardPanelViewModel(_core, paste);
+            var panel = new ClipboardPanelViewModel(
+                _core,
+                paste,
+                favoriteFileCachePolicy: favoriteFileCachePolicy,
+                realtimeSync: _realtimeSync);
             MainWindow.Configure(panel, _presenter, _core, writer);
 
             _capture = new ClipboardCaptureCoordinator(
@@ -81,16 +101,21 @@ public partial class App : Microsoft.UI.Xaml.Application
                 _core,
                 new SourceApplicationResolver(),
                 suppression,
-                MainWindow,
+                new CompositeCaptureObserver(MainWindow, _realtimeSync),
                 retentionPolicy: retentionPolicy);
 
             _shortcuts = new GlobalShortcutService(dispatcher, MainWindow.ShowPanel);
             _settingsViewModel = new SettingsViewModel(
-                new ClientSettingsStore(),
+                _settingsStore,
                 _core,
                 _shortcuts,
                 new StartupService(),
-                retentionPolicy: retentionPolicy);
+                retentionPolicy: retentionPolicy,
+                favoriteFileCachePolicy: favoriteFileCachePolicy,
+                syncCore: _core,
+                credentials: credentials,
+                globalLog: _globalLog,
+                syncSettingsNotifier: _realtimeSync);
             await _settingsViewModel.LoadAsync();
             ApplyTheme(_settingsViewModel.Theme);
             _shortcuts.Configure(
@@ -104,6 +129,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 handle,
                 MainWindow.ShowPanel,
                 OpenSettings,
+                OpenLogs,
                 ExitApplication);
             _tray.Start();
             if (_showOnLaunch)
@@ -117,6 +143,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         catch
         {
+            _globalLog?.Write(LogLevel.Error, "app", "app.exception", new Dictionary<string, string>
+            {
+                ["error_category"] = "initialization",
+            });
             MainWindow.SetStatus("无法初始化剪贴板服务");
         }
     }
@@ -164,10 +194,49 @@ public partial class App : Microsoft.UI.Xaml.Application
         return window;
     }
 
+    private async void OpenLogs()
+    {
+        if (_settingsViewModel is null || _globalLog is null)
+        {
+            return;
+        }
+        LogWindow window = _logWindows.GetOrCreate(
+            () => new LogWindow(new LogViewModel(
+                _globalLog,
+                _settingsViewModel.SaveLoggingLevelAsync)),
+            out bool created);
+        if (!created)
+        {
+            window.Activate();
+            return;
+        }
+        window.Closed += (_, _) => _logWindows.Release(window);
+        try
+        {
+            await window.ShowAsync();
+        }
+        catch
+        {
+            _logWindows.Release(window);
+            window.Close();
+            MainWindow?.SetStatus("无法打开日志");
+        }
+    }
+
     private void ExitApplication()
     {
         _settingsWindows.Current?.Close();
+        _logWindows.Current?.Close();
         MainWindow?.Close();
+    }
+
+    private async Task DisposeRealtimeSyncAsync()
+    {
+        if (_realtimeSync is not null)
+        {
+            await _realtimeSync.DisposeAsync();
+            _realtimeSync = null;
+        }
     }
 
     private void ApplyTheme(string theme)
@@ -186,6 +255,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         {
             settingsRoot.RequestedTheme = requestedTheme;
         }
+        if (_logWindows.Current?.Content is FrameworkElement logRoot)
+        {
+            logRoot.RequestedTheme = requestedTheme;
+        }
     }
 
     private void OnExit(object sender, object args)
@@ -193,7 +266,9 @@ public partial class App : Microsoft.UI.Xaml.Application
         _tray?.Dispose();
         _capture?.Dispose();
         _shortcuts?.Dispose();
+        DisposeRealtimeSyncAsync().GetAwaiter().GetResult();
         _core?.Dispose();
         _vault?.Dispose();
+        _globalLog?.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }

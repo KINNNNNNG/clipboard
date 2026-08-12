@@ -19,8 +19,8 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
     private IClipboardItemContentReader? _contentReader;
     private IClipboardWriter? _clipboardWriter;
     private UiOperationRunner? _operationRunner;
-    private readonly BoundedLruCache<Guid, BitmapImage> _imageCache = new(64);
-    private readonly FileIconCache<SoftwareBitmapSource> _fileIconCache =
+    private readonly BoundedLruCache<Guid, byte[]> _imageCache = new(64);
+    private readonly FileIconCache<ShellIconPixels> _fileIconCache =
         new(128, TimeProvider.System, TimeSpan.FromMinutes(5));
     private readonly ShellFileTypeIconProvider _fileIconProvider =
         new(new ShellIconNativeApi());
@@ -28,6 +28,7 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
     public MainWindow()
     {
         InitializeComponent();
+        SelectionDiagnostics.StartSession();
         Activated += OnActivated;
     }
 
@@ -220,6 +221,9 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
 
     private void HistoryList_SelectionChanged(object sender, SelectionChangedEventArgs args)
     {
+        SelectionDiagnostics.Write(
+            $"SelectionChanged list={HistoryList.SelectedIndex} vm={_viewModel?.SelectedIndex} "
+            + $"selectedItems={HistoryList.SelectedItems.Count} added={args.AddedItems.Count} removed={args.RemovedItems.Count}");
         if (_viewModel is null || HistoryList.SelectedIndex == _viewModel.SelectedIndex)
         {
             return;
@@ -230,12 +234,26 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         }
     }
 
+    private void HistoryList_ContainerContentChanging(
+        ListViewBase sender,
+        ContainerContentChangingEventArgs args)
+    {
+        if (args.ItemContainer is ListViewItem container)
+        {
+            SelectionDiagnostics.Write(
+                $"ContainerChanging index={args.ItemIndex} recycle={args.InRecycleQueue} "
+                + $"selected={container.IsSelected} item={args.Item?.GetType().Name}");
+        }
+    }
+
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (args.PropertyName != nameof(ClipboardPanelViewModel.SelectedIndex))
         {
             return;
         }
+        SelectionDiagnostics.Write(
+            $"ViewModel.SelectedIndexChanged vm={_viewModel?.SelectedIndex} list={HistoryList.SelectedIndex}");
         if (DispatcherQueue.HasThreadAccess)
         {
             SyncHistorySelection();
@@ -253,6 +271,8 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
             return;
         }
         int selectedIndex = _viewModel.SelectedIndex;
+        SelectionDiagnostics.Write(
+            $"SyncSelection before vm={selectedIndex} list={HistoryList.SelectedIndex} items={_viewModel.Items.Count}");
         if (HistoryList.SelectedIndex != selectedIndex)
         {
             HistoryList.SelectedIndex = selectedIndex;
@@ -263,6 +283,8 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
                 _viewModel.Items[selectedIndex],
                 ScrollIntoViewAlignment.Default);
         }
+        SelectionDiagnostics.Write(
+            $"SyncSelection after vm={selectedIndex} list={HistoryList.SelectedIndex}");
     }
 
     private void Root_KeyDown(object sender, KeyRoutedEventArgs args)
@@ -271,6 +293,9 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         {
             return;
         }
+        SelectionDiagnostics.Write(
+            $"RootKeyDown key={args.Key} handled={args.Handled} sender={sender.GetType().Name} "
+            + $"vm={_viewModel.SelectedIndex} list={HistoryList.SelectedIndex}");
         switch (args.Key)
         {
             case global::Windows.System.VirtualKey.Down:
@@ -335,15 +360,12 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         SoftwareBitmapSource? source;
         try
         {
-            source = await _fileIconCache.GetAsync(
+            ShellIconPixels? pixels = await _fileIconCache.GetAsync(
                 cacheKey,
-                async () =>
-                {
-                    ShellIconPixels? pixels = await Task.Run(() => _fileIconProvider.Load(cacheKey));
-                    return pixels is null
-                        ? null
-                        : await SoftwareBitmapSourceFactory.CreateAsync(pixels);
-                });
+                () => Task.Run(() => _fileIconProvider.Load(cacheKey)));
+            source = pixels is null
+                ? null
+                : await SoftwareBitmapSourceFactory.CreateAsync(pixels);
         }
         catch
         {
@@ -374,28 +396,28 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         image.Tag = tracker;
         image.Source = null;
         image.Visibility = Visibility.Visible;
-        if (_imageCache.TryGetValue(item.Id, out BitmapImage? cached))
-        {
-            if (IsCurrentPreview(image, tracker, requestedItemId))
-            {
-                image.Source = cached;
-            }
-            return;
-        }
         try
         {
+            if (_imageCache.TryGetValue(item.Id, out byte[]? cached) && cached is not null)
+            {
+                SoftwareBitmapSource cachedSource =
+                    await SoftwareBitmapSourceFactory.CreateFromPngAsync(cached);
+                if (IsCurrentPreview(image, tracker, requestedItemId))
+                {
+                    image.Source = cachedSource;
+                }
+                return;
+            }
+
             byte[] png = await _contentReader.ReadImageAsync(item.Id);
             try
             {
-                using var stream = new InMemoryRandomAccessStream();
-                await stream.WriteAsync(png.AsBuffer());
-                stream.Seek(0);
-                var bitmap = new BitmapImage();
-                await bitmap.SetSourceAsync(stream);
-                _imageCache.Set(requestedItemId, bitmap);
+                _imageCache.Set(requestedItemId, png.ToArray());
+                SoftwareBitmapSource source =
+                    await SoftwareBitmapSourceFactory.CreateFromPngAsync(png);
                 if (IsCurrentPreview(image, tracker, requestedItemId))
                 {
-                    image.Source = bitmap;
+                    image.Source = source;
                 }
             }
             finally

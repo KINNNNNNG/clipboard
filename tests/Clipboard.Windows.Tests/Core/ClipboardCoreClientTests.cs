@@ -82,6 +82,107 @@ public sealed class ClipboardCoreClientTests
     }
 
     [Fact]
+    public async Task Probe_remote_serializes_the_complete_webdav_contract()
+    {
+        var native = new FakeNative
+        {
+            ExecuteResponse = "{\"available\":true}"u8.ToArray(),
+        };
+        using var client = ClipboardCoreClient.Open(
+            "C:\\clipboard-data",
+            Guid.NewGuid(),
+            new byte[32],
+            native);
+
+        await client.ProbeRemoteAsync(new ProbeRemoteRequestDto(new RemoteConfigDto(
+            "webdav",
+            1,
+            "https://sync.example.test/root",
+            Username: "account-value",
+            Password: "secret-value")));
+
+        using JsonDocument request = JsonDocument.Parse(native.LastExecuteRequest!);
+        JsonElement remote = request.RootElement.GetProperty("payload").GetProperty("remote");
+        Assert.Equal("probe_remote", request.RootElement.GetProperty("type").GetString());
+        Assert.Equal("webdav", remote.GetProperty("provider").GetString());
+        Assert.Equal(1, remote.GetProperty("version").GetInt32());
+        Assert.True(remote.TryGetProperty("endpoint", out _));
+        Assert.True(remote.TryGetProperty("username", out _));
+        Assert.True(remote.TryGetProperty("password", out _));
+        Assert.False(remote.TryGetProperty("access_key_id", out _));
+    }
+
+    [Fact]
+    public async Task Sync_remote_serializes_the_complete_oss_contract()
+    {
+        var native = new FakeNative
+        {
+            ExecuteResponse = "{\"pulled\":0,\"merged\":0,\"uploaded\":0,\"rejected_local_only\":0}"u8.ToArray(),
+        };
+        using var client = ClipboardCoreClient.Open(
+            "C:\\clipboard-data",
+            Guid.NewGuid(),
+            new byte[32],
+            native);
+
+        await client.SyncRemoteAsync(new SyncRemoteRequestDto(
+            Guid.NewGuid(),
+            new RemoteConfigDto(
+                "oss",
+                1,
+                "https://oss-cn-hangzhou.aliyuncs.com",
+                Region: "cn-hangzhou",
+                Bucket: "bucket-value",
+                Prefix: "clipboard",
+                AccessKeyId: "account-value",
+                AccessKeySecret: "secret-value")));
+
+        using JsonDocument request = JsonDocument.Parse(native.LastExecuteRequest!);
+        JsonElement remote = request.RootElement.GetProperty("payload").GetProperty("remote");
+        Assert.Equal("sync_remote", request.RootElement.GetProperty("type").GetString());
+        Assert.Equal("oss", remote.GetProperty("provider").GetString());
+        Assert.Equal(1, remote.GetProperty("version").GetInt32());
+        Assert.True(remote.TryGetProperty("endpoint", out _));
+        Assert.True(remote.TryGetProperty("region", out _));
+        Assert.True(remote.TryGetProperty("bucket", out _));
+        Assert.True(remote.TryGetProperty("prefix", out _));
+        Assert.True(remote.TryGetProperty("access_key_id", out _));
+        Assert.True(remote.TryGetProperty("access_key_secret", out _));
+        Assert.False(remote.TryGetProperty("username", out _));
+    }
+
+    [Fact]
+    public async Task Sync_remote_deserializes_sanitized_remote_failure_details()
+    {
+        var native = new FakeNative
+        {
+            ExecuteResponse = "{\"pulled\":0,\"merged\":0,\"uploaded\":0,\"rejected_local_only\":0,\"error_category\":\"authentication\",\"error_code\":\"SignatureDoesNotMatch\",\"error_detail\":\"http_403_oss_error\",\"error_operation\":\"oss_put_pending\"}"u8.ToArray(),
+        };
+        using var client = ClipboardCoreClient.Open(
+            "C:\\clipboard-data",
+            Guid.NewGuid(),
+            new byte[32],
+            native);
+
+        SyncResponseDto response = await client.SyncRemoteAsync(new SyncRemoteRequestDto(
+            Guid.NewGuid(),
+            new RemoteConfigDto(
+                "oss",
+                1,
+                "https://oss-cn-hangzhou.aliyuncs.com",
+                Region: "cn-hangzhou",
+                Bucket: "bucket-value",
+                Prefix: "clipboard",
+                AccessKeyId: "account-value",
+                AccessKeySecret: "secret-value")));
+
+        Assert.Equal("authentication", response.ErrorCategory);
+        Assert.Equal("SignatureDoesNotMatch", response.ErrorCode);
+        Assert.Equal("http_403_oss_error", response.ErrorDetail);
+        Assert.Equal("oss_put_pending", response.ErrorOperation);
+    }
+
+    [Fact]
     public async Task File_bundle_commands_use_json_execute_and_round_trip_structured_entries()
     {
         var native = new FakeNative

@@ -19,7 +19,32 @@ pub enum CoreResponse {
         deleted_local: usize,
         tombstones_created: usize,
     },
+    Sync(SyncDirectoryResponse),
+    RemoteSync {
+        pulled: usize,
+        merged: usize,
+        uploaded: usize,
+        rejected_local_only: usize,
+        error_category: Option<String>,
+        error_code: Option<String>,
+        error_detail: Option<String>,
+        error_operation: Option<String>,
+    },
+    RemoteProbe {
+        available: bool,
+        error_category: Option<String>,
+        error_code: Option<String>,
+        error_detail: Option<String>,
+    },
     Empty {},
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct SyncDirectoryResponse {
+    pub pulled: usize,
+    pub merged: usize,
+    pub uploaded: usize,
+    pub rejected_local_only: usize,
 }
 
 impl CoreResponse {

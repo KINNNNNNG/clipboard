@@ -11,7 +11,8 @@ internal sealed class ClipboardCoreClient : IDisposable,
     IClipboardCaptureSink,
     IClipboardItemContentReader,
     ISettingsRetentionService,
-    IClipboardPanelCore
+    IClipboardPanelCore,
+    IRealtimeSyncClient
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private readonly IClipboardCoreNative _native;
@@ -104,6 +105,23 @@ internal sealed class ClipboardCoreClient : IDisposable,
             request,
             cancellationToken);
 
+    public Task<MutationResponseDto> CacheFileBundleAsync(
+        Guid itemId,
+        ulong maxBytes,
+        CancellationToken cancellationToken = default) =>
+        ExecuteCommandAsync<MutationResponseDto, CacheFileBundleRequestDto>(
+            "cache_file_bundle",
+            new CacheFileBundleRequestDto(itemId, maxBytes),
+            cancellationToken);
+
+    public Task<MutationResponseDto> UncacheFileBundleAsync(
+        Guid itemId,
+        CancellationToken cancellationToken = default) =>
+        ExecuteCommandAsync<MutationResponseDto, UncacheFileBundleRequestDto>(
+            "uncache_file_bundle",
+            new UncacheFileBundleRequestDto(itemId),
+            cancellationToken);
+
     public Task<MutationResponseDto> DeleteAsync(
         DeleteRequestDto request,
         CancellationToken cancellationToken = default) =>
@@ -126,6 +144,21 @@ internal sealed class ClipboardCoreClient : IDisposable,
             "apply_retention",
             request,
             cancellationToken);
+
+    public Task<SyncResponseDto> SyncRemoteAsync(
+        SyncRemoteRequestDto request,
+        CancellationToken cancellationToken = default) =>
+        ExecuteCommandAsync<SyncResponseDto, SyncRemoteRequestDto>("sync_remote", request, cancellationToken);
+
+    public Task<SyncResponseDto> SyncAsync(
+        SyncRemoteRequestDto request,
+        CancellationToken cancellationToken = default) =>
+        SyncRemoteAsync(request, cancellationToken);
+
+    public Task<RemoteProbeResponseDto> ProbeRemoteAsync(
+        ProbeRemoteRequestDto request,
+        CancellationToken cancellationToken = default) =>
+        ExecuteCommandAsync<RemoteProbeResponseDto, ProbeRemoteRequestDto>("probe_remote", request, cancellationToken);
 
     public Task<MutationResponseDto> IngestImageAsync(
         IngestImageRequestDto request,

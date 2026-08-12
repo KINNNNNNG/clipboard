@@ -20,7 +20,7 @@ public sealed class XamlResourceConfigurationTests
     }
 
     [Fact]
-    public void History_list_uses_single_selection_with_selected_visual_state()
+    public void History_list_uses_single_selection_with_selection_chrome()
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");
         XDocument document = XDocument.Load(path);
@@ -36,20 +36,11 @@ public sealed class XamlResourceConfigurationTests
         Assert.Equal("ListViewItem", style.Attribute("TargetType")?.Value);
         Assert.NotNull(style.Descendants().SingleOrDefault(
             element => element.Name.LocalName == "ControlTemplate"));
-        XElement selected = style
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        XElement chrome = style
             .Descendants()
-            .Single(element =>
-                element.Name.LocalName == "VisualState"
-                && element.Attribute(XName.Get("Name", "http://schemas.microsoft.com/winfx/2006/xaml"))?.Value == "Selected");
-        Assert.Equal(
-            "SelectionStates",
-            selected.Parent?.Attribute(XName.Get("Name", "http://schemas.microsoft.com/winfx/2006/xaml"))?.Value);
-        Assert.Contains(
-            selected.Descendants().Where(element => element.Name.LocalName == "Setter"),
-            setter => setter.Attribute("Target")?.Value == "SelectionRoot.Background");
-        Assert.Contains(
-            selected.Descendants().Where(element => element.Name.LocalName == "Setter"),
-            setter => setter.Attribute("Target")?.Value == "SelectionRoot.BorderBrush");
+            .Single(element => element.Attribute(x + "Name")?.Value == "SelectionChrome");
+        Assert.Contains("IsSelected", chrome.Attribute("Visibility")?.Value, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -65,6 +56,41 @@ public sealed class XamlResourceConfigurationTests
 
         Assert.Equal("Root_KeyDown", root.Attribute("KeyDown")?.Value);
         Assert.Null(list.Attribute("PreviewKeyDown"));
+    }
+
+    [Fact]
+    public void Settings_window_switches_provider_specific_sync_fields()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "SettingsWindow.xaml");
+        XDocument document = XDocument.Load(path);
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+
+        XElement provider = document.Descendants()
+            .Single(element => element.Attribute(x + "Name")?.Value == "SyncProviderComboBox");
+        Assert.Equal("SyncProviderComboBox_SelectionChanged", provider.Attribute("SelectionChanged")?.Value);
+        Assert.NotNull(document.Descendants()
+            .SingleOrDefault(element => element.Attribute(x + "Name")?.Value == "WebDavFields"));
+        Assert.NotNull(document.Descendants()
+            .SingleOrDefault(element => element.Attribute(x + "Name")?.Value == "OssFields"));
+    }
+
+    [Fact]
+    public void History_list_binds_selection_chrome_to_the_container_selection_property()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");
+        XDocument document = XDocument.Load(path);
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        XElement list = document
+            .Descendants()
+            .Single(element => element.Name.LocalName == "ListView");
+        XElement chrome = list
+            .Descendants()
+            .Single(element => element.Attribute(x + "Name")?.Value == "SelectionChrome");
+
+        Assert.Contains("IsSelected", chrome.Attribute("Visibility")?.Value, StringComparison.Ordinal);
+        Assert.Contains("TemplatedParent", chrome.Attribute("Visibility")?.Value, StringComparison.Ordinal);
+        Assert.Equal("0,0,0,8", chrome.Attribute("Margin")?.Value);
+        Assert.DoesNotContain(list.Descendants(), element => element.Name.LocalName == "VisualStateManager");
     }
 
     [Fact]
@@ -129,5 +155,22 @@ public sealed class XamlResourceConfigurationTests
         Assert.DoesNotContain(
             document.Descendants(),
             element => element.Name.LocalName == "DesktopAcrylicBackdrop");
+    }
+
+    [Fact]
+    public void Log_window_exposes_filter_refresh_copy_and_clear_controls()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "LogWindow.xaml");
+        XDocument document = XDocument.Load(path);
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+
+        Assert.NotNull(document.Descendants().SingleOrDefault(
+            element => element.Attribute(x + "Name")?.Value == "LevelComboBox"));
+        Assert.NotNull(document.Descendants().SingleOrDefault(
+            element => element.Attribute(x + "Name")?.Value == "FilterComboBox"));
+        Assert.NotNull(document.Descendants().SingleOrDefault(
+            element => element.Attribute(x + "Name")?.Value == "AutoRefreshToggle"));
+        Assert.Contains(document.Descendants(), element => element.Attribute("Click")?.Value == "CopyButton_Click");
+        Assert.Contains(document.Descendants(), element => element.Attribute("Click")?.Value == "ClearButton_Click");
     }
 }
