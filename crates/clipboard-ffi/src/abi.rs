@@ -1,5 +1,6 @@
 use crate::{CoreBuffer, CoreStatus};
 use clipboard_core::{ApiRequest, CoreError, CoreService, IngestImage, MAX_IMAGE_BYTES};
+use clipboard_sync::{RecoveryMaterial, decode_recovery_code, encode_recovery_code};
 use serde::Deserialize;
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
@@ -136,6 +137,44 @@ pub unsafe extern "C" fn clipboard_core_read_image(
     out_png: *mut CoreBuffer,
 ) -> CoreStatus {
     catch_status(|| unsafe { read_image_impl(handle, item_id_ptr, item_id_len, out_png) })
+}
+
+/// Encodes a vault UUID and 32-byte master key as a recovery code.
+///
+/// # Safety
+///
+/// Input pointers must remain valid for their supplied lengths and `out_code` must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clipboard_recovery_encode(
+    vault_id_ptr: *const u8,
+    vault_id_len: usize,
+    master_key_ptr: *const u8,
+    master_key_len: usize,
+    out_code: *mut CoreBuffer,
+) -> CoreStatus {
+    catch_status(|| unsafe {
+        recovery_encode_impl(
+            vault_id_ptr,
+            vault_id_len,
+            master_key_ptr,
+            master_key_len,
+            out_code,
+        )
+    })
+}
+
+/// Decodes a recovery code into 16 vault UUID bytes followed by a 32-byte master key.
+///
+/// # Safety
+///
+/// `code_ptr` must remain valid for its supplied length and `out_material` must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clipboard_recovery_decode(
+    code_ptr: *const u8,
+    code_len: usize,
+    out_material: *mut CoreBuffer,
+) -> CoreStatus {
+    catch_status(|| unsafe { recovery_decode_impl(code_ptr, code_len, out_material) })
 }
 
 /// Frees a response allocated by `clipboard_core_execute`.
@@ -301,6 +340,61 @@ unsafe fn read_image_impl(
         Err(_) => return CoreStatus::CoreError,
     };
     unsafe { ptr::write(out_png, CoreBuffer::from_vec(png)) };
+    CoreStatus::Ok
+}
+
+unsafe fn recovery_encode_impl(
+    vault_id_ptr: *const u8,
+    vault_id_len: usize,
+    master_key_ptr: *const u8,
+    master_key_len: usize,
+    out_code: *mut CoreBuffer,
+) -> CoreStatus {
+    if vault_id_ptr.is_null()
+        || vault_id_len != 16
+        || master_key_ptr.is_null()
+        || master_key_len != 32
+        || out_code.is_null()
+    {
+        return CoreStatus::InvalidArgument;
+    }
+    unsafe { ptr::write(out_code, CoreBuffer::default()) };
+    let vault_id =
+        match Uuid::from_slice(unsafe { slice::from_raw_parts(vault_id_ptr, vault_id_len) }) {
+            Ok(value) => value,
+            Err(_) => return CoreStatus::InvalidArgument,
+        };
+    let mut master_key = Zeroizing::new([0_u8; 32]);
+    master_key.copy_from_slice(unsafe { slice::from_raw_parts(master_key_ptr, master_key_len) });
+    let code = match encode_recovery_code(&RecoveryMaterial::new(vault_id, *master_key)) {
+        Ok(value) => value,
+        Err(_) => return CoreStatus::CoreError,
+    };
+    unsafe { ptr::write(out_code, CoreBuffer::from_vec(code.into_bytes())) };
+    CoreStatus::Ok
+}
+
+unsafe fn recovery_decode_impl(
+    code_ptr: *const u8,
+    code_len: usize,
+    out_material: *mut CoreBuffer,
+) -> CoreStatus {
+    if code_ptr.is_null() || code_len == 0 || out_material.is_null() {
+        return CoreStatus::InvalidArgument;
+    }
+    unsafe { ptr::write(out_material, CoreBuffer::default()) };
+    let code = match str::from_utf8(unsafe { slice::from_raw_parts(code_ptr, code_len) }) {
+        Ok(value) => value,
+        Err(_) => return CoreStatus::InvalidUtf8,
+    };
+    let material = match decode_recovery_code(code) {
+        Ok(value) => value,
+        Err(_) => return CoreStatus::CoreError,
+    };
+    let mut bytes = Zeroizing::new([0_u8; 48]);
+    bytes[..16].copy_from_slice(material.vault_id.as_bytes());
+    bytes[16..].copy_from_slice(&material.master_key);
+    unsafe { ptr::write(out_material, CoreBuffer::from_vec(bytes.to_vec())) };
     CoreStatus::Ok
 }
 

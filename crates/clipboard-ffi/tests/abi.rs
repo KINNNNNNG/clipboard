@@ -1,6 +1,7 @@
 use clipboard_ffi::{
     CoreBuffer, CoreHandle, CoreStatus, clipboard_core_close, clipboard_core_execute,
-    clipboard_core_free_buffer, clipboard_core_open,
+    clipboard_core_free_buffer, clipboard_core_open, clipboard_recovery_decode,
+    clipboard_recovery_encode,
 };
 use std::{ptr, slice};
 use tempfile::tempdir;
@@ -170,4 +171,44 @@ fn execute_accepts_remote_sync_json_and_does_not_return_credentials_on_setup_fai
     assert_eq!(response.capacity, 0);
 
     unsafe { clipboard_core_close(handle) };
+}
+
+#[test]
+fn recovery_code_round_trips_without_returning_key_on_invalid_input() {
+    let vault_id = uuid::Uuid::from_u128(0xabcdef);
+    let key = [0x7a_u8; 32];
+    let mut encoded = CoreBuffer::default();
+    assert_eq!(
+        unsafe {
+            clipboard_recovery_encode(
+                vault_id.as_bytes().as_ptr(),
+                vault_id.as_bytes().len(),
+                key.as_ptr(),
+                key.len(),
+                &mut encoded,
+            )
+        },
+        CoreStatus::Ok
+    );
+    let code = unsafe { slice::from_raw_parts(encoded.ptr, encoded.len) }.to_vec();
+    unsafe { clipboard_core_free_buffer(encoded) };
+
+    let mut material = CoreBuffer::default();
+    assert_eq!(
+        unsafe { clipboard_recovery_decode(code.as_ptr(), code.len(), &mut material) },
+        CoreStatus::Ok
+    );
+    let decoded = unsafe { slice::from_raw_parts(material.ptr, material.len) };
+    assert_eq!(decoded.len(), 48);
+    assert_eq!(&decoded[..16], vault_id.as_bytes());
+    assert_eq!(&decoded[16..], &key);
+    unsafe { clipboard_core_free_buffer(material) };
+
+    let mut invalid = CoreBuffer::default();
+    assert_eq!(
+        unsafe { clipboard_recovery_decode(b"invalid".as_ptr(), 7, &mut invalid) },
+        CoreStatus::CoreError
+    );
+    assert!(invalid.ptr.is_null());
+    assert_eq!(invalid.len, 0);
 }
