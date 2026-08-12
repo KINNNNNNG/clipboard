@@ -7,6 +7,10 @@ use std::{
 use uuid::Uuid;
 
 use crate::{
+    HEADER_NAME, RemoteHeader, RemoteMetadataStore, SnapshotId, device_state_name,
+    parse_device_state_name, parse_snapshot_name, snapshot_name,
+};
+use crate::{
     PENDING_OBJECT_SUFFIX, RemoteImageObject, RemoteSegmentHeader, RemoteStore,
     SYNC_PROTOCOL_VERSION, SegmentHeader, SyncError, completed_image_object_name,
     pending_image_object_name,
@@ -96,6 +100,97 @@ impl DirectoryTransport {
         pending.sync_all().map_err(|_| SyncError::Transport)?;
         drop(pending);
         fs::rename(&pending_path, final_path).map_err(|_| SyncError::Transport)
+    }
+
+    fn get_optional_object(&self, object_name: &str) -> Result<Option<Vec<u8>>, SyncError> {
+        match fs::read(self.directory.join(object_name)) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(_) => Err(SyncError::Transport),
+        }
+    }
+
+    fn put_metadata_object(&self, object_name: &str, bytes: &[u8]) -> Result<(), SyncError> {
+        self.put_named_object(
+            object_name,
+            &format!("{object_name}{PENDING_OBJECT_SUFFIX}"),
+            bytes,
+        )
+    }
+}
+
+impl RemoteMetadataStore for DirectoryTransport {
+    fn get_header(&self) -> Result<Option<RemoteHeader>, SyncError> {
+        let Some(bytes) = self.get_optional_object(HEADER_NAME)? else {
+            return Ok(None);
+        };
+        let header: RemoteHeader =
+            serde_json::from_slice(&bytes).map_err(|_| SyncError::InvalidSegment)?;
+        header.validate()?;
+        Ok(Some(header))
+    }
+
+    fn put_header(&self, header: &RemoteHeader) -> Result<(), SyncError> {
+        header.validate()?;
+        let bytes = serde_json::to_vec(header).map_err(|_| SyncError::InvalidSegment)?;
+        if let Some(existing) = self.get_optional_object(HEADER_NAME)? {
+            return if existing == bytes {
+                Ok(())
+            } else {
+                Err(SyncError::Conflict)
+            };
+        }
+        self.put_metadata_object(HEADER_NAME, &bytes)
+    }
+
+    fn list_device_states(&self) -> Result<Vec<Uuid>, SyncError> {
+        let mut devices = fs::read_dir(&self.directory)
+            .map_err(|_| SyncError::Transport)?
+            .filter_map(|entry| entry.ok())
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .filter_map(|name| parse_device_state_name(&name))
+            .collect::<Vec<_>>();
+        devices.sort_unstable();
+        Ok(devices)
+    }
+
+    fn get_device_state(&self, device_id: Uuid) -> Result<Option<Vec<u8>>, SyncError> {
+        self.get_optional_object(&device_state_name(device_id))
+    }
+
+    fn put_device_state(&self, device_id: Uuid, ciphertext: &[u8]) -> Result<(), SyncError> {
+        fs::write(
+            self.directory.join(device_state_name(device_id)),
+            ciphertext,
+        )
+        .map_err(|_| SyncError::Transport)
+    }
+
+    fn get_snapshot(&self, snapshot_id: SnapshotId) -> Result<Option<Vec<u8>>, SyncError> {
+        self.get_optional_object(&snapshot_name(snapshot_id))
+    }
+
+    fn put_snapshot(&self, snapshot_id: SnapshotId, ciphertext: &[u8]) -> Result<(), SyncError> {
+        self.put_metadata_object(&snapshot_name(snapshot_id), ciphertext)
+    }
+
+    fn list_snapshots(&self) -> Result<Vec<SnapshotId>, SyncError> {
+        let mut snapshots = fs::read_dir(&self.directory)
+            .map_err(|_| SyncError::Transport)?
+            .filter_map(|entry| entry.ok())
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .filter_map(|name| parse_snapshot_name(&name))
+            .collect::<Vec<_>>();
+        snapshots.sort_unstable();
+        Ok(snapshots)
+    }
+
+    fn delete_segment(&self, header: &SegmentHeader) -> Result<bool, SyncError> {
+        match fs::remove_file(self.path_for(header, ".enc")) {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(_) => Err(SyncError::Transport),
+        }
     }
 }
 

@@ -44,3 +44,14 @@ fn acknowledgements_must_cover_the_snapshot_vector() {
 
     assert!(!registry.can_compact(snapshot, &required));
 }
+
+#[test]
+fn version_vector_serializes_and_increments_per_device() {
+    let device = Uuid::from_u128(7);
+    let mut vector = VersionVector::default();
+    assert_eq!(vector.increment(device), 1);
+    assert_eq!(vector.increment(device), 2);
+    let encoded = serde_json::to_vec(&vector).unwrap();
+    let decoded: VersionVector = serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(decoded.get(device), 2);
+}

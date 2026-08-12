@@ -1,11 +1,36 @@
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SnapshotId(pub Uuid);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct VersionVector(BTreeMap<Uuid, u64>);
+
+impl FromIterator<(Uuid, u64)> for VersionVector {
+    fn from_iter<T: IntoIterator<Item = (Uuid, u64)>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl Serialize for VersionVector {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for VersionVector {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(Self(BTreeMap::deserialize(deserializer)?))
+    }
+}
 
 impl From<[(Uuid, u64); 2]> for VersionVector {
     fn from(entries: [(Uuid, u64); 2]) -> Self {
@@ -29,6 +54,16 @@ impl VersionVector {
             .0
             .iter()
             .all(|(device, sequence)| self.get(*device) >= *sequence)
+    }
+
+    pub fn increment(&mut self, device: Uuid) -> u64 {
+        let value = self.0.entry(device).or_default();
+        *value += 1;
+        *value
+    }
+
+    pub fn entries(&self) -> impl Iterator<Item = (Uuid, u64)> + '_ {
+        self.0.iter().map(|(device, sequence)| (*device, *sequence))
     }
 }
 

@@ -5,6 +5,7 @@
 mod device_state;
 mod diagnostics;
 mod error;
+mod metadata;
 mod oss;
 mod pairing_file;
 mod protocol;
@@ -19,6 +20,11 @@ pub use diagnostics::{
     SyncDiagnosticOutcome, SyncDiagnosticPhase, SyncDiagnostics,
 };
 pub use error::SyncError;
+pub use metadata::{
+    HEADER_NAME, REMOTE_CIPHER_SUITE, REMOTE_HEADER_VERSION, RemoteHeader, RemoteMetadataStore,
+    SnapshotManifest, SnapshotSegment, device_state_name, parse_device_state_name,
+    parse_snapshot_name, snapshot_name,
+};
 pub use oss::{OssStore, parse_oss_error_code};
 pub use pairing_file::{PairingFileMaterial, decode_pairing_file, encode_pairing_file};
 pub use protocol::{SegmentHeader, SyncEvent, open_segment, seal_segment};

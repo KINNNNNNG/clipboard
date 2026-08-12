@@ -77,7 +77,14 @@ fn malformed_file_bundle_outbox_event_is_rejected_without_remote_path_or_diagnos
         .unwrap();
 
     assert_eq!(response.rejected_local_only, 1);
-    assert_eq!(remote.path().read_dir().unwrap().count(), 1);
+    let names = remote
+        .path()
+        .read_dir()
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name == "header.json"));
+    assert!(names.iter().any(|name| name.ends_with(".state.enc")));
     assert!(
         !serde_json::to_string(&diagnostics.records())
             .unwrap()
@@ -151,7 +158,18 @@ fn image_object_is_uploaded_before_metadata_and_can_be_read_on_second_core() {
         .flat_map(|entry| std::fs::read(entry.unwrap().path()).unwrap())
         .collect::<Vec<_>>();
     assert!(!contains_bytes(&remote_bytes, png));
-    assert_eq!(remote.path().read_dir().unwrap().count(), 2);
+    let names = remote
+        .path()
+        .read_dir()
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name == "header.json"));
+    assert!(names.iter().any(|name| name.ends_with(".state.enc")));
+    assert!(names.iter().any(|name| name.starts_with("image-")));
+    assert!(names.iter().any(|name| name.ends_with(".enc")
+        && !name.ends_with(".state.enc")
+        && !name.starts_with("image-")));
 
     sync(&mut second, remote.path(), 2).unwrap();
     assert_eq!(second.read_image(item_id).unwrap(), png);
@@ -449,6 +467,77 @@ fn delete_event_received_before_upsert_is_preserved() {
     sync(&mut core, remote.path(), 9).unwrap();
 
     assert!(previews(&mut core).is_empty());
+}
+
+#[test]
+fn snapshot_compaction_waits_for_other_device_acknowledgement() {
+    let remote = tempdir().unwrap();
+    let first_data = tempdir().unwrap();
+    let second_data = tempdir().unwrap();
+    let mut first = CoreService::open(first_data.path(), VAULT_ID, &KEY).unwrap();
+    let mut second = CoreService::open(second_data.path(), VAULT_ID, &KEY).unwrap();
+
+    ingest(&mut first, "snapshot gate", 100);
+    sync(&mut first, remote.path(), 1).unwrap();
+    let before = DirectoryTransport::open(remote.path())
+        .unwrap()
+        .list_all_segments()
+        .unwrap();
+    assert!(!before.is_empty());
+
+    sync(&mut second, remote.path(), 2).unwrap();
+    let after_second = DirectoryTransport::open(remote.path())
+        .unwrap()
+        .list_all_segments()
+        .unwrap();
+    assert!(!after_second.is_empty());
+}
+
+#[test]
+fn snapshot_compaction_can_remove_old_segments_after_both_devices_sync_again() {
+    let remote = tempdir().unwrap();
+    let first_data = tempdir().unwrap();
+    let second_data = tempdir().unwrap();
+    let mut first = CoreService::open(first_data.path(), VAULT_ID, &KEY).unwrap();
+    let mut second = CoreService::open(second_data.path(), VAULT_ID, &KEY).unwrap();
+
+    ingest(&mut first, "snapshot eventually compacts", 100);
+    sync(&mut first, remote.path(), 1).unwrap();
+    sync(&mut second, remote.path(), 2).unwrap();
+    sync(&mut first, remote.path(), 1).unwrap();
+    sync(&mut second, remote.path(), 2).unwrap();
+
+    assert!(
+        DirectoryTransport::open(remote.path())
+            .unwrap()
+            .list_all_segments()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn deactivated_device_state_is_preserved_but_does_not_block_compaction() {
+    let remote = tempdir().unwrap();
+    let first_data = tempdir().unwrap();
+    let second_data = tempdir().unwrap();
+    let mut first = CoreService::open(first_data.path(), VAULT_ID, &KEY).unwrap();
+    let mut second = CoreService::open(second_data.path(), VAULT_ID, &KEY).unwrap();
+
+    ingest(&mut first, "deactivation keeps history", 100);
+    sync(&mut first, remote.path(), 1).unwrap();
+    sync(&mut second, remote.path(), 2).unwrap();
+    first
+        .set_directory_device_active(remote.path(), Uuid::from_u128(2), false)
+        .unwrap();
+    sync(&mut first, remote.path(), 1).unwrap();
+
+    assert!(
+        remote
+            .path()
+            .join(format!("device-{}.state.enc", Uuid::from_u128(2)))
+            .exists()
+    );
 }
 
 fn ingest(core: &mut CoreService, text: &str, captured_ms: i64) -> Uuid {

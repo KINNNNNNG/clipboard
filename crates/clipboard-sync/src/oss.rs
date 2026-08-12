@@ -8,11 +8,16 @@ use reqwest::{
 };
 use sha2::{Digest, Sha256};
 use time::{OffsetDateTime, macros::format_description};
+use uuid::Uuid;
 
+use crate::{
+    HEADER_NAME, RemoteHeader, RemoteMetadataStore, SegmentHeader, SnapshotId, device_state_name,
+    snapshot_name,
+};
 use crate::{
     OssConfig, RemoteImageObject, RemoteSegmentHeader, RemoteStore, SyncError,
     completed_image_object_name, completed_object_name, parse_completed_object_name,
-    pending_image_object_name, pending_object_name,
+    parse_device_state_name, parse_snapshot_name, pending_image_object_name, pending_object_name,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -472,6 +477,163 @@ impl RemoteStore for OssStore {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .map(str::to_owned)
+    }
+}
+
+impl OssStore {
+    fn get_optional_metadata(
+        &self,
+        operation: &'static str,
+        name: &str,
+    ) -> Result<Option<Vec<u8>>, SyncError> {
+        let request = self.signed_request(
+            Method::GET,
+            self.object_url(&self.object_key(name))?,
+            &[],
+            BTreeMap::new(),
+        )?;
+        self.clear_last_error();
+        *self
+            .last_error_operation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(operation);
+        let response = request.send().map_err(|error| {
+            self.set_last_error_detail(network_error_detail(&error));
+            SyncError::RemoteUnavailable
+        })?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            return Err(map_status(response.status()));
+        }
+        response
+            .bytes()
+            .map(|bytes| Some(bytes.to_vec()))
+            .map_err(|_| SyncError::RemoteUnavailable)
+    }
+
+    fn put_metadata_object(
+        &self,
+        operation: &'static str,
+        name: &str,
+        bytes: &[u8],
+    ) -> Result<(), SyncError> {
+        let mut headers = BTreeMap::new();
+        headers.insert("x-oss-forbid-overwrite".to_owned(), "true".to_owned());
+        self.send(
+            operation,
+            self.signed_request(
+                Method::PUT,
+                self.object_url(&self.object_key(name))?,
+                bytes,
+                headers,
+            )?,
+        )?;
+        Ok(())
+    }
+}
+
+impl RemoteMetadataStore for OssStore {
+    fn get_header(&self) -> Result<Option<RemoteHeader>, SyncError> {
+        let Some(bytes) = self.get_optional_metadata("oss_get_header", HEADER_NAME)? else {
+            return Ok(None);
+        };
+        let header: RemoteHeader =
+            serde_json::from_slice(&bytes).map_err(|_| SyncError::InvalidSegment)?;
+        header.validate()?;
+        Ok(Some(header))
+    }
+
+    fn put_header(&self, header: &RemoteHeader) -> Result<(), SyncError> {
+        header.validate()?;
+        let bytes = serde_json::to_vec(header).map_err(|_| SyncError::InvalidSegment)?;
+        self.put_metadata_object("oss_put_header", HEADER_NAME, &bytes)
+    }
+
+    fn list_device_states(&self) -> Result<Vec<Uuid>, SyncError> {
+        let response = self.send(
+            "oss_list_device_states",
+            self.signed_request(Method::GET, self.list_url(None)?, &[], BTreeMap::new())?,
+        )?;
+        let prefix = (!self.prefix.is_empty()).then(|| format!("{}/", self.prefix));
+        let mut devices =
+            parse_object_keys(&response.text().map_err(|_| SyncError::RemoteUnavailable)?)
+                .into_iter()
+                .filter_map(|key| match &prefix {
+                    Some(prefix) => key.strip_prefix(prefix).map(str::to_owned),
+                    None => Some(key),
+                })
+                .filter_map(|name| parse_device_state_name(&name))
+                .collect::<Vec<_>>();
+        devices.sort_unstable();
+        Ok(devices)
+    }
+
+    fn get_device_state(&self, device_id: Uuid) -> Result<Option<Vec<u8>>, SyncError> {
+        self.get_optional_metadata("oss_get_device_state", &device_state_name(device_id))
+    }
+
+    fn put_device_state(&self, device_id: Uuid, ciphertext: &[u8]) -> Result<(), SyncError> {
+        self.send(
+            "oss_put_device_state",
+            self.signed_request(
+                Method::PUT,
+                self.object_url(&self.object_key(&device_state_name(device_id)))?,
+                ciphertext,
+                BTreeMap::new(),
+            )?,
+        )?;
+        Ok(())
+    }
+
+    fn get_snapshot(&self, snapshot_id: SnapshotId) -> Result<Option<Vec<u8>>, SyncError> {
+        self.get_optional_metadata("oss_get_snapshot", &snapshot_name(snapshot_id))
+    }
+
+    fn put_snapshot(&self, snapshot_id: SnapshotId, ciphertext: &[u8]) -> Result<(), SyncError> {
+        self.put_metadata_object("oss_put_snapshot", &snapshot_name(snapshot_id), ciphertext)
+    }
+
+    fn list_snapshots(&self) -> Result<Vec<SnapshotId>, SyncError> {
+        let response = self.send(
+            "oss_list_snapshots",
+            self.signed_request(Method::GET, self.list_url(None)?, &[], BTreeMap::new())?,
+        )?;
+        let prefix = (!self.prefix.is_empty()).then(|| format!("{}/", self.prefix));
+        let mut snapshots =
+            parse_object_keys(&response.text().map_err(|_| SyncError::RemoteUnavailable)?)
+                .into_iter()
+                .filter_map(|key| match &prefix {
+                    Some(prefix) => key.strip_prefix(prefix).map(str::to_owned),
+                    None => Some(key),
+                })
+                .filter_map(|name| parse_snapshot_name(&name))
+                .collect::<Vec<_>>();
+        snapshots.sort_unstable();
+        Ok(snapshots)
+    }
+
+    fn delete_segment(&self, header: &SegmentHeader) -> Result<bool, SyncError> {
+        let name = completed_object_name(header)?;
+        let response = self.send(
+            "oss_delete_segment",
+            self.signed_request(
+                Method::DELETE,
+                self.object_url(&self.object_key(&name))?,
+                &[],
+                BTreeMap::new(),
+            )?,
+        );
+        match response {
+            Ok(_) => Ok(true),
+            Err(SyncError::RemoteUnavailable)
+                if self.last_error_detail().as_deref() == Some("http_404_non_oss") =>
+            {
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
     }
 }
 

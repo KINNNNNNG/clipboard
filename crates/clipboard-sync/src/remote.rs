@@ -59,7 +59,7 @@ impl TryFrom<SegmentHeader> for RemoteSegmentHeader {
 }
 
 /// An encrypted-segment object store. Implementations never receive clipboard content.
-pub trait RemoteStore: Send + Sync {
+pub trait RemoteStore: crate::RemoteMetadataStore + Send + Sync {
     fn list_completed(&self) -> Result<Vec<RemoteSegmentHeader>, SyncError>;
     fn get_completed(&self, header: &RemoteSegmentHeader) -> Result<Vec<u8>, SyncError>;
     fn put_pending_then_publish(

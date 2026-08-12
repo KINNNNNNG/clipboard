@@ -4,7 +4,13 @@ use reqwest::{
     blocking::{Client, Response},
 };
 use std::sync::Mutex;
+use uuid::Uuid;
 
+use crate::SegmentHeader;
+use crate::{
+    HEADER_NAME, RemoteHeader, RemoteMetadataStore, SnapshotId, device_state_name,
+    parse_device_state_name, parse_snapshot_name, snapshot_name,
+};
 use crate::{
     PENDING_OBJECT_SUFFIX, RemoteImageObject, RemoteSegmentHeader, RemoteStore, SyncError,
     WebDavConfig, completed_image_object_name, completed_object_name, parse_completed_object_name,
@@ -228,6 +234,145 @@ impl RemoteStore for WebDavStore {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .map(str::to_owned)
+    }
+}
+
+impl WebDavStore {
+    fn get_optional_metadata(
+        &self,
+        operation: &'static str,
+        name: &str,
+    ) -> Result<Option<Vec<u8>>, SyncError> {
+        let request = self.object_request(Method::GET, name)?;
+        let response = request.send().map_err(|error| {
+            let detail = if error.is_timeout() {
+                "network_timeout"
+            } else if error.is_connect() {
+                "network_connect"
+            } else {
+                "network_request"
+            };
+            *self
+                .last_error_detail
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(detail.to_owned());
+            *self
+                .last_error_operation
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(operation);
+            SyncError::RemoteUnavailable
+        })?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            return Err(map_status(response.status()));
+        }
+        response
+            .bytes()
+            .map(|bytes| Some(bytes.to_vec()))
+            .map_err(|_| SyncError::RemoteUnavailable)
+    }
+}
+
+impl RemoteMetadataStore for WebDavStore {
+    fn get_header(&self) -> Result<Option<RemoteHeader>, SyncError> {
+        let Some(bytes) = self.get_optional_metadata("webdav_get_header", HEADER_NAME)? else {
+            return Ok(None);
+        };
+        let header: RemoteHeader =
+            serde_json::from_slice(&bytes).map_err(|_| SyncError::InvalidSegment)?;
+        header.validate()?;
+        Ok(Some(header))
+    }
+
+    fn put_header(&self, header: &RemoteHeader) -> Result<(), SyncError> {
+        header.validate()?;
+        let bytes = serde_json::to_vec(header).map_err(|_| SyncError::InvalidSegment)?;
+        self.send(
+            "webdav_put_header",
+            self.object_request(Method::PUT, HEADER_NAME)?
+                .header("If-None-Match", "*")
+                .body(bytes),
+        )?;
+        Ok(())
+    }
+
+    fn list_device_states(&self) -> Result<Vec<Uuid>, SyncError> {
+        let response = self.send(
+            "webdav_list_device_states",
+            self.root_request(
+                Method::from_bytes(b"PROPFIND").map_err(|_| SyncError::RemoteUnavailable)?,
+            )
+            .header("Depth", "1"),
+        )?;
+        let mut devices =
+            parse_href_names(&response.text().map_err(|_| SyncError::RemoteUnavailable)?)
+                .into_iter()
+                .filter_map(|name| parse_device_state_name(&name))
+                .collect::<Vec<_>>();
+        devices.sort_unstable();
+        Ok(devices)
+    }
+
+    fn get_device_state(&self, device_id: Uuid) -> Result<Option<Vec<u8>>, SyncError> {
+        self.get_optional_metadata("webdav_get_device_state", &device_state_name(device_id))
+    }
+
+    fn put_device_state(&self, device_id: Uuid, ciphertext: &[u8]) -> Result<(), SyncError> {
+        self.send(
+            "webdav_put_device_state",
+            self.object_request(Method::PUT, &device_state_name(device_id))?
+                .body(ciphertext.to_vec()),
+        )?;
+        Ok(())
+    }
+
+    fn get_snapshot(&self, snapshot_id: SnapshotId) -> Result<Option<Vec<u8>>, SyncError> {
+        self.get_optional_metadata("webdav_get_snapshot", &snapshot_name(snapshot_id))
+    }
+
+    fn put_snapshot(&self, snapshot_id: SnapshotId, ciphertext: &[u8]) -> Result<(), SyncError> {
+        self.send(
+            "webdav_put_snapshot",
+            self.object_request(Method::PUT, &snapshot_name(snapshot_id))?
+                .header("If-None-Match", "*")
+                .body(ciphertext.to_vec()),
+        )?;
+        Ok(())
+    }
+
+    fn list_snapshots(&self) -> Result<Vec<SnapshotId>, SyncError> {
+        let response = self.send(
+            "webdav_list_snapshots",
+            self.root_request(
+                Method::from_bytes(b"PROPFIND").map_err(|_| SyncError::RemoteUnavailable)?,
+            )
+            .header("Depth", "1"),
+        )?;
+        let mut snapshots =
+            parse_href_names(&response.text().map_err(|_| SyncError::RemoteUnavailable)?)
+                .into_iter()
+                .filter_map(|name| parse_snapshot_name(&name))
+                .collect::<Vec<_>>();
+        snapshots.sort_unstable();
+        Ok(snapshots)
+    }
+
+    fn delete_segment(&self, header: &SegmentHeader) -> Result<bool, SyncError> {
+        let name =
+            completed_name_for_endpoint(&self.endpoint, &RemoteSegmentHeader::try_from(*header)?)?;
+        let response = self
+            .object_request(Method::DELETE, &name)?
+            .send()
+            .map_err(|_| SyncError::RemoteUnavailable)?;
+        if response.status() == StatusCode::NOT_FOUND {
+            Ok(false)
+        } else if response.status().is_success() {
+            Ok(true)
+        } else {
+            Err(map_status(response.status()))
+        }
     }
 }
 

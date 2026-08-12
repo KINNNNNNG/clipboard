@@ -6,7 +6,7 @@ use crate::{
     UncacheFileBundle,
 };
 use crate::{IngestImage, object_store::ObjectStore};
-use clipboard_crypto::{KeyPurpose, VaultKey};
+use clipboard_crypto::{KeyPurpose, ObjectCipher, VaultKey};
 use clipboard_domain::{
     ClipboardContent, ClipboardItem, DeleteState, FavoriteState, FileBundle, Hlc,
     RetentionCandidate, plan_retention,
@@ -14,10 +14,12 @@ use clipboard_domain::{
 use clipboard_search::SearchEngine;
 use clipboard_storage::Database;
 use clipboard_sync::{
-    DirectoryTransport, NoopSyncDiagnostics, OssStore, RemoteConfig, RemoteImageObject,
-    RemoteSegmentHeader, RemoteStore, SYNC_PROTOCOL_VERSION, SegmentHeader, SyncDiagnostic,
-    SyncDiagnostics, SyncError, SyncEvent, WebDavStore, open_segment, seal_segment,
+    DirectoryTransport, NoopSyncDiagnostics, OssStore, RemoteConfig, RemoteHeader,
+    RemoteImageObject, RemoteSegmentHeader, RemoteStore, SYNC_PROTOCOL_VERSION, SegmentHeader,
+    SnapshotId, SnapshotManifest, SnapshotSegment, SyncDiagnostic, SyncDiagnostics, SyncError,
+    SyncEvent, VersionVector, WebDavStore, open_segment, seal_segment,
 };
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -26,6 +28,7 @@ use std::{
 use uuid::Uuid;
 
 pub const MAX_IMAGE_BYTES: usize = 50 * 1024 * 1024;
+const DEVICE_STATE_VERSION: u8 = 2;
 
 pub struct CoreService {
     database: Database,
@@ -34,6 +37,9 @@ pub struct CoreService {
     object_store: ObjectStore,
     file_cache: FileCache,
     processed_segments: HashSet<(Uuid, Uuid)>,
+    next_sequence: u64,
+    segment_sequences: HashMap<(Uuid, Uuid), u64>,
+    acknowledged_snapshots: HashMap<SnapshotId, VersionVector>,
     pending_delete_states: HashMap<Uuid, DeleteState>,
 }
 
@@ -53,6 +59,9 @@ impl CoreService {
             object_store,
             file_cache,
             processed_segments: HashSet::new(),
+            next_sequence: 0,
+            segment_sequences: HashMap::new(),
+            acknowledged_snapshots: HashMap::new(),
             pending_delete_states: HashMap::new(),
         })
     }
@@ -80,6 +89,17 @@ impl CoreService {
             CoreCommand::ClearUnfavorite => self.clear_unfavorite(),
             CoreCommand::ApplyRetention(request) => self.apply_retention(request),
         }
+    }
+
+    pub fn set_directory_device_active(
+        &mut self,
+        remote_path: &Path,
+        device_id: Uuid,
+        active: bool,
+    ) -> Result<(), CoreError> {
+        let transport = DirectoryTransport::open(remote_path)?;
+        let journal_key = self.vault_key.derive(self.vault_id, KeyPurpose::Journal)?;
+        self.set_device_active(&transport, device_id, active, &journal_key)
     }
 
     pub fn sync_directory_with_diagnostics(
@@ -147,6 +167,9 @@ impl CoreService {
         diagnostics: &dyn SyncDiagnostics,
     ) -> Result<SyncDirectoryResponse, CoreError> {
         let journal_key = self.vault_key.derive(self.vault_id, KeyPurpose::Journal)?;
+        self.load_processed_state(transport, device_id, &journal_key)?;
+        self.preflight_pending_objects()?;
+        ensure_remote_header(transport, self.vault_id)?;
         let mut response = SyncDirectoryResponse {
             pulled: 0,
             merged: 0,
@@ -200,6 +223,8 @@ impl CoreService {
             }
         }
 
+        self.process_remote_snapshots(transport, device_id, &journal_key)?;
+
         for entry in self.database.outbox().pending()? {
             let item: ClipboardItem = serde_json::from_str(&entry.event_json)?;
             let event = match SyncEvent::try_from(&item) {
@@ -226,6 +251,9 @@ impl CoreService {
                 device_id,
                 segment_id: Uuid::now_v7(),
             };
+            self.next_sequence = self.next_sequence.saturating_add(1);
+            self.segment_sequences
+                .insert((device_id, header.segment_id), self.next_sequence);
             let ciphertext = seal_segment(&journal_key, &header, &[event])?;
             let remote_header = RemoteSegmentHeader::try_from(header)?;
             transport.put_pending_then_publish(&remote_header, &ciphertext)?;
@@ -239,7 +267,260 @@ impl CoreService {
             response.uploaded += 1;
         }
 
+        let state = DeviceStatePayload {
+            version: DEVICE_STATE_VERSION,
+            device_id,
+            active: true,
+            next_sequence: self.next_sequence,
+            processed_segments: self.processed_segments.iter().copied().collect(),
+            segment_sequences: self
+                .segment_sequences
+                .iter()
+                .map(|((device, segment), sequence)| (*device, *segment, *sequence))
+                .collect(),
+            acknowledgements: self
+                .acknowledged_snapshots
+                .iter()
+                .map(|(snapshot, vector)| (*snapshot, vector.clone()))
+                .collect(),
+        };
+        let state_json = serde_json::to_vec(&state)?;
+        let aad = device_state_aad(self.vault_id, device_id);
+        let state_ciphertext =
+            ObjectCipher::new(journal_key.derive_scoped(&aad)?).seal(&state_json, &aad)?;
+        transport.put_device_state(device_id, &state_ciphertext)?;
+
+        self.publish_snapshot_and_compact(transport, device_id, &journal_key)?;
+
         Ok(response)
+    }
+
+    fn preflight_pending_objects(&self) -> Result<(), CoreError> {
+        for entry in self.database.outbox().pending()? {
+            let item: ClipboardItem = serde_json::from_str(&entry.event_json)?;
+            if let ClipboardContent::Image { object_id, .. } = item.content {
+                let _ = self.object_store.read_encrypted_image(object_id)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn set_device_active(
+        &self,
+        transport: &dyn RemoteStore,
+        device_id: Uuid,
+        active: bool,
+        journal_key: &clipboard_crypto::DerivedKey,
+    ) -> Result<(), CoreError> {
+        let Some(ciphertext) = transport.get_device_state(device_id)? else {
+            return Err(SyncError::Conflict.into());
+        };
+        let aad = device_state_aad(self.vault_id, device_id);
+        let plaintext =
+            ObjectCipher::new(journal_key.derive_scoped(&aad)?).open(&ciphertext, &aad)?;
+        let mut state: DeviceStatePayload = serde_json::from_slice(&plaintext)?;
+        if state.version != DEVICE_STATE_VERSION || state.device_id != device_id {
+            return Err(SyncError::InvalidSegment.into());
+        }
+        state.active = active;
+        let encoded = serde_json::to_vec(&state)?;
+        let sealed = ObjectCipher::new(journal_key.derive_scoped(&aad)?).seal(&encoded, &aad)?;
+        transport.put_device_state(device_id, &sealed)?;
+        Ok(())
+    }
+
+    fn load_processed_state(
+        &mut self,
+        transport: &dyn RemoteStore,
+        device_id: Uuid,
+        journal_key: &clipboard_crypto::DerivedKey,
+    ) -> Result<(), CoreError> {
+        let Some(ciphertext) = transport.get_device_state(device_id)? else {
+            return Ok(());
+        };
+        let aad = device_state_aad(self.vault_id, device_id);
+        let plaintext =
+            ObjectCipher::new(journal_key.derive_scoped(&aad)?).open(&ciphertext, &aad)?;
+        let state: DeviceStatePayload = serde_json::from_slice(&plaintext)?;
+        if state.version != DEVICE_STATE_VERSION || state.device_id != device_id {
+            return Err(SyncError::InvalidSegment.into());
+        }
+        self.processed_segments = state.processed_segments.into_iter().collect();
+        self.next_sequence = state.next_sequence;
+        self.segment_sequences = state
+            .segment_sequences
+            .into_iter()
+            .map(|(device, segment, sequence)| ((device, segment), sequence))
+            .collect();
+        self.acknowledged_snapshots = state.acknowledgements.into_iter().collect();
+        Ok(())
+    }
+
+    fn process_remote_snapshots(
+        &mut self,
+        transport: &dyn RemoteStore,
+        device_id: Uuid,
+        journal_key: &clipboard_crypto::DerivedKey,
+    ) -> Result<(), CoreError> {
+        for snapshot_id in transport.list_snapshots()? {
+            let Some(ciphertext) = transport.get_snapshot(snapshot_id)? else {
+                continue;
+            };
+            let aad = snapshot_aad(self.vault_id, snapshot_id);
+            let plaintext =
+                ObjectCipher::new(journal_key.derive_scoped(&aad)?).open(&ciphertext, &aad)?;
+            let manifest: SnapshotManifest = serde_json::from_slice(&plaintext)?;
+            if !manifest.segments.iter().all(|segment| {
+                segment.sequence > 0
+                    && ((segment.header.device_id == device_id
+                        && self
+                            .segment_sequences
+                            .contains_key(&(segment.header.device_id, segment.header.segment_id)))
+                        || self
+                            .processed_segments
+                            .contains(&(segment.header.device_id, segment.header.segment_id)))
+            }) {
+                continue;
+            }
+            self.acknowledged_snapshots
+                .insert(snapshot_id, manifest.version_vector);
+        }
+        Ok(())
+    }
+
+    fn publish_snapshot_and_compact(
+        &mut self,
+        transport: &dyn RemoteStore,
+        device_id: Uuid,
+        journal_key: &clipboard_crypto::DerivedKey,
+    ) -> Result<(), CoreError> {
+        let device_states = self.load_all_device_states(transport, device_id, journal_key)?;
+        let vector = device_states
+            .iter()
+            .flat_map(|state| {
+                state
+                    .segment_sequences
+                    .iter()
+                    .map(|(device, _, sequence)| (*device, *sequence))
+            })
+            .fold(
+                HashMap::<Uuid, u64>::new(),
+                |mut values, (device, sequence)| {
+                    values
+                        .entry(device)
+                        .and_modify(|current| *current = (*current).max(sequence))
+                        .or_insert(sequence);
+                    values
+                },
+            )
+            .into_iter()
+            .collect::<VersionVector>();
+        let snapshot_id = SnapshotId(Uuid::now_v7());
+        let segments = transport
+            .list_completed()?
+            .into_iter()
+            .map(|header| SnapshotSegment {
+                header: *header.header(),
+                sequence: device_states
+                    .iter()
+                    .flat_map(|state| state.segment_sequences.iter())
+                    .find_map(|(device, segment, sequence)| {
+                        (*device == header.header().device_id
+                            && *segment == header.header().segment_id)
+                            .then_some(*sequence)
+                    })
+                    .unwrap_or_default(),
+            })
+            .collect::<Vec<_>>();
+        let manifest = SnapshotManifest {
+            snapshot_id,
+            version_vector: vector.clone(),
+            segments,
+        };
+        let plaintext = serde_json::to_vec(&manifest)?;
+        let aad = snapshot_aad(self.vault_id, snapshot_id);
+        let ciphertext =
+            ObjectCipher::new(journal_key.derive_scoped(&aad)?).seal(&plaintext, &aad)?;
+        transport.put_snapshot(snapshot_id, &ciphertext)?;
+
+        let active_devices = device_states
+            .iter()
+            .filter(|state| state.active)
+            .map(|state| state.device_id)
+            .collect::<Vec<_>>();
+        if active_devices.is_empty() {
+            return Ok(());
+        }
+        for existing_snapshot in transport.list_snapshots()? {
+            let Some(existing_ciphertext) = transport.get_snapshot(existing_snapshot)? else {
+                continue;
+            };
+            let existing_aad = snapshot_aad(self.vault_id, existing_snapshot);
+            let existing_plaintext = ObjectCipher::new(journal_key.derive_scoped(&existing_aad)?)
+                .open(&existing_ciphertext, &existing_aad)?;
+            let existing_manifest: SnapshotManifest = serde_json::from_slice(&existing_plaintext)?;
+            let mut acknowledged = true;
+            for device in &active_devices {
+                let Some(state_ciphertext) = transport.get_device_state(*device)? else {
+                    acknowledged = false;
+                    break;
+                };
+                let state_aad = device_state_aad(self.vault_id, *device);
+                let state_plaintext = ObjectCipher::new(journal_key.derive_scoped(&state_aad)?)
+                    .open(&state_ciphertext, &state_aad)?;
+                let state: DeviceStatePayload = serde_json::from_slice(&state_plaintext)?;
+                if !state.acknowledgements.iter().any(|(id, vector)| {
+                    *id == existing_snapshot && vector.covers(&existing_manifest.version_vector)
+                }) {
+                    acknowledged = false;
+                    break;
+                }
+            }
+            if acknowledged {
+                for segment in existing_manifest.segments {
+                    let _ = transport.delete_segment(&segment.header)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn load_all_device_states(
+        &self,
+        transport: &dyn RemoteStore,
+        device_id: Uuid,
+        journal_key: &clipboard_crypto::DerivedKey,
+    ) -> Result<Vec<DeviceStatePayload>, CoreError> {
+        let mut states = Vec::new();
+        for device in transport.list_device_states()? {
+            let Some(ciphertext) = transport.get_device_state(device)? else {
+                continue;
+            };
+            let aad = device_state_aad(self.vault_id, device);
+            let plaintext =
+                ObjectCipher::new(journal_key.derive_scoped(&aad)?).open(&ciphertext, &aad)?;
+            let state: DeviceStatePayload = serde_json::from_slice(&plaintext)?;
+            if state.version != DEVICE_STATE_VERSION || state.device_id != device {
+                return Err(SyncError::InvalidSegment.into());
+            }
+            states.push(state);
+        }
+        if !states.iter().any(|state| state.device_id == device_id) {
+            states.push(DeviceStatePayload {
+                version: DEVICE_STATE_VERSION,
+                device_id,
+                active: true,
+                next_sequence: self.next_sequence,
+                processed_segments: Vec::new(),
+                segment_sequences: self
+                    .segment_sequences
+                    .iter()
+                    .map(|((device, segment), sequence)| (*device, *segment, *sequence))
+                    .collect(),
+                acknowledgements: Vec::new(),
+            });
+        }
+        Ok(states)
     }
 
     fn merge_inbound_event(
@@ -863,6 +1144,42 @@ fn create_remote_store(config: RemoteConfig) -> Result<Box<dyn RemoteStore>, Cor
     match config {
         RemoteConfig::WebDav(config) => Ok(Box::new(WebDavStore::new(config)?)),
         RemoteConfig::Oss(config) => Ok(Box::new(OssStore::new(config)?)),
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct DeviceStatePayload {
+    version: u8,
+    device_id: Uuid,
+    active: bool,
+    next_sequence: u64,
+    processed_segments: Vec<(Uuid, Uuid)>,
+    segment_sequences: Vec<(Uuid, Uuid, u64)>,
+    acknowledgements: Vec<(SnapshotId, VersionVector)>,
+}
+
+fn device_state_aad(vault_id: Uuid, device_id: Uuid) -> Vec<u8> {
+    let mut aad = b"device-state-v1".to_vec();
+    aad.extend_from_slice(vault_id.as_bytes());
+    aad.extend_from_slice(device_id.as_bytes());
+    aad
+}
+
+fn snapshot_aad(vault_id: Uuid, snapshot_id: SnapshotId) -> Vec<u8> {
+    let mut aad = b"snapshot-v1".to_vec();
+    aad.extend_from_slice(vault_id.as_bytes());
+    aad.extend_from_slice(snapshot_id.0.as_bytes());
+    aad
+}
+
+fn ensure_remote_header(transport: &dyn RemoteStore, vault_id: Uuid) -> Result<(), CoreError> {
+    match transport.get_header()? {
+        Some(header) if header.vault_id() == vault_id => Ok(()),
+        Some(_) => Err(SyncError::Conflict.into()),
+        None => {
+            transport.put_header(&RemoteHeader::new(vault_id))?;
+            Ok(())
+        }
     }
 }
 
