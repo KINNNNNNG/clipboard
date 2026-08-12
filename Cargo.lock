@@ -290,13 +290,16 @@ dependencies = [
 name = "clipboard-sync"
 version = "0.1.0"
 dependencies = [
+ "argon2",
  "base64",
  "blake3",
+ "chacha20poly1305",
  "clipboard-crypto",
  "clipboard-domain",
  "hex",
  "hmac",
  "quick-xml",
+ "rand_core 0.6.4",
  "reqwest",
  "serde",
  "serde_json",

@@ -83,6 +83,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 _settingsStore,
                 credentials,
                 globalLog: _globalLog);
+            _realtimeSync.Start();
             var paste = new PasteCoordinator(
                 _core,
                 writer,

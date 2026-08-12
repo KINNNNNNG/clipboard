@@ -60,18 +60,30 @@ pub fn encode_recovery_code(material: &RecoveryMaterial) -> Result<String, SyncE
 }
 
 pub fn decode_recovery_code(code: &str) -> Result<RecoveryMaterial, SyncError> {
-    if code.len() > RECOVERY_GROUPED_LENGTH {
+    if code.len() != RECOVERY_GROUPED_LENGTH
+        || !code
+            .as_bytes()
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| !is_group_separator(index) || *byte == b'-')
+    {
         return Err(SyncError::InvalidRecoveryCode);
     }
 
-    let compact = Zeroizing::new(code.replace('-', ""));
+    let compact = Zeroizing::new(
+        code.as_bytes()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, byte)| (!is_group_separator(index)).then_some(*byte))
+            .collect::<Vec<_>>(),
+    );
     if compact.len() != RECOVERY_COMPACT_LENGTH {
         return Err(SyncError::InvalidRecoveryCode);
     }
 
     let bytes = Zeroizing::new(
         URL_SAFE_NO_PAD
-            .decode(compact)
+            .decode(&*compact)
             .map_err(|_| SyncError::InvalidRecoveryCode)?,
     );
 
@@ -93,4 +105,11 @@ pub fn decode_recovery_code(code: &str) -> Result<RecoveryMaterial, SyncError> {
     master_key.copy_from_slice(&bytes[17..RECOVERY_PAYLOAD_LENGTH]);
 
     Ok(RecoveryMaterial::new(vault_id, master_key))
+}
+
+fn is_group_separator(index: usize) -> bool {
+    matches!(
+        index,
+        5 | 11 | 17 | 23 | 29 | 35 | 41 | 47 | 53 | 59 | 65 | 71 | 77 | 83
+    )
 }

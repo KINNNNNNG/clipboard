@@ -107,6 +107,53 @@ public sealed class RealtimeSyncCoordinatorTests
         Assert.Equal(0, client.CallCount);
     }
 
+    [Fact]
+    public async Task Retryable_failure_uses_exponential_backoff_and_retries()
+    {
+        var clock = new ManualTimeProvider();
+        var delay = new ControlledDelay();
+        var client = new SequenceRemoteSyncClient(
+            new SyncResponseDto(0, 0, 0, 0, "network", "network_request"),
+            new SyncResponseDto(0, 0, 1, 0));
+        await using var coordinator = CreateCoordinator(client, delay, clock);
+
+        coordinator.NotifyCaptured("text");
+        await delay.WaitForCountAsync(1);
+        await delay.ReleaseNextAsync();
+        await client.WaitForCallCountAsync(1);
+        await delay.WaitForCountAsync(2);
+        Assert.InRange(
+            delay.Requested[1],
+            RealtimeSyncCoordinator.RetryBaseDelay,
+            TimeSpan.FromTicks((long)(RealtimeSyncCoordinator.RetryBaseDelay.Ticks * 1.25)));
+
+        await delay.ReleaseNextAsync();
+        await client.WaitForCallCountAsync(2);
+    }
+
+    [Fact]
+    public async Task Authentication_failure_pauses_automatic_retries_until_settings_are_enabled_again()
+    {
+        var delay = new ControlledDelay();
+        var client = new SequenceRemoteSyncClient(
+            new SyncResponseDto(0, 0, 0, 0, "authentication", "invalid_credentials"),
+            new SyncResponseDto(0, 0, 1, 0));
+        await using var coordinator = CreateCoordinator(client, delay);
+
+        coordinator.NotifyCaptured("text");
+        await delay.WaitForCountAsync(1);
+        await delay.ReleaseNextAsync();
+        await client.WaitForCallCountAsync(1);
+        await Task.Delay(20);
+        Assert.Equal(1, client.CallCount);
+
+        coordinator.OnSyncSettingsSaved(true);
+        coordinator.NotifyCaptured("text");
+        await delay.WaitForCountAsync(2);
+        await delay.ReleaseNextAsync();
+        await client.WaitForCallCountAsync(2);
+    }
+
     private static RealtimeSyncCoordinator CreateCoordinator(
         IRealtimeSyncClient client,
         ControlledDelay delay,
@@ -289,6 +336,21 @@ public sealed class RealtimeSyncCoordinatorTests
                 _current = null;
             }
             current.TrySetResult(new SyncResponseDto(0, 0, 1, 0));
+        }
+    }
+
+    private sealed class SequenceRemoteSyncClient(params SyncResponseDto[] responses) : RecordingRemoteSyncClient
+    {
+        private readonly Queue<SyncResponseDto> _responses = new(responses);
+
+        public override Task<SyncResponseDto> SyncAsync(
+            SyncRemoteRequestDto request,
+            CancellationToken cancellationToken)
+        {
+            RecordCall();
+            return Task.FromResult(_responses.Count == 0
+                ? new SyncResponseDto(0, 0, 1, 0)
+                : _responses.Dequeue());
         }
     }
 

@@ -1,7 +1,7 @@
 use clipboard_ffi::{
     CoreBuffer, CoreHandle, CoreStatus, clipboard_core_close, clipboard_core_execute,
-    clipboard_core_free_buffer, clipboard_core_open, clipboard_recovery_decode,
-    clipboard_recovery_encode,
+    clipboard_core_free_buffer, clipboard_core_open, clipboard_pairing_file_decode,
+    clipboard_pairing_file_encode, clipboard_recovery_decode, clipboard_recovery_encode,
 };
 use std::{ptr, slice};
 use tempfile::tempdir;
@@ -211,4 +211,97 @@ fn recovery_code_round_trips_without_returning_key_on_invalid_input() {
     );
     assert!(invalid.ptr.is_null());
     assert_eq!(invalid.len, 0);
+}
+
+#[test]
+fn pairing_file_decode_returns_only_non_sensitive_configuration_and_key_material() {
+    let material = clipboard_sync::PairingFileMaterial::new(
+        uuid::Uuid::from_u128(0x123),
+        [0x33; 32],
+        "webdav".to_owned(),
+        "https://sync.example.test/root".to_owned(),
+        Some("/clipboard".to_owned()),
+    );
+    let encoded = clipboard_sync::encode_pairing_file(&material, "password").unwrap();
+    let mut output = CoreBuffer::default();
+    assert_eq!(
+        unsafe {
+            clipboard_pairing_file_decode(
+                encoded.as_ptr(),
+                encoded.len(),
+                b"password".as_ptr(),
+                8,
+                &mut output,
+            )
+        },
+        CoreStatus::Ok
+    );
+    let bytes = unsafe { slice::from_raw_parts(output.ptr, output.len) };
+    let json: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+    assert_eq!(json["provider"], "webdav");
+    assert_eq!(json["endpoint"], "https://sync.example.test/root");
+    assert_eq!(json["root_or_prefix"], "/clipboard");
+    assert_eq!(
+        json["master_key_hex"],
+        "3333333333333333333333333333333333333333333333333333333333333333"
+    );
+    unsafe { clipboard_core_free_buffer(output) };
+}
+
+#[test]
+fn pairing_file_encode_round_trips_oss_configuration_without_credentials() {
+    let vault_id = uuid::Uuid::from_u128(0x456);
+    let key = [0x44_u8; 32];
+    let provider = b"oss";
+    let endpoint = b"https://oss.example.test";
+    let prefix = b"clipboard";
+    let bucket = b"private-bucket";
+    let region = b"cn-hangzhou";
+    let password = b"one-time-password";
+    let mut encoded = CoreBuffer::default();
+    assert_eq!(
+        unsafe {
+            clipboard_pairing_file_encode(
+                vault_id.as_bytes().as_ptr(),
+                16,
+                key.as_ptr(),
+                key.len(),
+                provider.as_ptr(),
+                provider.len(),
+                endpoint.as_ptr(),
+                endpoint.len(),
+                prefix.as_ptr(),
+                prefix.len(),
+                bucket.as_ptr(),
+                bucket.len(),
+                region.as_ptr(),
+                region.len(),
+                password.as_ptr(),
+                password.len(),
+                &mut encoded,
+            )
+        },
+        CoreStatus::Ok
+    );
+    let file = unsafe { slice::from_raw_parts(encoded.ptr, encoded.len) }.to_vec();
+    unsafe { clipboard_core_free_buffer(encoded) };
+
+    let mut decoded = CoreBuffer::default();
+    assert_eq!(
+        unsafe {
+            clipboard_pairing_file_decode(
+                file.as_ptr(),
+                file.len(),
+                password.as_ptr(),
+                password.len(),
+                &mut decoded,
+            )
+        },
+        CoreStatus::Ok
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(unsafe { slice::from_raw_parts(decoded.ptr, decoded.len) }).unwrap();
+    assert_eq!(json["bucket"], "private-bucket");
+    assert_eq!(json["region"], "cn-hangzhou");
+    unsafe { clipboard_core_free_buffer(decoded) };
 }

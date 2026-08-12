@@ -13,6 +13,7 @@ clipboard-core = { path = "../clipboard-core" }
 clipboard-crypto = { path = "../clipboard-crypto" }
 clipboard-storage = { path = "../clipboard-storage" }
 clipboard-sync = { path = "../clipboard-sync" }
+hex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true

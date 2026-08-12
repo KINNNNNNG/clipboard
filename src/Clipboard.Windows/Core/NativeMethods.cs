@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Clipboard.Windows.Core;
 
@@ -106,6 +108,127 @@ internal sealed class PInvokeClipboardCoreNative : IClipboardCoreNative
     public void FreeBuffer(CoreBuffer buffer) => NativeMethods.clipboard_core_free_buffer(buffer);
 
     public void Close(nint handle) => NativeMethods.clipboard_core_close(handle);
+
+    internal static unsafe string EncodeRecoveryCode(Guid vaultId, ReadOnlySpan<byte> masterKey)
+    {
+        byte[] vaultIdBytes = new byte[16];
+        vaultId.TryWriteBytes(vaultIdBytes, bigEndian: true, out _);
+        CoreBuffer output = default;
+        try
+        {
+            fixed (byte* vaultIdPointer = vaultIdBytes)
+            fixed (byte* masterKeyPointer = masterKey)
+            {
+                CoreStatus status = NativeMethods.clipboard_recovery_encode(
+                    vaultIdPointer,
+                    (nuint)vaultIdBytes.Length,
+                    masterKeyPointer,
+                    (nuint)masterKey.Length,
+                    out output);
+                if (status != CoreStatus.Ok || output.Pointer == 0)
+                {
+                    throw new CryptographicException();
+                }
+            }
+            byte[] bytes = new byte[checked((int)output.Length)];
+            try
+            {
+                Marshal.Copy(output.Pointer, bytes, 0, bytes.Length);
+                return Encoding.UTF8.GetString(bytes);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(bytes);
+            }
+        }
+        finally
+        {
+            if (output.Pointer != 0)
+            {
+                NativeMethods.clipboard_core_free_buffer(output);
+            }
+            CryptographicOperations.ZeroMemory(vaultIdBytes);
+        }
+    }
+
+    internal static CoreStatus DecodeRecoveryCode(
+        ReadOnlySpan<byte> code,
+        out CoreBuffer output)
+    {
+        unsafe
+        {
+            fixed (byte* codePointer = code)
+            {
+                return NativeMethods.clipboard_recovery_decode(
+                    codePointer,
+                    (nuint)code.Length,
+                    out output);
+            }
+        }
+    }
+
+    internal static void FreeRecoveryBuffer(CoreBuffer buffer) =>
+        NativeMethods.clipboard_core_free_buffer(buffer);
+
+    internal static unsafe CoreStatus DecodePairingFile(
+        ReadOnlySpan<byte> encoded,
+        ReadOnlySpan<byte> password,
+        out CoreBuffer output)
+    {
+        fixed (byte* encodedPointer = encoded)
+        fixed (byte* passwordPointer = password)
+        {
+            return NativeMethods.clipboard_pairing_file_decode(
+                encodedPointer,
+                (nuint)encoded.Length,
+                passwordPointer,
+                (nuint)password.Length,
+                out output);
+        }
+    }
+
+    internal static unsafe CoreStatus EncodePairingFile(
+        Guid vaultId,
+        ReadOnlySpan<byte> masterKey,
+        ReadOnlySpan<byte> provider,
+        ReadOnlySpan<byte> endpoint,
+        ReadOnlySpan<byte> rootOrPrefix,
+        ReadOnlySpan<byte> bucket,
+        ReadOnlySpan<byte> region,
+        ReadOnlySpan<byte> password,
+        out CoreBuffer output)
+    {
+        byte[] vaultIdBytes = new byte[16];
+        vaultId.TryWriteBytes(vaultIdBytes, bigEndian: true, out _);
+        fixed (byte* vaultIdPointer = vaultIdBytes)
+        fixed (byte* masterKeyPointer = masterKey)
+        fixed (byte* providerPointer = provider)
+        fixed (byte* endpointPointer = endpoint)
+        fixed (byte* rootPointer = rootOrPrefix)
+        fixed (byte* bucketPointer = bucket)
+        fixed (byte* regionPointer = region)
+        fixed (byte* passwordPointer = password)
+        {
+            return NativeMethods.clipboard_pairing_file_encode(
+                vaultIdPointer,
+                (nuint)vaultIdBytes.Length,
+                masterKeyPointer,
+                (nuint)masterKey.Length,
+                providerPointer,
+                (nuint)provider.Length,
+                endpointPointer,
+                (nuint)endpoint.Length,
+                rootPointer,
+                (nuint)rootOrPrefix.Length,
+                bucketPointer,
+                (nuint)bucket.Length,
+                regionPointer,
+                (nuint)region.Length,
+                passwordPointer,
+                (nuint)password.Length,
+                out output);
+        }
+    }
 }
 
 internal static partial class NativeMethods
@@ -142,6 +265,48 @@ internal static partial class NativeMethods
         byte* itemId,
         nuint itemIdLength,
         out CoreBuffer response);
+
+    [LibraryImport("clipboard_ffi")]
+    internal static unsafe partial CoreStatus clipboard_recovery_encode(
+        byte* vaultId,
+        nuint vaultIdLength,
+        byte* masterKey,
+        nuint masterKeyLength,
+        out CoreBuffer output);
+
+    [LibraryImport("clipboard_ffi")]
+    internal static unsafe partial CoreStatus clipboard_recovery_decode(
+        byte* code,
+        nuint codeLength,
+        out CoreBuffer output);
+
+    [LibraryImport("clipboard_ffi")]
+    internal static unsafe partial CoreStatus clipboard_pairing_file_decode(
+        byte* file,
+        nuint fileLength,
+        byte* password,
+        nuint passwordLength,
+        out CoreBuffer output);
+
+    [LibraryImport("clipboard_ffi")]
+    internal static unsafe partial CoreStatus clipboard_pairing_file_encode(
+        byte* vaultId,
+        nuint vaultIdLength,
+        byte* masterKey,
+        nuint masterKeyLength,
+        byte* provider,
+        nuint providerLength,
+        byte* endpoint,
+        nuint endpointLength,
+        byte* rootOrPrefix,
+        nuint rootOrPrefixLength,
+        byte* bucket,
+        nuint bucketLength,
+        byte* region,
+        nuint regionLength,
+        byte* password,
+        nuint passwordLength,
+        out CoreBuffer output);
 
     [LibraryImport("clipboard_ffi")]
     internal static partial void clipboard_core_free_buffer(CoreBuffer buffer);

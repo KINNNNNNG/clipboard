@@ -39,6 +39,8 @@ internal sealed class RealtimeSyncCoordinator :
 {
     internal static readonly TimeSpan Debounce = TimeSpan.FromSeconds(3);
     internal static readonly TimeSpan MinimumInterval = TimeSpan.FromSeconds(15);
+    internal static readonly TimeSpan RetryBaseDelay = TimeSpan.FromSeconds(30);
+    internal static readonly TimeSpan RetryMaximumDelay = TimeSpan.FromMinutes(15);
 
     private readonly object _stateLock = new();
     private readonly IRealtimeSyncClient _client;
@@ -55,7 +57,14 @@ internal sealed class RealtimeSyncCoordinator :
     private DateTimeOffset? _lastAutomaticRunUtc;
     private bool _pending;
     private bool _running;
+    private bool _automaticPaused;
+    private int _retryAttempt;
     private bool _disposed;
+
+    public void Start()
+    {
+        NotifyChanged("startup");
+    }
 
     public RealtimeSyncCoordinator(
         IRealtimeSyncClient client,
@@ -80,7 +89,7 @@ internal sealed class RealtimeSyncCoordinator :
 
     public void NotifyChanged(string kind)
     {
-        if (kind is not ("text" or "image"))
+        if (kind is not ("text" or "image" or "startup"))
         {
             return;
         }
@@ -94,7 +103,7 @@ internal sealed class RealtimeSyncCoordinator :
             }
 
             _pending = true;
-            if (_running)
+            if (_running || _automaticPaused)
             {
                 return;
             }
@@ -119,6 +128,13 @@ internal sealed class RealtimeSyncCoordinator :
     {
         if (enabled)
         {
+            lock (_stateLock)
+            {
+                _automaticPaused = false;
+                _retryAttempt = 0;
+                _lastAutomaticRunUtc = null;
+            }
+            NotifyChanged("startup");
             return;
         }
 
@@ -126,6 +142,8 @@ internal sealed class RealtimeSyncCoordinator :
         lock (_stateLock)
         {
             _pending = false;
+            _automaticPaused = false;
+            _retryAttempt = 0;
             debounce = _debounceCancellation;
             _debounceCancellation = null;
         }
@@ -189,11 +207,16 @@ internal sealed class RealtimeSyncCoordinator :
 
     private async Task RunWorkerAsync()
     {
+        bool skipMinimumInterval = false;
         try
         {
             while (!_shutdown.IsCancellationRequested)
             {
-                await WaitForMinimumIntervalAsync(_shutdown.Token);
+                if (!skipMinimumInterval)
+                {
+                    await WaitForMinimumIntervalAsync(_shutdown.Token);
+                }
+                skipMinimumInterval = false;
                 _shutdown.Token.ThrowIfCancellationRequested();
 
                 lock (_stateLock)
@@ -205,7 +228,32 @@ internal sealed class RealtimeSyncCoordinator :
                     _pending = false;
                 }
 
-                await SyncOnceAsync(_shutdown.Token);
+                SyncAttemptOutcome outcome = await SyncOnceAsync(_shutdown.Token);
+
+                TimeSpan? retryDelay = null;
+                lock (_stateLock)
+                {
+                    if (outcome == SyncAttemptOutcome.AuthenticationFailure)
+                    {
+                        _automaticPaused = true;
+                        return;
+                    }
+                    if (outcome == SyncAttemptOutcome.RetryableFailure)
+                    {
+                        _pending = true;
+                        retryDelay = RetryDelayForAttempt(_retryAttempt++);
+                    }
+                    else
+                    {
+                        _retryAttempt = 0;
+                    }
+                }
+
+                if (retryDelay is { } delay)
+                {
+                    await _delay.DelayAsync(delay, _shutdown.Token);
+                    skipMinimumInterval = true;
+                }
 
                 lock (_stateLock)
                 {
@@ -247,7 +295,7 @@ internal sealed class RealtimeSyncCoordinator :
         }
     }
 
-    private async Task SyncOnceAsync(CancellationToken cancellationToken)
+    private async Task<SyncAttemptOutcome> SyncOnceAsync(CancellationToken cancellationToken)
     {
         ClientSettings settings;
         try
@@ -261,13 +309,13 @@ internal sealed class RealtimeSyncCoordinator :
         catch
         {
             WriteEnd("unknown", "failure", 0, "settings_error", "settings_load_failed");
-            return;
+            return SyncAttemptOutcome.RetryableFailure;
         }
 
         SyncSettings? sync = settings.Sync;
         if (sync is not { Enabled: true })
         {
-            return;
+            return SyncAttemptOutcome.Success;
         }
 
         WriteStart(sync.Provider);
@@ -291,6 +339,7 @@ internal sealed class RealtimeSyncCoordinator :
                 if (response.ErrorCategory is null)
                 {
                     WriteEnd(sync.Provider, "success", count);
+                    return SyncAttemptOutcome.Success;
                 }
                 else
                 {
@@ -302,6 +351,11 @@ internal sealed class RealtimeSyncCoordinator :
                         response.ErrorCode,
                         SanitizeRemoteErrorDetail(response.ErrorDetail),
                         response.ErrorOperation);
+                    return response.ErrorCategory == "authentication"
+                        ? SyncAttemptOutcome.AuthenticationFailure
+                        : IsRetryableCategory(response.ErrorCategory)
+                            ? SyncAttemptOutcome.RetryableFailure
+                            : SyncAttemptOutcome.Success;
                 }
             }
             finally
@@ -316,7 +370,26 @@ internal sealed class RealtimeSyncCoordinator :
         catch
         {
             WriteEnd(sync.Provider, "failure", 0, "client_error", "sync_failed");
+            return SyncAttemptOutcome.RetryableFailure;
         }
+    }
+
+    private static TimeSpan RetryDelayForAttempt(int attempt)
+    {
+        int exponent = Math.Clamp(attempt, 0, 5);
+        double seconds = RetryBaseDelay.TotalSeconds * Math.Pow(2, exponent);
+        double jitter = 1.0 + Random.Shared.NextDouble() * 0.25;
+        return TimeSpan.FromSeconds(Math.Min(seconds * jitter, RetryMaximumDelay.TotalSeconds));
+    }
+
+    private static bool IsRetryableCategory(string? category) =>
+        category is "network" or "network_timeout" or "network_connect" or "network_request" or "rate_limited";
+
+    private enum SyncAttemptOutcome
+    {
+        Success,
+        RetryableFailure,
+        AuthenticationFailure,
     }
 
     private void WriteStart(string provider) =>

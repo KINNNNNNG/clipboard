@@ -1,6 +1,9 @@
 use crate::{CoreBuffer, CoreStatus};
 use clipboard_core::{ApiRequest, CoreError, CoreService, IngestImage, MAX_IMAGE_BYTES};
-use clipboard_sync::{RecoveryMaterial, decode_recovery_code, encode_recovery_code};
+use clipboard_sync::{
+    PairingFileMaterial, RecoveryMaterial, decode_pairing_file, decode_recovery_code,
+    encode_pairing_file, encode_recovery_code,
+};
 use serde::Deserialize;
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
@@ -175,6 +178,74 @@ pub unsafe extern "C" fn clipboard_recovery_decode(
     out_material: *mut CoreBuffer,
 ) -> CoreStatus {
     catch_status(|| unsafe { recovery_decode_impl(code_ptr, code_len, out_material) })
+}
+
+/// Decrypts a password-protected pairing file into one JSON material buffer.
+///
+/// # Safety
+///
+/// All non-null input pointers must remain valid for their supplied lengths during this call.
+/// `out_material` must point to writable `CoreBuffer` storage.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clipboard_pairing_file_decode(
+    file_ptr: *const u8,
+    file_len: usize,
+    password_ptr: *const u8,
+    password_len: usize,
+    out_material: *mut CoreBuffer,
+) -> CoreStatus {
+    catch_status(|| unsafe {
+        pairing_file_decode_impl(file_ptr, file_len, password_ptr, password_len, out_material)
+    })
+}
+
+/// Encodes vault and non-sensitive remote configuration into a password-protected pairing file.
+///
+/// # Safety
+///
+/// All non-null input pointers must remain valid for their supplied lengths during this call.
+/// `out_file` must point to writable `CoreBuffer` storage.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clipboard_pairing_file_encode(
+    vault_id_ptr: *const u8,
+    vault_id_len: usize,
+    master_key_ptr: *const u8,
+    master_key_len: usize,
+    provider_ptr: *const u8,
+    provider_len: usize,
+    endpoint_ptr: *const u8,
+    endpoint_len: usize,
+    root_ptr: *const u8,
+    root_len: usize,
+    bucket_ptr: *const u8,
+    bucket_len: usize,
+    region_ptr: *const u8,
+    region_len: usize,
+    password_ptr: *const u8,
+    password_len: usize,
+    out_file: *mut CoreBuffer,
+) -> CoreStatus {
+    catch_status(|| unsafe {
+        pairing_file_encode_impl(
+            vault_id_ptr,
+            vault_id_len,
+            master_key_ptr,
+            master_key_len,
+            provider_ptr,
+            provider_len,
+            endpoint_ptr,
+            endpoint_len,
+            root_ptr,
+            root_len,
+            bucket_ptr,
+            bucket_len,
+            region_ptr,
+            region_len,
+            password_ptr,
+            password_len,
+            out_file,
+        )
+    })
 }
 
 /// Frees a response allocated by `clipboard_core_execute`.
@@ -396,6 +467,175 @@ unsafe fn recovery_decode_impl(
     bytes[16..].copy_from_slice(&material.master_key);
     unsafe { ptr::write(out_material, CoreBuffer::from_vec(bytes.to_vec())) };
     CoreStatus::Ok
+}
+
+unsafe fn pairing_file_decode_impl(
+    file_ptr: *const u8,
+    file_len: usize,
+    password_ptr: *const u8,
+    password_len: usize,
+    out_material: *mut CoreBuffer,
+) -> CoreStatus {
+    if file_ptr.is_null()
+        || file_len == 0
+        || password_ptr.is_null()
+        || password_len == 0
+        || out_material.is_null()
+    {
+        return CoreStatus::InvalidArgument;
+    }
+    unsafe { ptr::write(out_material, CoreBuffer::default()) };
+    let file = unsafe { slice::from_raw_parts(file_ptr, file_len) };
+    let password =
+        match str::from_utf8(unsafe { slice::from_raw_parts(password_ptr, password_len) }) {
+            Ok(value) => value,
+            Err(_) => return CoreStatus::InvalidUtf8,
+        };
+    let material = match decode_pairing_file(file, password) {
+        Ok(value) => value,
+        Err(_) => return CoreStatus::CoreError,
+    };
+    let bytes = match pairing_material_json(&material) {
+        Ok(value) => value,
+        Err(_) => return CoreStatus::CoreError,
+    };
+    unsafe { ptr::write(out_material, CoreBuffer::from_vec(bytes)) };
+    CoreStatus::Ok
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn pairing_file_encode_impl(
+    vault_id_ptr: *const u8,
+    vault_id_len: usize,
+    master_key_ptr: *const u8,
+    master_key_len: usize,
+    provider_ptr: *const u8,
+    provider_len: usize,
+    endpoint_ptr: *const u8,
+    endpoint_len: usize,
+    root_ptr: *const u8,
+    root_len: usize,
+    bucket_ptr: *const u8,
+    bucket_len: usize,
+    region_ptr: *const u8,
+    region_len: usize,
+    password_ptr: *const u8,
+    password_len: usize,
+    out_file: *mut CoreBuffer,
+) -> CoreStatus {
+    if vault_id_ptr.is_null()
+        || vault_id_len != 16
+        || master_key_ptr.is_null()
+        || master_key_len != 32
+        || provider_ptr.is_null()
+        || provider_len == 0
+        || endpoint_ptr.is_null()
+        || endpoint_len == 0
+        || password_ptr.is_null()
+        || password_len == 0
+        || out_file.is_null()
+        || (root_len != 0 && root_ptr.is_null())
+        || (bucket_len != 0 && bucket_ptr.is_null())
+        || (region_len != 0 && region_ptr.is_null())
+    {
+        return CoreStatus::InvalidArgument;
+    }
+    unsafe { ptr::write(out_file, CoreBuffer::default()) };
+    let vault_id =
+        match Uuid::from_slice(unsafe { slice::from_raw_parts(vault_id_ptr, vault_id_len) }) {
+            Ok(value) => value,
+            Err(_) => return CoreStatus::InvalidArgument,
+        };
+    let master_key = unsafe { slice::from_raw_parts(master_key_ptr, master_key_len) };
+    let provider =
+        match str::from_utf8(unsafe { slice::from_raw_parts(provider_ptr, provider_len) }) {
+            Ok(value) => value,
+            Err(_) => return CoreStatus::InvalidUtf8,
+        };
+    let endpoint =
+        match str::from_utf8(unsafe { slice::from_raw_parts(endpoint_ptr, endpoint_len) }) {
+            Ok(value) => value,
+            Err(_) => return CoreStatus::InvalidUtf8,
+        };
+    let root = if root_len == 0 {
+        None
+    } else {
+        Some(
+            match str::from_utf8(unsafe { slice::from_raw_parts(root_ptr, root_len) }) {
+                Ok(value) => value.to_owned(),
+                Err(_) => return CoreStatus::InvalidUtf8,
+            },
+        )
+    };
+    let bucket = if bucket_len == 0 {
+        None
+    } else {
+        Some(
+            match str::from_utf8(unsafe { slice::from_raw_parts(bucket_ptr, bucket_len) }) {
+                Ok(value) => value.to_owned(),
+                Err(_) => return CoreStatus::InvalidUtf8,
+            },
+        )
+    };
+    let region = if region_len == 0 {
+        None
+    } else {
+        Some(
+            match str::from_utf8(unsafe { slice::from_raw_parts(region_ptr, region_len) }) {
+                Ok(value) => value.to_owned(),
+                Err(_) => return CoreStatus::InvalidUtf8,
+            },
+        )
+    };
+    let password =
+        match str::from_utf8(unsafe { slice::from_raw_parts(password_ptr, password_len) }) {
+            Ok(value) => value,
+            Err(_) => return CoreStatus::InvalidUtf8,
+        };
+    let mut key = [0_u8; 32];
+    key.copy_from_slice(master_key);
+    let mut material = PairingFileMaterial::new(
+        vault_id,
+        key,
+        provider.to_owned(),
+        endpoint.to_owned(),
+        root,
+    );
+    match (bucket, region) {
+        (Some(bucket), Some(region)) => {
+            material = material.with_oss_configuration(bucket, region);
+        }
+        (None, None) => {}
+        _ => return CoreStatus::InvalidArgument,
+    }
+    let encoded = match encode_pairing_file(&material, password) {
+        Ok(value) => value,
+        Err(_) => return CoreStatus::CoreError,
+    };
+    unsafe { ptr::write(out_file, CoreBuffer::from_vec(encoded)) };
+    CoreStatus::Ok
+}
+
+fn pairing_material_json(material: &PairingFileMaterial) -> Result<Vec<u8>, serde_json::Error> {
+    #[derive(serde::Serialize)]
+    struct WireMaterial<'a> {
+        vault_id: Uuid,
+        master_key_hex: String,
+        provider: &'a str,
+        endpoint: &'a str,
+        root_or_prefix: &'a Option<String>,
+        bucket: &'a Option<String>,
+        region: &'a Option<String>,
+    }
+    serde_json::to_vec(&WireMaterial {
+        vault_id: material.vault_id,
+        master_key_hex: hex::encode(material.master_key),
+        provider: &material.provider,
+        endpoint: &material.endpoint,
+        root_or_prefix: &material.root_or_prefix,
+        bucket: &material.bucket,
+        region: &material.region,
+    })
 }
 
 unsafe fn execute_impl(
