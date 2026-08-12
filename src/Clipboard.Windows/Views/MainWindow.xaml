@@ -272,16 +272,33 @@
                                         x:Name="SelectionRoot"
                                         Padding="2"
                                         Background="Transparent"
+                                        BorderBrush="Transparent"
+                                        BorderThickness="2"
                                         CornerRadius="8">
-                                        <Border
-                                            x:Name="SelectionChrome"
-                                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                                            BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
-                                            BorderThickness="2"
-                                            CornerRadius="8"
-                                            IsHitTestVisible="False"
-                                            Margin="0,0,0,8"
-                                            Visibility="{Binding IsSelected, RelativeSource={RelativeSource Mode=TemplatedParent}, Converter={StaticResource BooleanVisibilityConverter}}" />
+                                        <VisualStateManager.VisualStateGroups>
+                                            <VisualStateGroup x:Name="SelectionStates">
+                                                <VisualState x:Name="Unselected">
+                                                    <VisualState.Setters>
+                                                        <Setter
+                                                            Target="SelectionRoot.Background"
+                                                            Value="Transparent" />
+                                                        <Setter
+                                                            Target="SelectionRoot.BorderBrush"
+                                                            Value="Transparent" />
+                                                    </VisualState.Setters>
+                                                </VisualState>
+                                                <VisualState x:Name="Selected">
+                                                    <VisualState.Setters>
+                                                        <Setter
+                                                            Target="SelectionRoot.Background"
+                                                            Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                                                        <Setter
+                                                            Target="SelectionRoot.BorderBrush"
+                                                            Value="{ThemeResource AccentFillColorDefaultBrush}" />
+                                                    </VisualState.Setters>
+                                                </VisualState>
+                                            </VisualStateGroup>
+                                        </VisualStateManager.VisualStateGroups>
                                         <ContentPresenter
                                             Content="{TemplateBinding Content}"
                                             ContentTemplate="{TemplateBinding ContentTemplate}"

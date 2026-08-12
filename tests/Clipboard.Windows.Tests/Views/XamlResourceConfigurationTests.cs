@@ -20,7 +20,7 @@ public sealed class XamlResourceConfigurationTests
     }
 
     [Fact]
-    public void History_list_uses_single_selection_with_selection_chrome()
+    public void History_list_uses_single_selection_with_visual_state_selection()
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");
         XDocument document = XDocument.Load(path);
@@ -37,10 +37,16 @@ public sealed class XamlResourceConfigurationTests
         Assert.NotNull(style.Descendants().SingleOrDefault(
             element => element.Name.LocalName == "ControlTemplate"));
         XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-        XElement chrome = style
+        XElement states = style
             .Descendants()
-            .Single(element => element.Attribute(x + "Name")?.Value == "SelectionChrome");
-        Assert.Contains("IsSelected", chrome.Attribute("Visibility")?.Value, StringComparison.Ordinal);
+            .Single(element => element.Name.LocalName == "VisualStateGroup"
+                && element.Attribute(x + "Name")?.Value == "SelectionStates");
+        Assert.NotNull(states.Descendants().SingleOrDefault(
+            element => element.Name.LocalName == "VisualState"
+                && element.Attribute(x + "Name")?.Value == "Unselected"));
+        Assert.NotNull(states.Descendants().SingleOrDefault(
+            element => element.Name.LocalName == "VisualState"
+                && element.Attribute(x + "Name")?.Value == "Selected"));
     }
 
     [Fact]
@@ -75,7 +81,7 @@ public sealed class XamlResourceConfigurationTests
     }
 
     [Fact]
-    public void History_list_binds_selection_chrome_to_the_container_selection_property()
+    public void History_list_resets_and_applies_selection_visual_states()
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");
         XDocument document = XDocument.Load(path);
@@ -83,14 +89,31 @@ public sealed class XamlResourceConfigurationTests
         XElement list = document
             .Descendants()
             .Single(element => element.Name.LocalName == "ListView");
-        XElement chrome = list
+        XElement unselected = list
             .Descendants()
-            .Single(element => element.Attribute(x + "Name")?.Value == "SelectionChrome");
+            .Single(element => element.Name.LocalName == "VisualState"
+                && element.Attribute(x + "Name")?.Value == "Unselected");
+        XElement selected = list
+            .Descendants()
+            .Single(element => element.Name.LocalName == "VisualState"
+                && element.Attribute(x + "Name")?.Value == "Selected");
 
-        Assert.Contains("IsSelected", chrome.Attribute("Visibility")?.Value, StringComparison.Ordinal);
-        Assert.Contains("TemplatedParent", chrome.Attribute("Visibility")?.Value, StringComparison.Ordinal);
-        Assert.Equal("0,0,0,8", chrome.Attribute("Margin")?.Value);
-        Assert.DoesNotContain(list.Descendants(), element => element.Name.LocalName == "VisualStateManager");
+        Assert.Contains(unselected.Descendants(), element =>
+            element.Name.LocalName == "Setter"
+            && element.Attribute("Target")?.Value == "SelectionRoot.Background"
+            && element.Attribute("Value")?.Value == "Transparent");
+        Assert.Contains(unselected.Descendants(), element =>
+            element.Name.LocalName == "Setter"
+            && element.Attribute("Target")?.Value == "SelectionRoot.BorderBrush"
+            && element.Attribute("Value")?.Value == "Transparent");
+        Assert.Contains(selected.Descendants(), element =>
+            element.Name.LocalName == "Setter"
+            && element.Attribute("Target")?.Value == "SelectionRoot.Background"
+            && element.Attribute("Value")?.Value == "{ThemeResource SubtleFillColorSecondaryBrush}");
+        Assert.Contains(selected.Descendants(), element =>
+            element.Name.LocalName == "Setter"
+            && element.Attribute("Target")?.Value == "SelectionRoot.BorderBrush"
+            && element.Attribute("Value")?.Value == "{ThemeResource AccentFillColorDefaultBrush}");
     }
 
     [Fact]
