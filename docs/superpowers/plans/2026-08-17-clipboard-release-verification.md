@@ -29,7 +29,7 @@ README.md
 - Modify: `tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj:31-46`
 - Create: `tests/Clipboard.Windows.Tests/Platform/VerificationScriptTests.cs`
 
-- [ ] **Step 1：添加验证脚本 Fixture 与失败测试。**
+- [x] **Step 1：添加验证脚本 Fixture 与失败测试。**
 
 在测试项目的现有 `<ItemGroup>` 中添加：
 
@@ -69,7 +69,7 @@ public sealed class VerificationScriptTests
 }
 ```
 
-- [ ] **Step 2：运行红灯测试。**
+- [x] **Step 2：运行红灯测试。**
 
 运行：
 
@@ -79,7 +79,7 @@ dotnet test tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj --no-re
 
 预期：失败，提示尚未包含 `Get-ClientProcesses`，证明现有脚本未实现阶段五发布门。
 
-- [ ] **Step 3：提交测试基线。**
+- [x] **Step 3：提交测试基线。**
 
 ```powershell
 git add tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj tests/Clipboard.Windows.Tests/Platform/VerificationScriptTests.cs
@@ -91,7 +91,7 @@ git commit -m "test: 锁定发布验证脚本门"
 **文件：**
 - Modify: `scripts/verify-windows-client.ps1:1-55`
 
-- [ ] **Step 1：在脚本顶部定义受限进程与产物帮助函数。**
+- [x] **Step 1：在脚本顶部定义受限进程与产物帮助函数。**
 
 在 `$ErrorActionPreference = 'Stop'` 后加入以下函数；`Get-ClientProcesses` 只返回 `.Path` 等于 `$executable` 的进程，绝不按名称批量结束：
 
@@ -138,7 +138,7 @@ function Assert-ReleaseArtifact {
 }
 ```
 
-- [ ] **Step 2：在 Core 验证前计算 exe 并清理同路径旧实例。**
+- [x] **Step 2：在 Core 验证前计算 exe 并清理同路径旧实例。**
 
 在 `Push-Location $repositoryRoot` 后、任何会写入 `bin` 的命令前添加：
 
@@ -154,7 +154,7 @@ Stop-ExistingClientInstances -Executable $executable
 --filter 'ClipboardCoreClientTests|SettingsViewModelTests|SyncCredentialStoreTests|SourceApplicationResolverTests|ClipboardCaptureCoordinatorTests|ClipboardDisplayFormatterTests|ClipboardPanelViewModelTests|XamlResourceConfigurationTests|PasteCoordinatorTests|GlobalLogTests|PreviousInstanceCloserTests|VerificationScriptTests'
 ```
 
-- [ ] **Step 3：在构建成功后检查正式产物。**
+- [x] **Step 3：在构建成功后检查正式产物。**
 
 紧随现有 `dotnet build` 成功判断后添加：
 
@@ -162,7 +162,7 @@ Stop-ExistingClientInstances -Executable $executable
 Assert-ReleaseArtifact -Executable $executable
 ```
 
-- [ ] **Step 4：运行绿灯测试。**
+- [x] **Step 4：运行绿灯测试。**
 
 运行：
 
@@ -172,7 +172,7 @@ dotnet test tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj --no-re
 
 预期：通过，且脚本包含受限清理、产物检查、日志脱敏和旧实例定向测试门。
 
-- [ ] **Step 5：提交脚本门。**
+- [x] **Step 5：提交脚本门。**
 
 ```powershell
 git add scripts/verify-windows-client.ps1 tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj tests/Clipboard.Windows.Tests/Platform/VerificationScriptTests.cs
@@ -184,7 +184,7 @@ git commit -m "build: 加固 Windows 发布验证门"
 **文件：**
 - Modify: `scripts/verify-windows-client.ps1:after Assert-ReleaseArtifact`
 
-- [ ] **Step 1：替换单实例 GUI smoke。**
+- [x] **Step 1：替换单实例 GUI smoke。**
 
 将现有单个 `$process` 的 `if (-not $SkipGuiSmoke)` 块替换为：
 
@@ -229,7 +229,7 @@ if (-not $SkipGuiSmoke) {
 }
 ```
 
-- [ ] **Step 2：运行不含 GUI 的完整验证。**
+- [x] **Step 2：运行不含 GUI 的完整验证。**
 
 先确保关闭手动启动的客户端，然后运行：
 
@@ -239,7 +239,7 @@ pwsh -NoProfile -File scripts/verify-windows-client.ps1 -SkipGuiSmoke
 
 预期：所有 Core、同步、FFI、定向 Windows、全量 Windows 与构建检查通过；运行中的同路径旧客户端不会导致构建锁错误。
 
-- [ ] **Step 3：运行完整 GUI 验证。**
+- [x] **Step 3：运行完整 GUI 验证。**
 
 ```powershell
 pwsh -NoProfile -File scripts/verify-windows-client.ps1
@@ -247,7 +247,7 @@ pwsh -NoProfile -File scripts/verify-windows-client.ps1
 
 预期：第一个客户端启动后保持运行，第二个客户端自动关闭第一个，之后第二个被脚本优雅回收；脚本以 0 退出。
 
-- [ ] **Step 4：提交 GUI 验收逻辑。**
+- [x] **Step 4：提交 GUI 验收逻辑。**
 
 ```powershell
 git add scripts/verify-windows-client.ps1
@@ -260,7 +260,7 @@ git commit -m "test: 验证客户端二次启动替换旧实例"
 - Modify: `README.md:31-44`
 - Modify: `docs/superpowers/plans/2026-08-17-clipboard-release-verification.md`
 
-- [ ] **Step 1：更新 README 验证说明。**
+- [x] **Step 1：更新 README 验证说明。**
 
 将验证段落补充为：
 
@@ -274,11 +274,11 @@ pwsh -NoProfile -File scripts/verify-windows-client.ps1
 该命令会关闭同路径旧客户端、执行 Core 与 Windows 全量验证、检查 Debug x64 产物不含证书或私钥，并连续启动两个客户端验证第二个实例会关闭第一个。CI 使用 `-SkipGuiSmoke` 跳过桌面交互 smoke，其余检查保持执行。
 ```
 
-- [ ] **Step 2：勾选已执行计划步骤并记录验证结果。**
+- [x] **Step 2：勾选已执行计划步骤并记录验证结果。**
 
 仅在每条对应命令实际成功后，将本计划中的步骤标记为 `- [x]`；在文档末尾追加实际命令、日期、通过的测试数量和 GUI smoke 进程替换结果。不要记录剪贴板正文、文件路径、远端地址、凭据或密钥。
 
-- [ ] **Step 3：最终检查并提交。**
+- [x] **Step 3：最终检查并提交。**
 
 ```powershell
 git diff --check
@@ -288,6 +288,13 @@ git commit -m "docs: 记录阶段五发布验证基线"
 ```
 
 预期：只有计划定义的验证脚本、测试 Fixture、测试、README 与计划文档发生变化；既有同步、剪贴板和 UI 功能改动不被回退或混入。
+
+## 实际验收记录
+
+- 日期：2026-08-17。
+- `dotnet test tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj --no-restore --filter "FullyQualifiedName~VerificationScriptTests"`：1/1 通过。
+- `pwsh -NoProfile -File scripts/verify-windows-client.ps1 -SkipGuiSmoke`：退出码 0；Windows 定向测试 126/126、全量测试 196/196；Debug x64 构建 0 警告、0 错误；敏感产物扫描通过。
+- `pwsh -NoProfile -File scripts/verify-windows-client.ps1`：退出码 0；同样通过 Core、同步、FFI、Windows 测试和构建；GUI smoke 确认第二个实例关闭第一个，脚本回收后同路径活动进程数为 0。
 
 ## 计划自审
 

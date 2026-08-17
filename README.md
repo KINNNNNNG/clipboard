@@ -35,7 +35,7 @@
 pwsh -NoProfile -File scripts/verify-windows-client.ps1
 ```
 
-该脚本依次验证 Core 工具链、格式、Clippy、WebDAV/OSS 远端同步测试、FFI 冒烟、Windows 工具链、同步设置定向测试、WinUI 全量测试与 x64 构建；`-SkipGuiSmoke` 可跳过 10 秒进程存活检查。
+发布前运行上述命令会关闭同路径旧客户端，依次验证 Core 工具链、格式、Clippy、WebDAV/OSS 远端同步测试、FFI 冒烟、Windows 工具链、同步设置定向测试、WinUI 全量测试与 x64 构建，检查 Debug x64 产物不含证书或私钥，并连续启动两个客户端验证第二个实例会关闭第一个。CI 或无桌面环境可使用 `-SkipGuiSmoke` 跳过交互式双实例 smoke，其余检查保持执行。
 
 人工验收还应覆盖：记事本、Edge、Office 和 VS Code 的文本/图片捕获和粘贴；资源管理器复制单个/多个文件及文件夹后显示 Fluent 图标和“共 N 项”；来源应用显示正常软件名；上下键高亮并自动滚动；路径已删除时显示“原路径不可用”且不隐藏面板、不发送 `Ctrl+V`；`Win+V` 接管失败时备用快捷键；自身写回不产生重复历史；100%/150%/200% DPI 与多显示器边缘；目标窗口已失效时不自动发送 `Ctrl+V`。
 
