@@ -38,5 +38,8 @@
     <Content Include="..\..\src\Clipboard.Windows\Views\LogWindow.xaml"
              Link="Fixtures\LogWindow.xaml"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\scripts\verify-windows-client.ps1"
+             Link="Fixtures\verify-windows-client.ps1"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
