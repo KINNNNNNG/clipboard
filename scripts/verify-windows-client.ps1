@@ -4,10 +4,54 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Get-ClientProcesses {
+    param([Parameter(Mandatory)][string]$Executable)
+
+    return @(Get-Process -Name 'Clipboard.Windows' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -eq $Executable })
+}
+
+function Stop-ClientProcess {
+    param([Parameter(Mandatory)][System.Diagnostics.Process]$Process)
+
+    if ($Process.HasExited) { return }
+    [void]$Process.CloseMainWindow()
+    if (-not $Process.WaitForExit(2000)) {
+        $Process.Kill()
+        $Process.WaitForExit()
+    }
+}
+
+function Stop-ExistingClientInstances {
+    param([Parameter(Mandatory)][string]$Executable)
+
+    foreach ($process in Get-ClientProcesses -Executable $Executable) {
+        Stop-ClientProcess -Process $process
+    }
+}
+
+function Assert-ReleaseArtifact {
+    param([Parameter(Mandatory)][string]$Executable)
+
+    if (-not (Test-Path -LiteralPath $Executable)) {
+        throw "Windows client executable was not found at $Executable"
+    }
+
+    $forbiddenExtensions = @('.pfx', '.p12', '.pem', '.key', '.snk')
+    $forbidden = Get-ChildItem -LiteralPath (Split-Path -Parent $Executable) -Recurse -File |
+        Where-Object { $_.Extension.ToLowerInvariant() -in $forbiddenExtensions }
+    if ($forbidden) {
+        throw "Sensitive signing material was found in the client output: $($forbidden.FullName -join ', ')"
+    }
+}
+
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Push-Location $repositoryRoot
 
 try {
+    $executable = Join-Path $repositoryRoot 'src\Clipboard.Windows\bin\x64\Debug\net8.0-windows10.0.26100.0\win-x64\Clipboard.Windows.exe'
+    Stop-ExistingClientInstances -Executable $executable
+
     & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'test-core.ps1')
     if ($LASTEXITCODE -ne 0) { throw 'Clipboard core verification failed.' }
 
@@ -28,7 +72,7 @@ try {
         -p:Platform=x64 `
         -p:WindowsAppSDKSelfContained=true `
         --no-restore `
-        --filter 'ClipboardCoreClientTests|SettingsViewModelTests|SyncCredentialStoreTests|SourceApplicationResolverTests|ClipboardCaptureCoordinatorTests|ClipboardDisplayFormatterTests|ClipboardPanelViewModelTests|XamlResourceConfigurationTests|PasteCoordinatorTests'
+        --filter 'ClipboardCoreClientTests|SettingsViewModelTests|SyncCredentialStoreTests|SourceApplicationResolverTests|ClipboardCaptureCoordinatorTests|ClipboardDisplayFormatterTests|ClipboardPanelViewModelTests|XamlResourceConfigurationTests|PasteCoordinatorTests|GlobalLogTests|PreviousInstanceCloserTests|VerificationScriptTests'
     if ($LASTEXITCODE -ne 0) { throw 'Windows targeted tests failed.' }
 
     & dotnet test 'tests\Clipboard.Windows.Tests\Clipboard.Windows.Tests.csproj' `
@@ -45,6 +89,8 @@ try {
         -p:WindowsAppSdkBootstrapInitialize=false `
         --no-restore
     if ($LASTEXITCODE -ne 0) { throw 'Windows client build failed.' }
+
+    Assert-ReleaseArtifact -Executable $executable
 
     if (-not $SkipGuiSmoke) {
         $executable = Join-Path $repositoryRoot `
