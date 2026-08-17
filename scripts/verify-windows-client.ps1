@@ -93,24 +93,38 @@ try {
     Assert-ReleaseArtifact -Executable $executable
 
     if (-not $SkipGuiSmoke) {
-        $executable = Join-Path $repositoryRoot `
-            'src\Clipboard.Windows\bin\x64\Debug\net8.0-windows10.0.26100.0\win-x64\Clipboard.Windows.exe'
-        if (-not (Test-Path -LiteralPath $executable)) {
-            throw "Windows client executable was not found at $executable"
-        }
-
-        $process = Start-Process -FilePath $executable -ArgumentList '--show' -PassThru
+        $firstProcess = $null
+        $secondProcess = $null
         try {
-            Start-Sleep -Seconds 10
-            $process.Refresh()
-            if ($process.HasExited) {
-                throw "Windows client GUI smoke process exited with code $($process.ExitCode)."
+            $workingDirectory = Split-Path -Parent $executable
+            $firstProcess = Start-Process -FilePath $executable -ArgumentList '--show' -WorkingDirectory $workingDirectory -PassThru
+            Start-Sleep -Seconds 5
+            $firstProcess.Refresh()
+            if ($firstProcess.HasExited) {
+                throw "First GUI smoke process exited with code $($firstProcess.ExitCode)."
+            }
+
+            $secondProcess = Start-Process -FilePath $executable -ArgumentList '--show' -WorkingDirectory $workingDirectory -PassThru
+            Start-Sleep -Seconds 5
+            $firstProcess.Refresh()
+            $secondProcess.Refresh()
+            if (-not $firstProcess.HasExited) {
+                throw 'The second client instance did not close the first instance.'
+            }
+            if ($secondProcess.HasExited) {
+                throw "Second GUI smoke process exited with code $($secondProcess.ExitCode)."
+            }
+
+            $active = Get-ClientProcesses -Executable $executable
+            if ($active.Count -ne 1 -or $active[0].Id -ne $secondProcess.Id) {
+                throw 'GUI smoke expected exactly one active client instance.'
             }
         }
         finally {
-            if (-not $process.HasExited) {
-                Stop-Process -Id $process.Id -Force
-                $process.WaitForExit()
+            foreach ($process in @($firstProcess, $secondProcess)) {
+                if ($null -ne $process) {
+                    Stop-ClientProcess -Process $process
+                }
             }
         }
     }
