@@ -44,5 +44,23 @@
     <Content Include="..\..\scripts\verify-windows-client.ps1"
              Link="Fixtures\verify-windows-client.ps1"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\scripts\verify-windows-client-toolchain.ps1"
+             Link="Fixtures\verify-windows-client-toolchain.ps1"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\scripts\measure-history-search.ps1"
+             Link="Fixtures\measure-history-search.ps1"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\scripts\measure-windows-history-diagnostics.ps1"
+             Link="Fixtures\measure-windows-history-diagnostics.ps1"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\src\Clipboard.Windows\Clipboard.Windows.csproj"
+             Link="Fixtures\Clipboard.Windows.csproj"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Clipboard.Windows.Performance\Clipboard.Windows.Performance.csproj"
+             Link="Fixtures\Clipboard.Windows.Performance.csproj"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Clipboard.Windows.Performance\Program.cs"
+             Link="Fixtures\PerformanceProgram.cs"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

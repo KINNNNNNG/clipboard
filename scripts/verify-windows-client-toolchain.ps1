@@ -1,3 +1,8 @@
+param(
+    [ValidateSet('Debug', 'Release')]
+    [string]$Configuration = 'Debug'
+)
+
 $ErrorActionPreference = 'Stop'
 
 if (-not $IsWindows) {
@@ -46,9 +51,16 @@ if (-not $appRuntime) {
     throw 'Microsoft Windows App Runtime 1.8 x64 is required.'
 }
 
-$ffiLibrary = Join-Path $PSScriptRoot '..\target\debug\clipboard_ffi.dll'
+$rustConfiguration = $Configuration.ToLowerInvariant()
+$ffiLibrary = Join-Path $PSScriptRoot "..\target\$rustConfiguration\clipboard_ffi.dll"
 if (-not (Test-Path -LiteralPath $ffiLibrary)) {
-    throw 'target/debug/clipboard_ffi.dll is required; run cargo build -p clipboard-ffi.'
+    $buildCommand = if ($Configuration -eq 'Release') {
+        'cargo build -p clipboard-ffi --release'
+    }
+    else {
+        'cargo build -p clipboard-ffi'
+    }
+    throw "target/$rustConfiguration/clipboard_ffi.dll is required; run $buildCommand."
 }
 
 Write-Host "Windows: $osVersion"
