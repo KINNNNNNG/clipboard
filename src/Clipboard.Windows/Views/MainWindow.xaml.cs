@@ -62,11 +62,15 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
             return;
         }
         _presenter.Show();
+        ClipboardPanelViewModel viewModel = _viewModel;
         _ = RunUiOperationAsync(
-            () => _viewModel.RefreshAsync(),
+            async () =>
+            {
+                await viewModel.RefreshAsync();
+                FocusSelectedHistoryItem();
+            },
             "无法加载剪贴板历史。");
         Activate();
-        SearchBox.Focus(FocusState.Programmatic);
     }
 
     public void HidePanel() => _presenter?.Hide();
@@ -287,6 +291,32 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
             $"SyncSelection after vm={selectedIndex} list={HistoryList.SelectedIndex}");
     }
 
+    private void FocusSelectedHistoryItem()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        int selectedIndex = _viewModel.SelectedIndex;
+        if (selectedIndex < 0 || selectedIndex >= _viewModel.Items.Count)
+        {
+            return;
+        }
+
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_viewModel is null
+                || _viewModel.SelectedIndex != selectedIndex
+                || HistoryList.ContainerFromIndex(selectedIndex) is not ListViewItem container)
+            {
+                return;
+            }
+
+            container.Focus(FocusState.Keyboard);
+        });
+    }
+
     private void Root_KeyDown(object sender, KeyRoutedEventArgs args)
     {
         if (_viewModel is null)
@@ -300,10 +330,12 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         {
             case global::Windows.System.VirtualKey.Down:
                 _viewModel.MoveSelection(1);
+                FocusSelectedHistoryItem();
                 args.Handled = true;
                 break;
             case global::Windows.System.VirtualKey.Up:
                 _viewModel.MoveSelection(-1);
+                FocusSelectedHistoryItem();
                 args.Handled = true;
                 break;
             case global::Windows.System.VirtualKey.Enter:

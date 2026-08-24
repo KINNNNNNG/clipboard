@@ -7,6 +7,7 @@ namespace Clipboard.Windows.ViewModels;
 internal sealed class ClipboardPanelViewModel : ObservableObject
 {
     private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan HistoryLoadRetryDelay = TimeSpan.FromMilliseconds(75);
     private readonly object _searchSync = new();
     private readonly IClipboardPanelCore _core;
     private readonly IClipboardItemPasteService _paste;
@@ -114,10 +115,13 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
         {
             if (SetProperty(ref _queryError, value))
             {
+                OnPropertyChanged(nameof(HasQueryError));
                 OnPropertyChanged(nameof(IsEmpty));
             }
         }
     }
+
+    public bool HasQueryError => !string.IsNullOrWhiteSpace(QueryError);
 
     public string? ErrorMessage
     {
@@ -126,10 +130,13 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
         {
             if (SetProperty(ref _errorMessage, value))
             {
+                OnPropertyChanged(nameof(HasErrorMessage));
                 OnPropertyChanged(nameof(IsEmpty));
             }
         }
     }
+
+    public bool HasErrorMessage => !string.IsNullOrWhiteSpace(ErrorMessage);
 
     public bool IsEmpty =>
         !IsLoading && Items.Count == 0 && QueryError is null && ErrorMessage is null;
@@ -184,6 +191,13 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
         if (result.Kind == PasteResultKind.SourceUnavailable)
         {
             selected.MarkSourceUnavailable();
+        }
+        else
+        {
+            await _core.MarkUsedAsync(
+                new MarkUsedRequestDto(selected.Id, _timeProvider.GetUtcNow().ToUnixTimeMilliseconds()),
+                cancellationToken);
+            await RefreshAsync(cancellationToken);
         }
         return result;
     }
@@ -301,7 +315,7 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
         }
         try
         {
-            SearchResponseDto response = await _core.SearchAsync(request, active.Token);
+            SearchResponseDto response = await SearchWithRetryAsync(request, active.Token);
             if (!IsCurrent(version))
             {
                 return;
@@ -347,6 +361,24 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
                 IsLoading = false;
             }
             active.Dispose();
+        }
+    }
+
+    private async Task<SearchResponseDto> SearchWithRetryAsync(
+        SearchRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await _core.SearchAsync(request, cancellationToken);
+            }
+            catch (ClipboardCoreException error) when (
+                error.Status == CoreStatus.CoreError && attempt == 0)
+            {
+                await Task.Delay(HistoryLoadRetryDelay, cancellationToken);
+            }
         }
     }
 

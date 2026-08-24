@@ -1,6 +1,6 @@
 use clipboard_core::{
     ApplyRetentionRequest, CoreCommand, CoreResponse, CoreService, DeleteRequest, IngestText,
-    SearchFilters, SearchRequest, SetFavorite,
+    MarkUsed, SearchFilters, SearchRequest, SetFavorite,
 };
 use clipboard_crypto::{KeyPurpose, VaultKey};
 use clipboard_domain::{
@@ -146,6 +146,26 @@ fn consecutive_duplicate_text_reuses_item_and_updates_last_used_time() {
     assert_eq!(response.search_items().len(), 1);
     assert_eq!(response.search_items()[0].last_used_ms, 200);
     assert_eq!(response.search_items()[0].source_app, "terminal.exe");
+}
+
+#[test]
+fn marking_an_item_used_updates_its_time_and_moves_it_to_the_top() {
+    let directory = tempdir().unwrap();
+    let mut core = CoreService::open(directory.path(), Uuid::from_u128(40), &KEY).unwrap();
+    let first_id = ingest_text(&mut core, "first", "notepad.exe", 100);
+    let second_id = ingest_text(&mut core, "second", "notepad.exe", 200);
+
+    core.execute(CoreCommand::MarkUsed(MarkUsed {
+        item_id: first_id,
+        used_ms: 300,
+    }))
+    .unwrap();
+
+    let response = search(&mut core, SearchFilters::default());
+    let items = response.search_items();
+    assert_eq!(items[0].id, first_id);
+    assert_eq!(items[0].last_used_ms, 300);
+    assert_eq!(items[1].id, second_id);
 }
 
 #[test]

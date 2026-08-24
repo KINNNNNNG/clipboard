@@ -33,6 +33,7 @@ pub enum CoreCommand {
     SyncRemote(SyncRemote),
     ProbeRemote(ProbeRemote),
     Search(SearchRequest),
+    MarkUsed(MarkUsed),
     SetFavorite(SetFavorite),
     Delete(DeleteRequest),
     ClearUnfavorite,
@@ -106,6 +107,12 @@ pub struct SearchRequest {
     pub mode: SearchMode,
     #[serde(default)]
     pub filters: SearchFilters,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MarkUsed {
+    pub item_id: Uuid,
+    pub used_ms: i64,
 }
 
 #[derive(Debug, Default, Deserialize)]

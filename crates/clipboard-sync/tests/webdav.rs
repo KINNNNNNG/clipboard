@@ -182,7 +182,7 @@ fn webdav_maps_authentication_conflict_rate_limit_and_network_errors_without_det
         assert!(!error.to_string().contains("must not surface"));
         let requests = fixture.finish();
         assert_eq!(requests[0].method, "PROPFIND");
-        assert_eq!(requests[0].headers["depth"], "0");
+        assert_eq!(requests[0].headers["depth"], "1");
     }
 }
 
@@ -199,4 +199,15 @@ fn webdav_records_a_sanitized_failure_status_and_operation() {
     );
 
     fixture.finish();
+}
+
+#[test]
+fn webdav_probe_validates_the_depth_one_listing_required_by_sync() {
+    let fixture = WebDavFixture::start(vec![(207, String::new())]);
+
+    fixture.store().probe().unwrap();
+
+    let requests = fixture.finish();
+    assert_eq!(requests[0].method, "PROPFIND");
+    assert_eq!(requests[0].headers["depth"], "1");
 }

@@ -24,10 +24,12 @@ public partial class App : Microsoft.UI.Xaml.Application
     private readonly ClientSettingsStore _settingsStore = new();
     private readonly SingleWindowLifetime<SettingsWindow> _settingsWindows = new();
     private readonly SingleWindowLifetime<LogWindow> _logWindows = new();
+    private readonly PreviousInstanceCloser _previousInstanceCloser = new();
     private bool _showOnLaunch;
 
     public App()
     {
+        _previousInstanceCloser.Close();
         InitializeComponent();
     }
 

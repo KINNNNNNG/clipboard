@@ -28,6 +28,10 @@ internal interface IClipboardPanelCore
         SearchRequestDto request,
         CancellationToken cancellationToken = default);
 
+    Task<MutationResponseDto> MarkUsedAsync(
+        MarkUsedRequestDto request,
+        CancellationToken cancellationToken = default);
+
     Task<MutationResponseDto> SetFavoriteAsync(
         SetFavoriteRequestDto request,
         CancellationToken cancellationToken = default);
@@ -149,6 +153,8 @@ internal sealed record ClipboardItemDto(
     string? RepresentativeKind = null);
 
 internal sealed record SearchResponseDto(IReadOnlyList<ClipboardItemDto> Items);
+
+internal sealed record MarkUsedRequestDto(Guid ItemId, long UsedMs);
 
 internal sealed record MutationResponseDto(Guid ItemId);
 

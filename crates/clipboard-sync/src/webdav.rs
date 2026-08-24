@@ -14,7 +14,6 @@ use crate::{
 use crate::{
     PENDING_OBJECT_SUFFIX, RemoteImageObject, RemoteSegmentHeader, RemoteStore, SyncError,
     WebDavConfig, completed_image_object_name, completed_object_name, parse_completed_object_name,
-    pending_image_object_name,
 };
 
 const CSTCLOUD_WEB_DAV_HOST: &str = "data.cstcloud.cn";
@@ -80,6 +79,18 @@ impl WebDavStore {
             .basic_auth(&self.username, Some(&self.password)))
     }
 
+    fn put_object_request(
+        &self,
+        object_name: &str,
+    ) -> Result<reqwest::blocking::RequestBuilder, SyncError> {
+        let request = self.object_request(Method::PUT, object_name)?;
+        Ok(if is_cstcloud_zotero_endpoint(&self.endpoint) {
+            request.header("Content-Type", "application/zip")
+        } else {
+            request
+        })
+    }
+
     fn send(
         &self,
         operation: &'static str,
@@ -131,21 +142,32 @@ impl RemoteStore for WebDavStore {
             .header("Depth", "1"),
         )?;
         let body = response.text().map_err(|_| SyncError::RemoteUnavailable)?;
-        Ok(parse_href_names(&body)
+        let mut segments = parse_href_names(&body)
             .into_iter()
             .filter_map(|name| parse_completed_name_for_endpoint(&self.endpoint, &name))
-            .collect())
+            .collect::<Vec<_>>();
+        segments.sort_by_key(|header| {
+            let value = header.header();
+            (value.vault_id, value.device_id, value.segment_id)
+        });
+        segments.dedup_by_key(|header| {
+            let value = header.header();
+            (value.vault_id, value.device_id, value.segment_id)
+        });
+        Ok(segments)
     }
 
     fn get_completed(&self, header: &RemoteSegmentHeader) -> Result<Vec<u8>, SyncError> {
-        let object_name = completed_name_for_endpoint(&self.endpoint, header)?;
-        self.send(
-            "webdav_get",
-            self.object_request(Method::GET, &object_name)?,
-        )?
-        .bytes()
-        .map(|bytes| bytes.to_vec())
-        .map_err(|_| SyncError::RemoteUnavailable)
+        let physical_name = completed_name_for_endpoint(&self.endpoint, header)?;
+        match self.get_optional_object("webdav_get", &physical_name)? {
+            Some(bytes) => Ok(bytes),
+            None if is_cstcloud_zotero_endpoint(&self.endpoint) => {
+                let legacy_name = completed_object_name(header.header())?;
+                self.get_optional_object("webdav_get", &legacy_name)?
+                    .ok_or(SyncError::RemoteUnavailable)
+            }
+            None => Err(SyncError::RemoteUnavailable),
+        }
     }
 
     fn put_pending_then_publish(
@@ -155,12 +177,9 @@ impl RemoteStore for WebDavStore {
     ) -> Result<(), SyncError> {
         let pending = pending_name_for_endpoint(&self.endpoint, header)?;
         let completed = completed_name_for_endpoint(&self.endpoint, header)?;
-        let mut request = self
-            .object_request(Method::PUT, &pending)?
+        let request = self
+            .put_object_request(&pending)?
             .header("If-None-Match", "*");
-        if is_cstcloud_zotero_endpoint(&self.endpoint) {
-            request = request.header("Content-Type", "application/zip");
-        }
         self.send("webdav_put_pending", request.body(ciphertext.to_vec()))?;
         let destination = self.object_url(&completed)?;
         self.send(
@@ -176,13 +195,16 @@ impl RemoteStore for WebDavStore {
     }
 
     fn get_image_object(&self, object: &RemoteImageObject) -> Result<Vec<u8>, SyncError> {
-        self.send(
-            "webdav_get_image",
-            self.object_request(Method::GET, &completed_image_object_name(object))?,
-        )?
-        .bytes()
-        .map(|bytes| bytes.to_vec())
-        .map_err(|_| SyncError::RemoteUnavailable)
+        let physical_name = completed_image_name_for_endpoint(&self.endpoint, object)?;
+        match self.get_optional_object("webdav_get_image", &physical_name)? {
+            Some(bytes) => Ok(bytes),
+            None if is_cstcloud_zotero_endpoint(&self.endpoint) => {
+                let legacy_name = completed_image_object_name(object);
+                self.get_optional_object("webdav_get_image", &legacy_name)?
+                    .ok_or(SyncError::RemoteUnavailable)
+            }
+            None => Err(SyncError::RemoteUnavailable),
+        }
     }
 
     fn put_image_object(
@@ -190,11 +212,11 @@ impl RemoteStore for WebDavStore {
         object: &RemoteImageObject,
         ciphertext: &[u8],
     ) -> Result<(), SyncError> {
-        let pending = pending_image_object_name(object);
-        let completed = completed_image_object_name(object);
+        let pending = pending_image_name_for_endpoint(&self.endpoint, object)?;
+        let completed = completed_image_name_for_endpoint(&self.endpoint, object)?;
         self.send(
             "webdav_put_image_pending",
-            self.object_request(Method::PUT, &pending)?
+            self.put_object_request(&pending)?
                 .header("If-None-Match", "*")
                 .body(ciphertext.to_vec()),
         )?;
@@ -217,7 +239,7 @@ impl RemoteStore for WebDavStore {
             self.root_request(
                 Method::from_bytes(b"PROPFIND").map_err(|_| SyncError::RemoteUnavailable)?,
             )
-            .header("Depth", "0"),
+            .header("Depth", "1"),
         )?;
         Ok(())
     }
@@ -238,7 +260,7 @@ impl RemoteStore for WebDavStore {
 }
 
 impl WebDavStore {
-    fn get_optional_metadata(
+    fn get_optional_object(
         &self,
         operation: &'static str,
         name: &str,
@@ -266,18 +288,64 @@ impl WebDavStore {
             return Ok(None);
         }
         if !response.status().is_success() {
-            return Err(map_status(response.status()));
+            let status = response.status();
+            *self
+                .last_error_detail
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                Some(format!("http_{}", status.as_u16()));
+            *self
+                .last_error_operation
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(operation);
+            return Err(map_status(status));
         }
         response
             .bytes()
             .map(|bytes| Some(bytes.to_vec()))
             .map_err(|_| SyncError::RemoteUnavailable)
     }
+
+    fn get_optional_metadata(
+        &self,
+        operation: &'static str,
+        name: &str,
+    ) -> Result<Option<Vec<u8>>, SyncError> {
+        self.get_optional_object(operation, name)
+    }
+
+    fn delete_object(&self, name: &str) -> Result<bool, SyncError> {
+        let response = self
+            .object_request(Method::DELETE, name)?
+            .send()
+            .map_err(|_| SyncError::RemoteUnavailable)?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(false);
+        }
+        if response.status().is_success() {
+            return Ok(true);
+        }
+        Err(map_status(response.status()))
+    }
+
+    fn get_metadata_for_endpoint(
+        &self,
+        operation: &'static str,
+        logical_name: &str,
+    ) -> Result<Option<Vec<u8>>, SyncError> {
+        let physical_name = metadata_name_for_endpoint(&self.endpoint, logical_name)?;
+        let result = self.get_optional_metadata(operation, &physical_name)?;
+        if result.is_some() || physical_name == logical_name {
+            return Ok(result);
+        }
+
+        self.get_optional_metadata(operation, logical_name)
+    }
 }
 
 impl RemoteMetadataStore for WebDavStore {
     fn get_header(&self) -> Result<Option<RemoteHeader>, SyncError> {
-        let Some(bytes) = self.get_optional_metadata("webdav_get_header", HEADER_NAME)? else {
+        let Some(bytes) = self.get_metadata_for_endpoint("webdav_get_header", HEADER_NAME)? else {
             return Ok(None);
         };
         let header: RemoteHeader =
@@ -289,9 +357,10 @@ impl RemoteMetadataStore for WebDavStore {
     fn put_header(&self, header: &RemoteHeader) -> Result<(), SyncError> {
         header.validate()?;
         let bytes = serde_json::to_vec(header).map_err(|_| SyncError::InvalidSegment)?;
+        let name = metadata_name_for_endpoint(&self.endpoint, HEADER_NAME)?;
         self.send(
             "webdav_put_header",
-            self.object_request(Method::PUT, HEADER_NAME)?
+            self.put_object_request(&name)?
                 .header("If-None-Match", "*")
                 .body(bytes),
         )?;
@@ -309,33 +378,36 @@ impl RemoteMetadataStore for WebDavStore {
         let mut devices =
             parse_href_names(&response.text().map_err(|_| SyncError::RemoteUnavailable)?)
                 .into_iter()
+                .filter_map(|name| logical_metadata_name_for_endpoint(&self.endpoint, &name))
                 .filter_map(|name| parse_device_state_name(&name))
                 .collect::<Vec<_>>();
         devices.sort_unstable();
+        devices.dedup();
         Ok(devices)
     }
 
     fn get_device_state(&self, device_id: Uuid) -> Result<Option<Vec<u8>>, SyncError> {
-        self.get_optional_metadata("webdav_get_device_state", &device_state_name(device_id))
+        self.get_metadata_for_endpoint("webdav_get_device_state", &device_state_name(device_id))
     }
 
     fn put_device_state(&self, device_id: Uuid, ciphertext: &[u8]) -> Result<(), SyncError> {
+        let name = metadata_name_for_endpoint(&self.endpoint, &device_state_name(device_id))?;
         self.send(
             "webdav_put_device_state",
-            self.object_request(Method::PUT, &device_state_name(device_id))?
-                .body(ciphertext.to_vec()),
+            self.put_object_request(&name)?.body(ciphertext.to_vec()),
         )?;
         Ok(())
     }
 
     fn get_snapshot(&self, snapshot_id: SnapshotId) -> Result<Option<Vec<u8>>, SyncError> {
-        self.get_optional_metadata("webdav_get_snapshot", &snapshot_name(snapshot_id))
+        self.get_metadata_for_endpoint("webdav_get_snapshot", &snapshot_name(snapshot_id))
     }
 
     fn put_snapshot(&self, snapshot_id: SnapshotId, ciphertext: &[u8]) -> Result<(), SyncError> {
+        let name = metadata_name_for_endpoint(&self.endpoint, &snapshot_name(snapshot_id))?;
         self.send(
             "webdav_put_snapshot",
-            self.object_request(Method::PUT, &snapshot_name(snapshot_id))?
+            self.put_object_request(&name)?
                 .header("If-None-Match", "*")
                 .body(ciphertext.to_vec()),
         )?;
@@ -353,25 +425,24 @@ impl RemoteMetadataStore for WebDavStore {
         let mut snapshots =
             parse_href_names(&response.text().map_err(|_| SyncError::RemoteUnavailable)?)
                 .into_iter()
+                .filter_map(|name| logical_metadata_name_for_endpoint(&self.endpoint, &name))
                 .filter_map(|name| parse_snapshot_name(&name))
                 .collect::<Vec<_>>();
         snapshots.sort_unstable();
+        snapshots.dedup();
         Ok(snapshots)
     }
 
     fn delete_segment(&self, header: &SegmentHeader) -> Result<bool, SyncError> {
         let name =
             completed_name_for_endpoint(&self.endpoint, &RemoteSegmentHeader::try_from(*header)?)?;
-        let response = self
-            .object_request(Method::DELETE, &name)?
-            .send()
-            .map_err(|_| SyncError::RemoteUnavailable)?;
-        if response.status() == StatusCode::NOT_FOUND {
-            Ok(false)
-        } else if response.status().is_success() {
-            Ok(true)
-        } else {
-            Err(map_status(response.status()))
+        match self.delete_object(&name)? {
+            true => Ok(true),
+            false if is_cstcloud_zotero_endpoint(&self.endpoint) => {
+                let legacy_name = completed_object_name(header)?;
+                self.delete_object(&legacy_name)
+            }
+            false => Ok(false),
         }
     }
 }
@@ -409,6 +480,80 @@ fn completed_name_for_endpoint(
     Ok(format!("{CSTCLOUD_OBJECT_PREFIX}{stem}.zip"))
 }
 
+fn metadata_name_for_endpoint(endpoint: &Url, logical_name: &str) -> Result<String, SyncError> {
+    if !is_cstcloud_zotero_endpoint(endpoint) {
+        return Ok(logical_name.to_owned());
+    }
+
+    let stem = logical_name
+        .strip_suffix(".json")
+        .or_else(|| logical_name.strip_suffix(".enc"))
+        .ok_or(SyncError::RemoteUnavailable)?;
+    Ok(format!("{CSTCLOUD_OBJECT_PREFIX}{stem}.zip"))
+}
+
+fn logical_metadata_name_for_endpoint(endpoint: &Url, physical_name: &str) -> Option<String> {
+    if !is_cstcloud_zotero_endpoint(endpoint) {
+        return Some(physical_name.to_owned());
+    }
+
+    if physical_name == HEADER_NAME
+        || parse_device_state_name(physical_name).is_some()
+        || parse_snapshot_name(physical_name).is_some()
+    {
+        return Some(physical_name.to_owned());
+    }
+
+    let stem = physical_name
+        .strip_prefix(CSTCLOUD_OBJECT_PREFIX)?
+        .strip_suffix(".zip")?;
+    if stem == "header" {
+        return Some(HEADER_NAME.to_owned());
+    }
+    if let Some(device) = stem
+        .strip_prefix("device-")
+        .and_then(|name| name.strip_suffix(".state"))
+    {
+        let device_id = Uuid::parse_str(device).ok()?;
+        return Some(device_state_name(device_id));
+    }
+    if let Some(snapshot) = stem.strip_prefix("snapshot-") {
+        let snapshot_id = SnapshotId(Uuid::parse_str(snapshot).ok()?);
+        return Some(snapshot_name(snapshot_id));
+    }
+    None
+}
+
+fn completed_image_name_for_endpoint(
+    endpoint: &Url,
+    object: &RemoteImageObject,
+) -> Result<String, SyncError> {
+    let completed = completed_image_object_name(object);
+    if !is_cstcloud_zotero_endpoint(endpoint) {
+        return Ok(completed);
+    }
+
+    let stem = completed
+        .strip_suffix(".enc")
+        .ok_or(SyncError::RemoteUnavailable)?;
+    Ok(format!("{CSTCLOUD_OBJECT_PREFIX}{stem}.zip"))
+}
+
+fn pending_image_name_for_endpoint(
+    endpoint: &Url,
+    object: &RemoteImageObject,
+) -> Result<String, SyncError> {
+    let completed = completed_image_name_for_endpoint(endpoint, object)?;
+    if is_cstcloud_zotero_endpoint(endpoint) {
+        let stem = completed
+            .strip_suffix(".zip")
+            .ok_or(SyncError::RemoteUnavailable)?;
+        return Ok(format!("{stem}.pending.zip"));
+    }
+
+    Ok(format!("{completed}{PENDING_OBJECT_SUFFIX}"))
+}
+
 fn pending_name_for_endpoint(
     endpoint: &Url,
     header: &RemoteSegmentHeader,
@@ -429,10 +574,13 @@ fn parse_completed_name_for_endpoint(endpoint: &Url, name: &str) -> Option<Remot
         return parse_completed_object_name(name);
     }
 
-    let stem = name
-        .strip_prefix(CSTCLOUD_OBJECT_PREFIX)?
-        .strip_suffix(".zip")?;
-    parse_completed_object_name(&format!("{stem}.enc"))
+    if let Some(stem) = name
+        .strip_prefix(CSTCLOUD_OBJECT_PREFIX)
+        .and_then(|value| value.strip_suffix(".zip"))
+    {
+        return parse_completed_object_name(&format!("{stem}.enc"));
+    }
+    parse_completed_object_name(name)
 }
 
 fn parse_href_names(body: &str) -> Vec<String> {
@@ -509,5 +657,136 @@ mod tests {
             parse_completed_name_for_endpoint(&endpoint, &completed),
             Some(header)
         );
+    }
+
+    #[test]
+    fn cstcloud_zotero_endpoint_maps_all_sync_objects_to_zip_names() {
+        let endpoint = Url::parse("https://data.cstcloud.cn/dav/").unwrap();
+        let ordinary_endpoint = Url::parse("https://webdav.example.test/root/").unwrap();
+        let device_id = Uuid::from_u128(4);
+        let snapshot_id = SnapshotId(Uuid::from_u128(5));
+        let image = RemoteImageObject::new(Uuid::from_u128(6), Uuid::from_u128(7));
+
+        assert_eq!(
+            metadata_name_for_endpoint(&endpoint, HEADER_NAME).unwrap(),
+            "clipboard-sync-header.zip"
+        );
+        assert_eq!(
+            metadata_name_for_endpoint(&endpoint, &device_state_name(device_id)).unwrap(),
+            format!("clipboard-sync-device-{device_id}.state.zip")
+        );
+        assert_eq!(
+            metadata_name_for_endpoint(&endpoint, &snapshot_name(snapshot_id)).unwrap(),
+            format!("clipboard-sync-snapshot-{}.zip", snapshot_id.0)
+        );
+        assert_eq!(
+            completed_image_name_for_endpoint(&endpoint, &image).unwrap(),
+            format!(
+                "clipboard-sync-image-01-{}-{}.zip",
+                image.vault_id(),
+                image.object_id()
+            )
+        );
+        assert_eq!(
+            logical_metadata_name_for_endpoint(&endpoint, "clipboard-sync-header.zip"),
+            Some(HEADER_NAME.to_owned())
+        );
+        assert_eq!(
+            logical_metadata_name_for_endpoint(
+                &endpoint,
+                &format!("clipboard-sync-device-{device_id}.state.zip"),
+            ),
+            Some(device_state_name(device_id))
+        );
+        assert_eq!(
+            logical_metadata_name_for_endpoint(
+                &endpoint,
+                &format!("clipboard-sync-snapshot-{}.zip", snapshot_id.0),
+            ),
+            Some(snapshot_name(snapshot_id))
+        );
+        assert_eq!(
+            metadata_name_for_endpoint(&ordinary_endpoint, HEADER_NAME).unwrap(),
+            HEADER_NAME
+        );
+        assert_eq!(
+            completed_image_name_for_endpoint(&ordinary_endpoint, &image).unwrap(),
+            completed_image_object_name(&image)
+        );
+        assert_eq!(
+            logical_metadata_name_for_endpoint(&endpoint, HEADER_NAME),
+            Some(HEADER_NAME.to_owned())
+        );
+        assert_eq!(
+            logical_metadata_name_for_endpoint(&endpoint, &device_state_name(device_id),),
+            Some(device_state_name(device_id))
+        );
+        assert_eq!(
+            logical_metadata_name_for_endpoint(&endpoint, &snapshot_name(snapshot_id)),
+            Some(snapshot_name(snapshot_id))
+        );
+    }
+
+    #[test]
+    fn cstcloud_zotero_endpoint_keeps_legacy_objects_visible() {
+        let endpoint = Url::parse("https://data.cstcloud.cn/dav/").unwrap();
+        let header = RemoteSegmentHeader::try_from(SegmentHeader {
+            protocol_version: 1,
+            vault_id: Uuid::from_u128(11),
+            device_id: Uuid::from_u128(12),
+            segment_id: Uuid::from_u128(13),
+        })
+        .unwrap();
+        let ordinary_segment = completed_object_name(header.header()).unwrap();
+
+        assert_eq!(
+            parse_completed_name_for_endpoint(&endpoint, &ordinary_segment),
+            Some(header)
+        );
+        assert_eq!(
+            logical_metadata_name_for_endpoint(&endpoint, "header.json"),
+            Some(HEADER_NAME.to_owned())
+        );
+        assert_eq!(
+            logical_metadata_name_for_endpoint(&endpoint, &device_state_name(Uuid::from_u128(14)),),
+            Some(device_state_name(Uuid::from_u128(14)))
+        );
+    }
+
+    #[test]
+    fn cstcloud_zotero_endpoint_marks_all_sync_puts_as_zip() {
+        let store = WebDavStore::new(WebDavConfig::new(
+            "https://data.cstcloud.cn/dav/",
+            "alice",
+            "secret",
+        ))
+        .unwrap();
+        let device_id = Uuid::from_u128(4);
+        let snapshot_id = SnapshotId(Uuid::from_u128(5));
+        let image = RemoteImageObject::new(Uuid::from_u128(6), Uuid::from_u128(7));
+        let segment = RemoteSegmentHeader::try_from(SegmentHeader {
+            protocol_version: 1,
+            vault_id: Uuid::from_u128(8),
+            device_id: Uuid::from_u128(9),
+            segment_id: Uuid::from_u128(10),
+        })
+        .unwrap();
+
+        let names = [
+            metadata_name_for_endpoint(&store.endpoint, HEADER_NAME).unwrap(),
+            metadata_name_for_endpoint(&store.endpoint, &device_state_name(device_id)).unwrap(),
+            metadata_name_for_endpoint(&store.endpoint, &snapshot_name(snapshot_id)).unwrap(),
+            pending_image_name_for_endpoint(&store.endpoint, &image).unwrap(),
+            pending_name_for_endpoint(&store.endpoint, &segment).unwrap(),
+        ];
+
+        for name in names {
+            let request = store.put_object_request(&name).unwrap().build().unwrap();
+            assert_eq!(
+                request.headers().get("content-type").unwrap(),
+                "application/zip"
+            );
+            assert!(request.url().path().ends_with(&name));
+        }
     }
 }

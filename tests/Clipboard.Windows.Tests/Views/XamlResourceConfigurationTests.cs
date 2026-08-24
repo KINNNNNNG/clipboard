@@ -20,7 +20,7 @@ public sealed class XamlResourceConfigurationTests
     }
 
     [Fact]
-    public void History_list_uses_single_selection_with_visual_state_selection()
+    public void History_list_uses_native_presenter_selection()
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");
         XDocument document = XDocument.Load(path);
@@ -36,17 +36,13 @@ public sealed class XamlResourceConfigurationTests
         Assert.Equal("ListViewItem", style.Attribute("TargetType")?.Value);
         Assert.NotNull(style.Descendants().SingleOrDefault(
             element => element.Name.LocalName == "ControlTemplate"));
-        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-        XElement states = style
+        XElement template = style
             .Descendants()
-            .Single(element => element.Name.LocalName == "VisualStateGroup"
-                && element.Attribute(x + "Name")?.Value == "SelectionStates");
-        Assert.NotNull(states.Descendants().SingleOrDefault(
-            element => element.Name.LocalName == "VisualState"
-                && element.Attribute(x + "Name")?.Value == "Unselected"));
-        Assert.NotNull(states.Descendants().SingleOrDefault(
-            element => element.Name.LocalName == "VisualState"
-                && element.Attribute(x + "Name")?.Value == "Selected"));
+            .Single(element => element.Name.LocalName == "ControlTemplate");
+        Assert.NotNull(template.Descendants().SingleOrDefault(
+            element => element.Name.LocalName == "ListViewItemPresenter"));
+        Assert.DoesNotContain(template.Descendants(), element =>
+            element.Name.LocalName == "VisualStateManager");
     }
 
     [Fact]
@@ -81,39 +77,140 @@ public sealed class XamlResourceConfigurationTests
     }
 
     [Fact]
-    public void History_list_resets_and_applies_selection_visual_states()
+    public void Settings_window_keeps_fixed_tabs_without_add_or_close_buttons()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "SettingsWindow.xaml");
+        XDocument document = XDocument.Load(path);
+
+        XElement tabView = document.Descendants()
+            .Single(element => element.Name.LocalName == "TabView");
+        XElement[] tabs = tabView.Elements()
+            .Where(element => element.Name.LocalName == "TabViewItem")
+            .ToArray();
+
+        Assert.Equal("False", tabView.Attribute("IsAddTabButtonVisible")?.Value);
+        Assert.Equal(2, tabs.Length);
+        Assert.All(tabs, tab => Assert.Equal("False", tab.Attribute("IsClosable")?.Value));
+    }
+
+    [Fact]
+    public void History_list_uses_the_system_focus_visual_on_the_native_presenter()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");
+        XDocument document = XDocument.Load(path);
+        XElement list = document
+            .Descendants()
+            .Single(element => element.Name.LocalName == "ListView");
+        XElement style = list
+            .Descendants()
+            .Single(element => element.Name.LocalName == "Style");
+        XElement presenter = list
+            .Descendants()
+            .Single(element => element.Name.LocalName == "ListViewItemPresenter");
+
+        Assert.Equal(
+            "True",
+            style.Descendants()
+                .Single(element => element.Name.LocalName == "Setter"
+                    && element.Attribute("Property")?.Value == "UseSystemFocusVisuals")
+                .Attribute("Value")?.Value);
+        Assert.Equal(
+            "1",
+            style.Descendants()
+                .Single(element => element.Name.LocalName == "Setter"
+                    && element.Attribute("Property")?.Value == "FocusVisualMargin")
+                .Attribute("Value")?.Value);
+        Assert.Equal(
+            "2",
+            style.Descendants()
+                .Single(element => element.Name.LocalName == "Setter"
+                    && element.Attribute("Property")?.Value == "FocusVisualPrimaryThickness")
+                .Attribute("Value")?.Value);
+        Assert.Equal(
+            "1",
+            style.Descendants()
+                .Single(element => element.Name.LocalName == "Setter"
+                    && element.Attribute("Property")?.Value == "FocusVisualSecondaryThickness")
+                .Attribute("Value")?.Value);
+
+        Assert.Equal("Transparent", presenter.Attribute("SelectedBackground")?.Value);
+        Assert.Equal("Transparent", presenter.Attribute("SelectedPointerOverBackground")?.Value);
+        Assert.Equal("Transparent", presenter.Attribute("SelectedPressedBackground")?.Value);
+        Assert.Equal("Transparent", presenter.Attribute("SelectedBorderBrush")?.Value);
+        Assert.Equal("0", presenter.Attribute("SelectedBorderThickness")?.Value);
+        Assert.Equal("False", presenter.Attribute("SelectionCheckMarkVisualEnabled")?.Value);
+        Assert.Equal("False", presenter.Attribute("SelectionIndicatorVisualEnabled")?.Value);
+        Assert.Equal(
+            "{TemplateBinding FocusVisualPrimaryBrush}",
+            presenter.Attribute("FocusVisualPrimaryBrush")?.Value);
+        Assert.Equal(
+            "{TemplateBinding FocusVisualSecondaryBrush}",
+            presenter.Attribute("FocusVisualSecondaryBrush")?.Value);
+        Assert.Equal(
+            "{ThemeResource ListViewItemFocusBorderBrush}",
+            presenter.Attribute("FocusBorderBrush")?.Value);
+        Assert.Equal(
+            "{ThemeResource ListViewItemFocusSecondaryBorderBrush}",
+            presenter.Attribute("FocusSecondaryBorderBrush")?.Value);
+    }
+
+    [Fact]
+    public void Show_panel_focuses_the_first_history_item_after_refresh()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml.cs");
+        string source = File.ReadAllText(path);
+        int showPanelStart = source.IndexOf("public void ShowPanel()", StringComparison.Ordinal);
+        int hidePanelStart = source.IndexOf("public void HidePanel()", showPanelStart);
+
+        Assert.True(showPanelStart >= 0);
+        Assert.True(hidePanelStart > showPanelStart);
+        string showPanel = source[showPanelStart..hidePanelStart];
+
+        Assert.Contains("RefreshAsync", showPanel);
+        Assert.Contains("FocusSelectedHistoryItem", showPanel);
+        Assert.DoesNotContain("SearchBox.Focus", showPanel);
+    }
+
+    [Fact]
+    public void History_load_error_uses_a_reserved_row_above_the_footer()
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");
         XDocument document = XDocument.Load(path);
         XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-        XElement list = document
-            .Descendants()
-            .Single(element => element.Name.LocalName == "ListView");
-        XElement unselected = list
-            .Descendants()
-            .Single(element => element.Name.LocalName == "VisualState"
-                && element.Attribute(x + "Name")?.Value == "Unselected");
-        XElement selected = list
-            .Descendants()
-            .Single(element => element.Name.LocalName == "VisualState"
-                && element.Attribute(x + "Name")?.Value == "Selected");
 
-        Assert.Contains(unselected.Descendants(), element =>
-            element.Name.LocalName == "Setter"
-            && element.Attribute("Target")?.Value == "SelectionRoot.Background"
-            && element.Attribute("Value")?.Value == "Transparent");
-        Assert.Contains(unselected.Descendants(), element =>
-            element.Name.LocalName == "Setter"
-            && element.Attribute("Target")?.Value == "SelectionRoot.BorderBrush"
-            && element.Attribute("Value")?.Value == "Transparent");
-        Assert.Contains(selected.Descendants(), element =>
-            element.Name.LocalName == "Setter"
-            && element.Attribute("Target")?.Value == "SelectionRoot.Background"
-            && element.Attribute("Value")?.Value == "{ThemeResource SubtleFillColorSecondaryBrush}");
-        Assert.Contains(selected.Descendants(), element =>
-            element.Name.LocalName == "Setter"
-            && element.Attribute("Target")?.Value == "SelectionRoot.BorderBrush"
-            && element.Attribute("Value")?.Value == "{ThemeResource AccentFillColorDefaultBrush}");
+        XElement errorPanel = document.Descendants().Single(
+            element => element.Attribute(x + "Name")?.Value == "HistoryErrorPanel");
+        XElement footer = document.Descendants().Single(
+            element => element.Attribute("Text")?.Value == "本机历史").Parent!;
+        XElement errorRow = errorPanel.Parent!;
+
+        Assert.Equal("3", errorRow.Attribute("Grid.Row")?.Value);
+        Assert.Equal(
+            "{Binding HasErrorMessage, Converter={StaticResource BooleanVisibilityConverter}}",
+            errorPanel.Attribute("Visibility")?.Value);
+        Assert.Equal("4", footer.Attribute("Grid.Row")?.Value);
+        Assert.Equal("WrapWholeWords", errorPanel.Descendants()
+            .Single(element => element.Attribute("Text")?.Value == "{Binding ErrorMessage}")
+            .Attribute("TextWrapping")?.Value);
+    }
+
+    [Fact]
+    public void History_card_spacing_lives_outside_the_selected_surface()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml");
+        XDocument document = XDocument.Load(path);
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+
+        XElement template = document.Descendants().Single(
+            element => element.Attribute(x + "Key")?.Value == "ClipboardItemTemplate");
+        XElement card = template.Elements().Single(element => element.Name.LocalName == "Border");
+        XElement list = document.Descendants().Single(element => element.Name.LocalName == "ListView");
+        XElement marginSetter = list.Descendants().Single(
+            element => element.Name.LocalName == "Setter"
+                && element.Attribute("Property")?.Value == "Margin");
+
+        Assert.Equal("0", card.Attribute("Margin")?.Value);
+        Assert.Equal("0,0,0,8", marginSetter.Attribute("Value")?.Value);
     }
 
     [Fact]

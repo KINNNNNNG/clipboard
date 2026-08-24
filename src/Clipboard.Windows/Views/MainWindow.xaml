@@ -14,7 +14,7 @@
             <local:BooleanVisibilityConverter x:Key="BooleanVisibilityConverter" />
             <DataTemplate x:Key="ClipboardItemTemplate">
                 <Border
-                    Margin="0,0,0,8"
+                    Margin="0"
                     Padding="10,9,8,8"
                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
@@ -159,6 +159,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Grid Margin="0,0,0,10">
@@ -260,51 +261,48 @@
                 <ListView.ItemContainerStyle>
                     <Style TargetType="ListViewItem">
                         <Setter Property="Padding" Value="0" />
-                        <Setter Property="Margin" Value="0" />
+                        <Setter Property="Margin" Value="0,0,0,8" />
                         <Setter Property="Background" Value="Transparent" />
                         <Setter Property="BorderThickness" Value="0" />
                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                         <Setter Property="VerticalContentAlignment" Value="Top" />
+                        <Setter Property="UseSystemFocusVisuals" Value="True" />
+                        <Setter Property="FocusVisualMargin" Value="1" />
+                        <Setter Property="FocusVisualPrimaryBrush" Value="{ThemeResource ListViewItemFocusVisualPrimaryBrush}" />
+                        <Setter Property="FocusVisualPrimaryThickness" Value="2" />
+                        <Setter Property="FocusVisualSecondaryBrush" Value="{ThemeResource ListViewItemFocusVisualSecondaryBrush}" />
+                        <Setter Property="FocusVisualSecondaryThickness" Value="1" />
                         <Setter Property="Template">
                             <Setter.Value>
                                 <ControlTemplate TargetType="ListViewItem">
-                                    <Grid
-                                        x:Name="SelectionRoot"
-                                        Padding="2"
-                                        Background="Transparent"
-                                        BorderBrush="Transparent"
-                                        BorderThickness="2"
-                                        CornerRadius="8">
-                                        <VisualStateManager.VisualStateGroups>
-                                            <VisualStateGroup x:Name="SelectionStates">
-                                                <VisualState x:Name="Unselected">
-                                                    <VisualState.Setters>
-                                                        <Setter
-                                                            Target="SelectionRoot.Background"
-                                                            Value="Transparent" />
-                                                        <Setter
-                                                            Target="SelectionRoot.BorderBrush"
-                                                            Value="Transparent" />
-                                                    </VisualState.Setters>
-                                                </VisualState>
-                                                <VisualState x:Name="Selected">
-                                                    <VisualState.Setters>
-                                                        <Setter
-                                                            Target="SelectionRoot.Background"
-                                                            Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
-                                                        <Setter
-                                                            Target="SelectionRoot.BorderBrush"
-                                                            Value="{ThemeResource AccentFillColorDefaultBrush}" />
-                                                    </VisualState.Setters>
-                                                </VisualState>
-                                            </VisualStateGroup>
-                                        </VisualStateManager.VisualStateGroups>
-                                        <ContentPresenter
-                                            Content="{TemplateBinding Content}"
-                                            ContentTemplate="{TemplateBinding ContentTemplate}"
-                                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
-                                    </Grid>
+                                    <ListViewItemPresenter
+                                        x:Name="SelectionPresenter"
+                                        ContentMargin="{TemplateBinding Padding}"
+                                        ContentTransitions="{TemplateBinding ContentTransitions}"
+                                        Control.IsTemplateFocusTarget="True"
+                                        CornerRadius="8"
+                                        FocusVisualMargin="{TemplateBinding FocusVisualMargin}"
+                                        FocusVisualPrimaryBrush="{TemplateBinding FocusVisualPrimaryBrush}"
+                                        FocusVisualPrimaryThickness="{TemplateBinding FocusVisualPrimaryThickness}"
+                                        FocusVisualSecondaryBrush="{TemplateBinding FocusVisualSecondaryBrush}"
+                                        FocusVisualSecondaryThickness="{TemplateBinding FocusVisualSecondaryThickness}"
+                                        FocusBorderBrush="{ThemeResource ListViewItemFocusBorderBrush}"
+                                        FocusSecondaryBorderBrush="{ThemeResource ListViewItemFocusSecondaryBorderBrush}"
+                                        HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                        PointerOverBackground="Transparent"
+                                        PressedBackground="{ThemeResource AccentFillColorTertiaryBrush}"
+                                        SelectedBackground="Transparent"
+                                        SelectedBorderBrush="Transparent"
+                                        SelectedBorderThickness="0"
+                                        SelectedDisabledBackground="Transparent"
+                                        SelectedDisabledBorderBrush="Transparent"
+                                        SelectedPointerOverBackground="Transparent"
+                                        SelectedPointerOverBorderBrush="Transparent"
+                                        SelectedPressedBackground="Transparent"
+                                        SelectedPressedBorderBrush="Transparent"
+                                        SelectionCheckMarkVisualEnabled="False"
+                                        SelectionIndicatorVisualEnabled="False"
+                                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
                                 </ControlTemplate>
                             </Setter.Value>
                         </Setter>
@@ -325,20 +323,40 @@
                 VerticalAlignment="Center"
                 IsActive="{Binding IsLoading}"
                 Visibility="{Binding IsLoading, Converter={StaticResource BooleanVisibilityConverter}}" />
-            <TextBlock
-                HorizontalAlignment="Center"
-                VerticalAlignment="Top"
-                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                Text="{Binding QueryError}" />
-            <TextBlock
-                HorizontalAlignment="Center"
-                VerticalAlignment="Bottom"
-                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                Text="{Binding ErrorMessage}" />
         </Grid>
 
+        <StackPanel Grid.Row="3" Margin="0,6,0,0" Spacing="4">
+            <Border
+                x:Name="QueryErrorPanel"
+                Padding="8,6"
+                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                BorderBrush="{ThemeResource SystemFillColorCriticalBrush}"
+                BorderThickness="1"
+                CornerRadius="6"
+                Visibility="{Binding HasQueryError, Converter={StaticResource BooleanVisibilityConverter}}">
+                <TextBlock
+                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                    Text="{Binding QueryError}"
+                    TextWrapping="WrapWholeWords" />
+            </Border>
+            <Border
+                x:Name="HistoryErrorPanel"
+                Padding="8,6"
+                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                BorderBrush="{ThemeResource SystemFillColorCriticalBrush}"
+                BorderThickness="1"
+                CornerRadius="6"
+                Visibility="{Binding HasErrorMessage, Converter={StaticResource BooleanVisibilityConverter}}">
+                <TextBlock
+                    MaxLines="2"
+                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                    Text="{Binding ErrorMessage}"
+                    TextWrapping="WrapWholeWords" />
+            </Border>
+        </StackPanel>
+
         <StackPanel
-            Grid.Row="3"
+            Grid.Row="4"
             Margin="0,8,0,0"
             Orientation="Horizontal"
             Spacing="8">

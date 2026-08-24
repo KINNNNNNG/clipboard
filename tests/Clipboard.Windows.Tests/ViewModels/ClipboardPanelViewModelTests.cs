@@ -93,6 +93,26 @@ public sealed class ClipboardPanelViewModelTests
     }
 
     [Fact]
+    public async Task Transient_core_failure_retries_history_load_before_showing_an_error()
+    {
+        int attempts = 0;
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => ++attempts == 1
+                ? Task.FromException<SearchResponseDto>(
+                    new ClipboardCoreException(CoreStatus.CoreError))
+                : Task.FromResult(Response(TextItem("recovered"))),
+        };
+        var viewModel = new ClipboardPanelViewModel(core, new FakePasteService());
+
+        await viewModel.RefreshAsync();
+
+        Assert.Equal(2, attempts);
+        Assert.Equal("recovered", Assert.Single(viewModel.Items).Preview);
+        Assert.False(viewModel.HasErrorMessage);
+    }
+
+    [Fact]
     public async Task Combined_filters_are_forwarded_to_the_rust_core()
     {
         var core = new FakePanelCore
@@ -163,9 +183,12 @@ public sealed class ClipboardPanelViewModelTests
     {
         var first = TextItem("first");
         var second = TextItem("second");
+        int searches = 0;
         var core = new FakePanelCore
         {
-            Handler = (_, _) => Task.FromResult(Response(first, second)),
+            Handler = (_, _) => Task.FromResult(++searches == 1
+                ? Response(first, second)
+                : Response(second, first)),
         };
         var paste = new FakePasteService();
         var viewModel = new ClipboardPanelViewModel(core, paste);
@@ -177,11 +200,36 @@ public sealed class ClipboardPanelViewModelTests
         PasteResult? result = await viewModel.PasteSelectedAsync(new nint(42));
         viewModel.HandleEscape();
 
-        Assert.Equal(1, viewModel.SelectedIndex);
+        Assert.Equal(0, viewModel.SelectedIndex);
+        Assert.Equal(second.Id, viewModel.Items[0].Id);
         Assert.Equal(second.Id, paste.LastItem?.Id);
         Assert.Equal(new nint(42), paste.LastOriginalWindow);
         Assert.Equal(PasteResultKind.Pasted, result?.Kind);
         Assert.Equal(1, closeRequests);
+    }
+
+    [Fact]
+    public async Task Pasting_a_selected_item_refreshes_it_to_the_top_of_history()
+    {
+        ClipboardItemDto first = TextItem("first");
+        ClipboardItemDto second = TextItem("second");
+        int searches = 0;
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(++searches == 1
+                ? Response(first, second)
+                : Response(second, first)),
+        };
+        var viewModel = new ClipboardPanelViewModel(core, new FakePasteService());
+        await viewModel.RefreshAsync();
+        viewModel.SelectIndex(1);
+
+        await viewModel.PasteSelectedAsync(new nint(42));
+
+        Assert.Equal(second.Id, viewModel.Items[0].Id);
+        Assert.Equal(0, viewModel.SelectedIndex);
+        Assert.Equal(2, core.Requests.Count);
+        Assert.Equal(second.Id, Assert.Single(core.MarkUsedRequests).ItemId);
     }
 
     [Fact]
@@ -435,6 +483,8 @@ public sealed class ClipboardPanelViewModelTests
 
         public List<SetFavoriteRequestDto> FavoriteRequests { get; } = [];
 
+        public List<MarkUsedRequestDto> MarkUsedRequests { get; } = [];
+
         public List<(Guid ItemId, ulong MaxBytes)> CacheRequests { get; } = [];
 
         public int UncacheCalls { get; private set; }
@@ -456,6 +506,14 @@ public sealed class ClipboardPanelViewModelTests
             CancellationToken cancellationToken = default)
         {
             FavoriteRequests.Add(request);
+            return Task.FromResult(new MutationResponseDto(request.ItemId));
+        }
+
+        public Task<MutationResponseDto> MarkUsedAsync(
+            MarkUsedRequestDto request,
+            CancellationToken cancellationToken = default)
+        {
+            MarkUsedRequests.Add(request);
             return Task.FromResult(new MutationResponseDto(request.ItemId));
         }
 

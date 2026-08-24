@@ -105,6 +105,14 @@ internal sealed class ClipboardCoreClient : IDisposable,
             request,
             cancellationToken);
 
+    public Task<MutationResponseDto> MarkUsedAsync(
+        MarkUsedRequestDto request,
+        CancellationToken cancellationToken = default) =>
+        ExecuteCommandAsync<MutationResponseDto, MarkUsedRequestDto>(
+            "mark_used",
+            request,
+            cancellationToken);
+
     public Task<MutationResponseDto> CacheFileBundleAsync(
         Guid itemId,
         ulong maxBytes,

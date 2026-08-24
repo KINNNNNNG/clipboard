@@ -1,7 +1,7 @@
 use crate::file_cache::FileCache;
 use crate::{
     ApplyRetentionRequest, CacheFileBundle, CoreCommand, CoreError, CoreResponse, DeleteRequest,
-    IngestFileBundle, IngestText, ProbeRemote, ReadFileBundle, SearchFilters, SearchItem,
+    IngestFileBundle, IngestText, MarkUsed, ProbeRemote, ReadFileBundle, SearchFilters, SearchItem,
     SearchRequest, SetFavorite, SyncDirectory, SyncDirectoryResponse, SyncRemote,
     UncacheFileBundle,
 };
@@ -84,6 +84,7 @@ impl CoreService {
             }
             CoreCommand::ProbeRemote(request) => self.probe_remote(request),
             CoreCommand::Search(request) => self.search(request),
+            CoreCommand::MarkUsed(request) => self.mark_used(request),
             CoreCommand::SetFavorite(request) => self.set_favorite(request),
             CoreCommand::Delete(request) => self.delete(request),
             CoreCommand::ClearUnfavorite => self.clear_unfavorite(),
@@ -977,6 +978,13 @@ impl CoreService {
                 self.file_cache.remove_bundle(item.id)?;
             }
         }
+        Ok(CoreResponse::Mutation { item_id: item.id })
+    }
+
+    fn mark_used(&self, request: MarkUsed) -> Result<CoreResponse, CoreError> {
+        let mut item = self.find_item(request.item_id)?;
+        item.last_used_ms = request.used_ms.max(item.last_used_ms.saturating_add(1));
+        self.persist_update(&item)?;
         Ok(CoreResponse::Mutation { item_id: item.id })
     }
 
