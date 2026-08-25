@@ -285,7 +285,7 @@ internal static class Program
         catch (TimeoutException)
         {
             await CancelSearchesAndWaitAsync(core, searchTask);
-            throw new TimeoutException("The FFI search did not finish in time.");
+            throw new FfiSearchTimeoutException();
         }
     }
 
@@ -341,7 +341,7 @@ internal static class Program
             catch (TimeoutException)
             {
                 await CancelSearchesAndWaitAsync(core, triggerTask);
-                throw new TimeoutException("The ViewModel search did not finish in time.");
+                throw new ViewModelSearchTimeoutException();
             }
         }
         finally
@@ -524,7 +524,9 @@ internal static class Program
         {
             ClipboardCoreException core => $"clipboard core status {core.Status}.",
             ArgumentException => "invalid diagnostic arguments.",
-            TimeoutException => "ViewModel search timed out.",
+            FfiSearchTimeoutException => "FFI search timed out.",
+            ViewModelSearchTimeoutException => "ViewModel search timed out.",
+            TimeoutException => "diagnostic search timed out.",
             JsonException => "clipboard core returned invalid JSON.",
             DllNotFoundException => "clipboard FFI library is unavailable.",
             BadImageFormatException => "clipboard FFI library architecture is incompatible.",
@@ -592,6 +594,14 @@ internal static class Program
         public ulong TotalVirtual;
         public ulong AvailableVirtual;
         public ulong AvailableExtendedVirtual;
+    }
+
+    private sealed class FfiSearchTimeoutException : TimeoutException
+    {
+    }
+
+    private sealed class ViewModelSearchTimeoutException : TimeoutException
+    {
     }
 
     private sealed class DiagnosticCoreAdapter : IClipboardPanelCore, IDisposable
