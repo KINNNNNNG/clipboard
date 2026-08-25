@@ -39,6 +39,13 @@ pwsh -NoProfile -File scripts/verify-windows-client.ps1
 
 人工验收还应覆盖：记事本、Edge、Office 和 VS Code 的文本/图片捕获和粘贴；资源管理器复制单个/多个文件及文件夹后显示 Fluent 图标和“共 N 项”；来源应用显示正常软件名；上下键高亮并自动滚动；路径已删除时显示“原路径不可用”且不隐藏面板、不发送 `Ctrl+V`；`Win+V` 接管失败时备用快捷键；自身写回不产生重复历史；100%/150%/200% DPI 与多显示器边缘；目标窗口已失效时不自动发送 `Ctrl+V`。
 
+受控的 Windows 11 x64 性能环境还应显式运行：
+
+    pwsh -NoProfile -File scripts/measure-history-search.ps1
+    pwsh -NoProfile -File scripts/measure-windows-history-diagnostics.ps1
+
+第一条命令在 10,000 条合成文本历史上执行 Release Rust 搜索门：子串和组合筛选各采样 30 次，P95 都必须不超过 200 ms；10,000 条空查询只报告趋势。第二条命令输出真实 FFI、ViewModel、固定容量图片 LRU 和进程内存趋势，不设置机器相关的内存阈值，也不代表 WinUI ListView 的可见首帧。日常 cargo test 与 scripts/verify-windows-client.ps1 不执行这些性能样本。
+
 ## 文档
 
 - [产品与架构设计](docs/superpowers/specs/2026-07-31-cross-device-clipboard-design.md)
