@@ -1,6 +1,6 @@
 # Clipboard
 
-这是跨设备剪贴板项目。当前已完成 Windows 客户端，以及端到端加密文本同步、WebDAV 和阿里云 OSS 远端适配器。
+这是跨设备剪贴板项目。当前分支已实现 Windows 客户端、端到端加密文本/图片同步、WebDAV 和阿里云 OSS 远端适配器；功能实现和自动验证不等同于发布就绪，真实服务、可见 UI 和跨设备验收状态见 [Clipboard 开发状态](docs/STATUS.md)。
 
 ## 当前能力
 
@@ -24,8 +24,9 @@
 
 - 文件历史的跨设备同步（文件束仍严格 local-only）。
 - macOS 客户端及跨平台同步界面。
+- 已签名的 MSIX 发布包，以及完成后的安装、升级、卸载验收。
 
-这些能力将在后续阶段按 [V1 路线图](docs/superpowers/plans/2026-07-31-clipboard-v1-roadmap.md) 继续实现。
+阶段五尚未完成：真实 WebDAV/OSS 写入、两设备同步、可见 WinUI 焦点/DPI 矩阵、迁移/崩溃恢复和发布工程仍需关闭。优先级和验收边界见 [阶段五发布收尾路线](docs/superpowers/plans/2026-08-25-stage-five-closure-roadmap.md)。
 
 ## 验证
 
@@ -48,7 +49,20 @@ pwsh -NoProfile -File scripts/verify-windows-client.ps1
 
 ## 文档
 
+- [当前开发状态、证据与优先级](docs/STATUS.md)
 - [产品与架构设计](docs/superpowers/specs/2026-07-31-cross-device-clipboard-design.md)
 - [阶段 1 实现计划](docs/superpowers/plans/2026-07-31-clipboard-core-foundation.md)
 - [阶段 2 Windows 客户端计划](docs/superpowers/plans/2026-07-31-clipboard-windows-client.md)
+- [阶段 3 本机文件历史计划](docs/superpowers/plans/2026-08-04-clipboard-local-files.md)
+- [原生 DWM 面板边框计划](docs/superpowers/plans/2026-08-05-native-dwm-panel-border-plan.md)
+- [文件历史卡片与来源名称计划](docs/superpowers/plans/2026-08-05-task4-file-history-ui-plan.md)
+- [方向键选择视觉状态计划](docs/superpowers/plans/2026-08-06-arrow-selection-visual-state.md)
+- [系统文件类型图标计划](docs/superpowers/plans/2026-08-06-system-file-type-icons.md)
+- [阶段 4 同步基础计划](docs/superpowers/plans/2026-08-07-encrypted-sync-foundation.md)
+- [阶段 4 WebDAV、OSS 与同步设置计划](docs/superpowers/plans/2026-08-07-webdav-oss-sync-settings.md)
+- [阶段 4 OSS 诊断与全局日志计划](docs/superpowers/plans/2026-08-07-oss-global-logging.md)
+- [阶段 4 实时同步计划](docs/superpowers/plans/2026-08-07-realtime-sync.md)
+- [阶段 5 发布验证基线](docs/superpowers/plans/2026-08-17-clipboard-release-verification.md)
+- [阶段 5 历史搜索性能门](docs/superpowers/plans/2026-08-24-history-search-performance.md)
+- [阶段 5 发布收尾路线](docs/superpowers/plans/2026-08-25-stage-five-closure-roadmap.md)
 - [V1 总路线图](docs/superpowers/plans/2026-07-31-clipboard-v1-roadmap.md)

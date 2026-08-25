@@ -1,5 +1,7 @@
 # Clipboard V1 Implementation Roadmap
 
+> **状态回填：** 截至 2026-08-25，阶段 1 至阶段 4 的工程交付已在 `codex/phase4-image-sync` 的 `2e4c3f6` 中落地；阶段 5 只完成发布验证基线和搜索性能子批次，不能宣称 V1 已发布。当前证据与未关闭验收见 [Clipboard 开发状态](../../STATUS.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 分阶段交付 Windows 11 原生风格的本地剪贴板历史，并为文本和图片提供端到端加密的 WebDAV/OSS 跨设备同步。
@@ -20,7 +22,7 @@
 4. 端到端加密同步与设备配对。
 5. 系统级验证、性能、安装包和发布加固。
 
-每个阶段完成后，依据真实代码结构编写下一份详细计划。不得在前一阶段质量门未通过时并行推进依赖它的后续阶段。
+上面的顺序是历史实施顺序。后续实际计划、代码和验收以本页修正后的链接及 [Clipboard 开发状态](../../STATUS.md) 为准；阶段五的真实环境工作不因阶段四的 fixture 通过而自动关闭。
 
 ## 阶段 1：共享内核与 FFI 基座
 
@@ -37,6 +39,8 @@
 
 **质量门：** `scripts/test-core.ps1` 全部通过，错误密钥不能打开数据库，`file_bundle` 无法进入 outbox，C# FFI 冒烟程序可以写入并搜索文本记录。
 
+**当前状态：** 已验证实现。阶段完成检查中“当前工作区干净”只反映提交时刻，不是产品能力门。
+
 ## 阶段 2：Windows 本地文本/图片客户端
 
 **计划文件：** `docs/superpowers/plans/2026-07-31-clipboard-windows-client.md`
@@ -52,9 +56,11 @@
 
 **质量门：** 在记事本、Edge、Office 和 VS Code 中完成文本/图片捕获、搜索与立即粘贴；`Win+V` 失败时能降级到备用快捷键；不会生成自身写回的重复记录。
 
+**当前状态：** 工程和自动验证已完成；可见 WinUI、DPI、多显示器和高对比度人工矩阵仍转入阶段五。
+
 ## 阶段 3：本机文件与文件夹历史
 
-**计划文件：** `docs/superpowers/plans/2026-07-31-clipboard-local-files.md`
+**计划文件：** `docs/superpowers/plans/2026-08-04-clipboard-local-files.md`
 
 该计划在阶段 2 完成后编写，覆盖：
 
@@ -68,9 +74,16 @@
 
 **质量门：** 原路径有效时可回放；收藏后删除原文件仍可恢复；未收藏且路径失效时明确禁用；另一设备和远端存储均看不到文件记录。
 
+**当前状态：** 工程和 local-only 自动回归已完成；资源管理器真实回放与跨设备/远端负向验收仍转入阶段五。
+
 ## 阶段 4：加密同步与设备配对
 
-**计划文件：** `docs/superpowers/plans/2026-07-31-clipboard-encrypted-sync.md`
+**计划文件：**
+
+- `docs/superpowers/plans/2026-08-07-encrypted-sync-foundation.md`
+- `docs/superpowers/plans/2026-08-07-webdav-oss-sync-settings.md`
+- `docs/superpowers/plans/2026-08-07-oss-global-logging.md`
+- `docs/superpowers/plans/2026-08-07-realtime-sync.md`
 
 该计划在阶段 3 完成后编写，覆盖：
 
@@ -85,9 +98,15 @@
 
 **质量门：** 云端只出现协议头和密文对象；错误密钥与被篡改对象无法进入历史；网络故障不影响本地能力；文件记录始终被同步入口拒绝。
 
+**当前状态：** 工程、fixture 和脱敏诊断已完成；真实 WebDAV“连接成功、立即同步 403”、真实 OSS、两设备离线冲突和图片同步仍是阶段五未关闭验收。
+
 ## 阶段 5：发布加固
 
-**计划文件：** `docs/superpowers/plans/2026-07-31-clipboard-release-hardening.md`
+**计划文件：**
+
+- `docs/superpowers/plans/2026-08-17-clipboard-release-verification.md`
+- `docs/superpowers/plans/2026-08-24-history-search-performance.md`
+- `docs/superpowers/plans/2026-08-25-stage-five-closure-roadmap.md`
 
 该计划在阶段 4 完成后编写，覆盖：
 
@@ -100,6 +119,8 @@
 - 用户文档、恢复码警告、隐私边界和已知限制。
 
 **质量门：** 规格第 11 至 14 节的所有验收项有可追溯证据，签名发布包不包含证书私钥、测试凭据、剪贴板样本或明文密钥。
+
+**当前状态：** 部分完成。发布验证基线、双实例 smoke、10,000 条搜索门和无界面 Windows 诊断已有记录；可见 UI、真实远端、可靠性、MSIX 和最终签字尚未关闭。
 
 ## 跨阶段规则
 
@@ -132,4 +153,4 @@
 
 ## 计划完成条件
 
-只有五个阶段的质量门全部通过，第一版才可以宣称完成。阶段 1 完成不等同于应用可用；阶段 2 完成只代表本地文本/图片版本可用；阶段 3 完成才包含本机文件历史；阶段 4 完成才包含跨设备同步；阶段 5 完成后才能交付安装包。
+只有五个阶段的质量门全部通过，第一版才可以宣称完成。阶段 1 完成不等同于应用可用；阶段 2 完成只代表本地文本/图片版本可用；阶段 3 完成才包含本机文件历史；阶段 4 的工程完成不等同于真实跨设备服务验收；阶段 5 完成后才能交付安装包。目前尚未达到这一条件。

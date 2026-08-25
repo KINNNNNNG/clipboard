@@ -1,5 +1,9 @@
 # Windows 系统文件类型图标实施计划
 
+> **回填状态：** 截至 2026-08-25，已按 `codex/phase4-image-sync` 的 `2e4c3f6` 回填。
+> `[x]` 表示该步骤的最终交付结果可由当前代码、提交或自动测试证明；不重新声称历史红灯命令的原始输出仍可复现。
+> `[ ]` 仅保留给尚未完成的资源管理器真实图标、滚动、DPI 与隐私人工验收；当前总状态见 [Clipboard 开发状态](../../STATUS.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让文件历史卡片按 Windows 文件关联显示真实系统文件类型图标，同时保持面板立即出现、列表虚拟化安全、文件路径不出现在搜索和同步边界内。
@@ -35,7 +39,7 @@
 - Modify: `src/Clipboard.Windows/ViewModels/ClipboardItemViewModel.cs:62-69`
 - Test: `tests/Clipboard.Windows.Tests/ViewModels/ClipboardDisplayFormatterTests.cs`
 
-- [ ] **Step 1: 写失败测试。** 在现有文件卡片测试后加入以下理论测试，确保文件名只影响缓存键，不把路径写入任何显示属性：
+- [x] **Step 1: 写失败测试。** 在现有文件卡片测试后加入以下理论测试，确保文件名只影响缓存键，不把路径写入任何显示属性：
 
 ```csharp
 [Theory]
@@ -60,13 +64,13 @@ public void File_icon_cache_key_normalizes_only_the_file_type(
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败。**
+- [x] **Step 2: 运行测试确认失败。**
 
 Run: `dotnet test tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj --no-restore --filter FullyQualifiedName~File_icon_cache_key_normalizes_only_the_file_type`
 
 Expected: FAIL，因为 `FileIconCacheKey` 尚不存在。
 
-- [ ] **Step 3: 实现最小逻辑。** 在 `ClipboardItemViewModel` 增加：
+- [x] **Step 3: 实现最小逻辑。** 在 `ClipboardItemViewModel` 增加：
 
 ```csharp
 public string FileIconCacheKey => BuildFileIconCacheKey(
@@ -95,13 +99,13 @@ internal static string BuildFileIconCacheKey(string? representativeKind, string?
 
 `Path.GetFileName` 只处理代表名称，返回值永远不会传给 Shell；Shell 层只接受本计划定义的 `file:*` 键。
 
-- [ ] **Step 4: 运行测试确认通过。**
+- [x] **Step 4: 运行测试确认通过。**
 
 Run: `dotnet test tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj --no-restore --filter "FullyQualifiedName~File_icon_cache_key_normalizes_only_the_file_type|FullyQualifiedName~File_bundle_card_uses_fluent_summary"`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交。**
+- [x] **Step 5: 提交。**
 
 ```powershell
 git add src/Clipboard.Windows/ViewModels/ClipboardItemViewModel.cs tests/Clipboard.Windows.Tests/ViewModels/ClipboardDisplayFormatterTests.cs
@@ -115,7 +119,7 @@ git commit -m "feat(windows): derive file icon cache keys"
 - Create: `src/Clipboard.Windows/Views/FileIconCache.cs`
 - Test: `tests/Clipboard.Windows.Tests/Views/FileIconCacheTests.cs`
 
-- [ ] **Step 1: 写失败测试。** 新建测试，使用手动时间提供器和计数器验证四个契约：
+- [x] **Step 1: 写失败测试。** 新建测试，使用手动时间提供器和计数器验证四个契约：
 
 ```csharp
 [Fact]
@@ -187,13 +191,13 @@ private sealed class ManualTimeProvider(DateTimeOffset now) : TimeProvider
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败。**
+- [x] **Step 2: 运行测试确认失败。**
 
 Run: `dotnet test tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj --no-restore --filter FullyQualifiedName~FileIconCacheTests`
 
 Expected: 编译失败，因为 `FileIconCache<T>` 尚不存在。
 
-- [ ] **Step 3: 实现缓存。** 新建 `FileIconCache<T>`，限定只从 UI 线程调用；缓存值为 `(T? Value, DateTimeOffset RetryAfter)`，成功值使用 `DateTimeOffset.MaxValue`，失败值使用当前时间加失败 TTL。通过 `TaskCompletionSource<T?>` 先放入 `_inFlight` 再启动 loader，保证同步完成的 loader 也不会留下重复请求：
+- [x] **Step 3: 实现缓存。** 新建 `FileIconCache<T>`，限定只从 UI 线程调用；缓存值为 `(T? Value, DateTimeOffset RetryAfter)`，成功值使用 `DateTimeOffset.MaxValue`，失败值使用当前时间加失败 TTL。通过 `TaskCompletionSource<T?>` 先放入 `_inFlight` 再启动 loader，保证同步完成的 loader 也不会留下重复请求：
 
 ```csharp
 namespace Clipboard.Windows.Views;
@@ -260,13 +264,13 @@ internal sealed class FileIconCache<T> where T : class
 }
 ```
 
-- [ ] **Step 4: 运行缓存测试。**
+- [x] **Step 4: 运行缓存测试。**
 
 Run: `dotnet test tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj --no-restore --filter FullyQualifiedName~FileIconCacheTests`
 
 Expected: PASS，且异常、失败结果都不向调用方抛出。
 
-- [ ] **Step 5: 提交。**
+- [x] **Step 5: 提交。**
 
 ```powershell
 git add src/Clipboard.Windows/Views/FileIconCache.cs tests/Clipboard.Windows.Tests/Views/FileIconCacheTests.cs
@@ -281,7 +285,7 @@ git commit -m "feat(windows): cache file type icon loads"
 - Create: `src/Clipboard.Windows/Platform/ShellIconNativeApi.cs`
 - Test: `tests/Clipboard.Windows.Tests/Platform/FileTypeIconProviderTests.cs`
 
-- [ ] **Step 1: 写失败测试。** 使用假 Native API 验证提供器绝不把代表名称当真实路径传入 Shell，并在成功、空图标和像素转换异常时释放 `HICON`：
+- [x] **Step 1: 写失败测试。** 使用假 Native API 验证提供器绝不把代表名称当真实路径传入 Shell，并在成功、空图标和像素转换异常时释放 `HICON`：
 
 ```csharp
 [Fact]
@@ -364,13 +368,13 @@ private sealed class FakeShellIconNativeApi : IShellIconNativeApi
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败。**
+- [x] **Step 2: 运行测试确认失败。**
 
 Run: `dotnet test tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj --no-restore --filter FullyQualifiedName~FileTypeIconProviderTests`
 
 Expected: 编译失败，因为提供器和像素类型尚不存在。
 
-- [ ] **Step 3: 添加平台抽象和提供器。** `FileTypeIconProvider.cs` 定义：
+- [x] **Step 3: 添加平台抽象和提供器。** `FileTypeIconProvider.cs` 定义：
 
 ```csharp
 namespace Clipboard.Windows.Platform;
@@ -441,7 +445,7 @@ internal sealed class ShellFileTypeIconProvider
 }
 ```
 
-- [ ] **Step 4: 实现真实 Native API。** `ShellIconNativeApi.cs` 使用 `SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES` 调用 `SHGetFileInfoW`；`SHFILEINFO.hIcon` 转换流程固定为：获取屏幕 DC、创建兼容 DC、创建宽高 32、负高度、32bpp、`BI_RGB` 的 top-down DIB、选入 DIB、清零像素、`DrawIconEx(..., DI_NORMAL)`、复制 `32 * 32 * 4` 字节、恢复旧对象，然后在 `finally` 按顺序 `DeleteObject`、`DeleteDC`、`ReleaseDC`。`GetFileIcon` 返回空句柄时不执行转换。所有 P/Invoke 放在该文件的 `ShellIconNativeApi` 内，不污染已有 `Platform/NativeMethods.cs`。
+- [x] **Step 4: 实现真实 Native API。** `ShellIconNativeApi.cs` 使用 `SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES` 调用 `SHGetFileInfoW`；`SHFILEINFO.hIcon` 转换流程固定为：获取屏幕 DC、创建兼容 DC、创建宽高 32、负高度、32bpp、`BI_RGB` 的 top-down DIB、选入 DIB、清零像素、`DrawIconEx(..., DI_NORMAL)`、复制 `32 * 32 * 4` 字节、恢复旧对象，然后在 `finally` 按顺序 `DeleteObject`、`DeleteDC`、`ReleaseDC`。`GetFileIcon` 返回空句柄时不执行转换。所有 P/Invoke 放在该文件的 `ShellIconNativeApi` 内，不污染已有 `Platform/NativeMethods.cs`。
 
 实现必须包含以下关键常量和结构，避免依赖 `System.Drawing`：
 
@@ -488,7 +492,7 @@ private struct BITMAPINFO
 
 使用 `unsafe` 只用于把 DIB 内存清零；`Clipboard.Windows.csproj` 已允许 unsafe。`DrawIconEx` 或任一 GDI 创建失败时抛出普通异常，由上层提供器转为降级 glyph，同时 `finally` 释放所有已经创建的句柄。
 
-- [ ] **Step 5: 运行提供器测试和纯 Windows 像素冒烟。**
+- [x] **Step 5: 运行提供器测试和纯 Windows 像素冒烟。**
 
 Run: `dotnet test tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj --no-restore --filter FullyQualifiedName~FileTypeIconProviderTests`
 
@@ -496,7 +500,7 @@ Expected: PASS，虚拟名称只出现 `placeholder`，没有代表文件路径�
 
 同一条命令还会执行 `Production_native_api_returns_a_32_pixel_icon_or_a_safe_null_result`。该测试不写数据库、不读真实文件；若 Shell 没有 `.txt` 图标关联，允许返回 null，但进程不能崩溃。
 
-- [ ] **Step 6: 提交。**
+- [x] **Step 6: 提交。**
 
 ```powershell
 git add src/Clipboard.Windows/Platform/FileTypeIconProvider.cs src/Clipboard.Windows/Platform/ShellIconNativeApi.cs tests/Clipboard.Windows.Tests/Platform/FileTypeIconProviderTests.cs
@@ -514,7 +518,7 @@ git commit -m "feat(windows): load system file type icons"
 - Test: `tests/Clipboard.Windows.Tests/Views/XamlResourceConfigurationTests.cs`
 - Test: `tests/Clipboard.Windows.Tests/Views/FileIconLoadTrackerTests.cs`
 
-- [ ] **Step 1: 写失败测试。** 新建 `FileIconLoadTrackerTests`，覆盖相同扩展名但不同卡片 ID 的回收场景：
+- [x] **Step 1: 写失败测试。** 新建 `FileIconLoadTrackerTests`，覆盖相同扩展名但不同卡片 ID 的回收场景：
 
 ```csharp
 [Fact]
@@ -533,15 +537,15 @@ public void Recycled_card_replaces_pending_request_even_when_cache_key_is_same()
 
 在 `XamlResourceConfigurationTests` 增加断言：文件卡片仍保留 `42` 宽高；存在 `FileIconGlyph` 绑定；存在 `FileIcon_Loaded` 和 `FileIcon_DataContextChanged`；系统 Image 固定 `32` 宽高且初始 `Collapsed`。
 
-- [ ] **Step 2: 运行测试确认失败。**
+- [x] **Step 2: 运行测试确认失败。**
 
 Run: `dotnet test tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj --no-restore --filter "FullyQualifiedName~FileIconLoadTrackerTests|FullyQualifiedName~XamlResourceConfigurationTests"`
 
 Expected: 编译或断言失败，因为 tracker、事件和 XAML Image 尚不存在。
 
-- [ ] **Step 3: 实现 tracker 和像素工厂。** `FileIconLoadTracker` 保存 `Guid? ItemId` 与 `string? CacheKey`，提供 `Begin(Guid,string)`、`IsCurrent(Guid,string)`。`SoftwareBitmapSourceFactory.CreateAsync` 使用 `SoftwareBitmap.CreateCopyFromBuffer(pixels.BgraPixels.AsBuffer(), BitmapPixelFormat.Bgra8, pixels.Width, pixels.Height, BitmapAlphaMode.Premultiplied)`，创建 `SoftwareBitmapSource` 后调用 `SetBitmapAsync`，并在 `using` 中释放 `SoftwareBitmap`。
+- [x] **Step 3: 实现 tracker 和像素工厂。** `FileIconLoadTracker` 保存 `Guid? ItemId` 与 `string? CacheKey`，提供 `Begin(Guid,string)`、`IsCurrent(Guid,string)`。`SoftwareBitmapSourceFactory.CreateAsync` 使用 `SoftwareBitmap.CreateCopyFromBuffer(pixels.BgraPixels.AsBuffer(), BitmapPixelFormat.Bgra8, pixels.Width, pixels.Height, BitmapAlphaMode.Premultiplied)`，创建 `SoftwareBitmapSource` 后调用 `SetBitmapAsync`，并在 `using` 中释放 `SoftwareBitmap`。
 
-- [ ] **Step 4: 修改 XAML，保持占位区域稳定。** 把文件图标区域改为：
+- [x] **Step 4: 修改 XAML，保持占位区域稳定。** 把文件图标区域改为：
 
 ```xml
 <Border Width="42" Height="42"
@@ -564,7 +568,7 @@ Expected: 编译或断言失败，因为 tracker、事件和 XAML Image 尚不�
 
 系统 Image 成功时可见、Fluent glyph 隐藏；失败时 Image 保持折叠、glyph 可见。不得改变外层 42 x 42 尺寸。
 
-- [ ] **Step 5: 在 MainWindow 中接入惰性加载。** 增加字段：
+- [x] **Step 5: 在 MainWindow 中接入惰性加载。** 增加字段：
 
 ```csharp
 private readonly FileIconCache<SoftwareBitmapSource> _fileIconCache =
@@ -592,13 +596,13 @@ private static void ApplyFileIcon(Image image, ImageSource? source)
 
 `MainWindow.xaml.cs` 现有图片预览逻辑保持不变；文件图标使用独立的 tracker、缓存和事件，不能复用图片内容缓存的 Guid 键。
 
-- [ ] **Step 6: 运行视图测试。**
+- [x] **Step 6: 运行视图测试。**
 
 Run: `dotnet test tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj --no-restore --filter "FullyQualifiedName~FileIconLoadTrackerTests|FullyQualifiedName~XamlResourceConfigurationTests"`
 
 Expected: PASS。
 
-- [ ] **Step 7: 提交。**
+- [x] **Step 7: 提交。**
 
 ```powershell
 git add src/Clipboard.Windows/Views/FileIconLoadTracker.cs src/Clipboard.Windows/Views/SoftwareBitmapSourceFactory.cs src/Clipboard.Windows/Views/MainWindow.xaml src/Clipboard.Windows/Views/MainWindow.xaml.cs tests/Clipboard.Windows.Tests/Views/FileIconLoadTrackerTests.cs tests/Clipboard.Windows.Tests/Views/XamlResourceConfigurationTests.cs
@@ -611,15 +615,15 @@ git commit -m "feat(windows): render system icons for visible file cards"
 
 - No production file changes unless a test exposes a regression.
 
-- [ ] **Step 1: 检查运行中的客户端。** 构建前执行 `Get-Process Clipboard.Windows -ErrorAction SilentlyContinue`；若进程存在，先通过应用自身退出或正常关闭，确认 `Clipboard.Windows.exe` 和 `clipboard_ffi.dll` 不再被锁定，再开始构建。不得使用强制删除或回滚命令。
+- [x] **Step 1: 检查运行中的客户端。** 构建前执行 `Get-Process Clipboard.Windows -ErrorAction SilentlyContinue`；若进程存在，先通过应用自身退出或正常关闭，确认 `Clipboard.Windows.exe` 和 `clipboard_ffi.dll` 不再被锁定，再开始构建。不得使用强制删除或回滚命令。
 
-- [ ] **Step 2: 运行 Windows 客户端完整验证。**
+- [x] **Step 2: 运行 Windows 客户端完整验证。**
 
 Run: `pwsh -NoProfile -File scripts/verify-windows-client.ps1 -SkipGuiSmoke`
 
 Expected: 工具链、Windows 测试、Rust Core 测试和 x64 构建全部通过。
 
-- [ ] **Step 3: 运行最终 x64 构建。**
+- [x] **Step 3: 运行最终 x64 构建。**
 
 Run: `dotnet build src/Clipboard.Windows/Clipboard.Windows.csproj -c Debug -p:Platform=x64 -p:WindowsAppSDKSelfContained=true --no-restore`
 

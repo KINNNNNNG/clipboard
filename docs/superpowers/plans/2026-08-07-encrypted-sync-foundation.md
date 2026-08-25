@@ -1,5 +1,9 @@
 # 加密同步与设备配对基础实施计划
 
+> **回填状态：** 截至 2026-08-25，已按 `codex/phase4-image-sync` 的 `2e4c3f6` 回填。
+> `[x]` 表示该步骤的最终交付结果可由当前代码、提交或自动测试证明；不重新声称历史红灯命令的原始输出仍可复现。
+> 真实 WebDAV/OSS 与两设备验收不属于本基础批次，转入阶段五；当前总状态见 [Clipboard 开发状态](../../STATUS.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让两个本地 Core 实例通过目录型模拟远端交换端到端加密的文本事件，并提供恢复码、协议拒绝和脱敏诊断。
@@ -36,7 +40,7 @@ crates/clipboard-core/tests/sync_foundation.rs  两设备端到端同步回归
 - Test: `crates/clipboard-sync/tests/recovery_code.rs`
 - Test: `crates/clipboard-sync/tests/diagnostics.rs`
 
-- [ ] **Step 1: 写恢复码与诊断失败测试**
+- [x] **Step 1: 写恢复码与诊断失败测试**
 
 ```rust
 #[test]
@@ -55,13 +59,13 @@ fn local_only_diagnostic_does_not_contain_a_file_path() {
 }
 ```
 
-- [ ] **Step 2: 运行红灯测试**
+- [x] **Step 2: 运行红灯测试**
 
 Run: `cargo test -p clipboard-sync --test recovery_code --test diagnostics`
 
 Expected: FAIL，因为 crate、恢复码 API 和诊断类型尚不存在。
 
-- [ ] **Step 3: 添加 crate 与最小实现**
+- [x] **Step 3: 添加 crate 与最小实现**
 
 在 workspace members 中加入 `crates/clipboard-sync`，crate 依赖 `clipboard-crypto`、`clipboard-domain`、`base64`、`blake3`、`serde`、`thiserror`、`uuid` 和 `zeroize`。定义如下 API：
 
@@ -83,13 +87,13 @@ pub struct NoopSyncDiagnostics;
 
 编码内容为版本、vault ID、主密钥和前 4 字节 BLAKE3 checksum 的 base64url；每 5 字符用 `-` 分组。解码先去除分组符，再验证长度、版本和 checksum。`SyncDiagnostic` 只保留阶段、结果类别、哈希后的 ID、数量、密文长度和耗时；构造 local-only 记录时只接受稳定 item ID，不接受路径字符串。
 
-- [ ] **Step 4: 运行绿灯测试与格式检查**
+- [x] **Step 4: 运行绿灯测试与格式检查**
 
 Run: `cargo fmt --check && cargo test -p clipboard-sync --test recovery_code --test diagnostics`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交恢复码和诊断边界**
+- [x] **Step 5: 提交恢复码和诊断边界**
 
 ```powershell
 git add Cargo.toml crates/clipboard-sync
@@ -105,7 +109,7 @@ git commit -m "feat(sync): add recovery codes and diagnostics"
 - Test: `crates/clipboard-sync/tests/protocol.rs`
 - Test: `crates/clipboard-sync/tests/directory_transport.rs`
 
-- [ ] **Step 1: 写段认证、版本和原子上传失败测试**
+- [x] **Step 1: 写段认证、版本和原子上传失败测试**
 
 ```rust
 #[test]
@@ -123,13 +127,13 @@ fn directory_transport_ignores_pending_uploads_until_rename() {
 }
 ```
 
-- [ ] **Step 2: 运行红灯测试**
+- [x] **Step 2: 运行红灯测试**
 
 Run: `cargo test -p clipboard-sync --test protocol --test directory_transport`
 
 Expected: FAIL，因为段格式和 transport 尚未定义。
 
-- [ ] **Step 3: 实现版本化段与 transport**
+- [x] **Step 3: 实现版本化段与 transport**
 
 定义 `SyncEvent` 的 `TextUpsert { item: ClipboardItem }`、`Favorite { item_id, state }`、`Delete { item_id, state }` 变体；`TryFrom<&ClipboardItem>` 仅接受 `ClipboardContent::Text` 且 `SyncScope::Vault`，其他内容返回 `SyncError::LocalOnlyRejected`。段头为：
 
@@ -144,13 +148,13 @@ pub struct SegmentHeader {
 
 使用 `journal_key.derive_scoped(segment_aad(&header))` 创建 `ObjectCipher`；AAD 严格由版本、vault、设备、段 ID 和 `b"journal"` 构成。`DirectoryTransport::put_segment` 先将密文写到同目录 `{segment}.pending`，`sync_all` 后 rename 为 `{segment}.enc`；`list_segments` 仅返回 `.enc`，并按文件名排序。所有 transport 错误只保留 `SyncError::Transport`，不把路径拼入 Display 文本。
 
-- [ ] **Step 4: 运行绿灯测试**
+- [x] **Step 4: 运行绿灯测试**
 
 Run: `cargo test -p clipboard-sync --test protocol --test directory_transport`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交协议和本地远端**
+- [x] **Step 5: 提交协议和本地远端**
 
 ```powershell
 git add crates/clipboard-sync
@@ -164,7 +168,7 @@ git commit -m "feat(sync): add encrypted directory journal transport"
 - Modify: `crates/clipboard-storage/src/lib.rs`
 - Test: `crates/clipboard-storage/tests/outbox_consumption.rs`
 
-- [ ] **Step 1: 写读取、确认和文件束隔离失败测试**
+- [x] **Step 1: 写读取、确认和文件束隔离失败测试**
 
 ```rust
 #[test]
@@ -185,13 +189,13 @@ fn local_file_bundle_has_no_consumable_outbox_entry_or_serialized_path() {
 }
 ```
 
-- [ ] **Step 2: 运行红灯测试**
+- [x] **Step 2: 运行红灯测试**
 
 Run: `cargo test -p clipboard-storage --test outbox_consumption`
 
 Expected: FAIL，因为 `OutboxEntry`、`pending` 和 `acknowledge` 不存在。
 
-- [ ] **Step 3: 实现最小 outbox 查询 API**
+- [x] **Step 3: 实现最小 outbox 查询 API**
 
 ```rust
 pub struct OutboxEntry { pub id: i64, pub item_id: Uuid, pub event_json: String, pub created_ms: i64 }
@@ -202,13 +206,13 @@ pub fn acknowledge(&self, id: i64) -> Result<bool, OutboxError>;
 
 `pending` 按 `(created_ms, id)` 升序读取，`acknowledge` 只删除指定 ID。不得修改 `enqueue_item` 与数据库 trigger 的 local-only 拒绝；测试同时确认文本 outbox 仍可消费。
 
-- [ ] **Step 4: 运行绿灯测试**
+- [x] **Step 4: 运行绿灯测试**
 
 Run: `cargo test -p clipboard-storage --test outbox_consumption --test local_only_outbox`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交 outbox 消费接口**
+- [x] **Step 5: 提交 outbox 消费接口**
 
 ```powershell
 git add crates/clipboard-storage
@@ -225,7 +229,7 @@ git commit -m "feat(storage): consume pending sync outbox entries"
 - Modify: `crates/clipboard-core/src/service.rs`
 - Create: `crates/clipboard-core/tests/sync_foundation.rs`
 
-- [ ] **Step 1: 写两设备合并、幂等和 local-only 拒绝失败测试**
+- [x] **Step 1: 写两设备合并、幂等和 local-only 拒绝失败测试**
 
 ```rust
 #[test]
@@ -251,13 +255,13 @@ fn malformed_file_bundle_outbox_event_is_rejected_before_transport_and_diagnosti
 }
 ```
 
-- [ ] **Step 2: 运行红灯测试**
+- [x] **Step 2: 运行红灯测试**
 
 Run: `cargo test -p clipboard-core --test sync_foundation`
 
 Expected: FAIL，因为同步命令和入站合并不存在。
 
-- [ ] **Step 3: 添加命令、服务编排和入站合并**
+- [x] **Step 3: 添加命令、服务编排和入站合并**
 
 在 `CoreCommand` 增加：
 
@@ -269,13 +273,13 @@ SyncDirectory(SyncDirectory { remote_path: String, device_id: Uuid })
 
 `CoreError` 增加透明 `Sync` 变体；所有同步命令保持显式调用，不启动线程。对 outbox JSON 反序列化出 `FileBundle` 或 `local_only` 时，记录 `reject_local_only` 诊断、确认并丢弃该错误条目，且不调用 transport。正常数据库约束已阻止真实本地文件记录进入 outbox；测试通过向一个同步文本 item 关联的 outbox 行直接注入 file bundle JSON，验证同步层的第二道拒绝边界。
 
-- [ ] **Step 4: 运行绿灯测试和 Core 回归**
+- [x] **Step 4: 运行绿灯测试和 Core 回归**
 
 Run: `cargo test -p clipboard-core --test sync_foundation && cargo test -p clipboard-core`
 
 Expected: PASS；同步顺序、重复拉取、篡改拒绝和文件束隔离均通过。
 
-- [ ] **Step 5: 提交 Core 同步命令**
+- [x] **Step 5: 提交 Core 同步命令**
 
 ```powershell
 git add crates/clipboard-core crates/clipboard-sync
@@ -291,7 +295,7 @@ git commit -m "feat(core): synchronize encrypted local journals"
 - Test: `crates/clipboard-sync/tests/protocol.rs`
 - Test: `crates/clipboard-core/tests/sync_foundation.rs`
 
-- [ ] **Step 1: 写诊断和远端隐私断言失败测试**
+- [x] **Step 1: 写诊断和远端隐私断言失败测试**
 
 ```rust
 #[test]
@@ -304,17 +308,17 @@ fn remote_files_and_diagnostics_never_contain_clipboard_text_or_file_paths() {
 }
 ```
 
-- [ ] **Step 2: 运行红灯测试**
+- [x] **Step 2: 运行红灯测试**
 
 Run: `cargo test -p clipboard-core --test sync_foundation remote_files_and_diagnostics_never_contain_clipboard_text_or_file_paths`
 
 Expected: FAIL，直到端到端诊断与远端密文断言接入测试助手。
 
-- [ ] **Step 3: 添加验证入口与文档说明**
+- [x] **Step 3: 添加验证入口与文档说明**
 
 `test-core.ps1` 在 workspace 测试后显式运行 `clipboard-sync` 协议、transport、恢复码和诊断测试，以及 `clipboard-core --test sync_foundation`。`verify-windows-client.ps1` 继续调用 `test-core.ps1`，不新增 Windows UI 同步行为。README 标注阶段 4 基础仅支持本地目录模拟远端，不接受 WebDAV/OSS 凭据；文本同步日志为端到端密文，文件束仍严格本地-only。
 
-- [ ] **Step 4: 运行完整验证**
+- [x] **Step 4: 运行完整验证**
 
 Run: `pwsh -NoProfile -File scripts/test-core.ps1`
 
@@ -322,7 +326,7 @@ Run: `pwsh -NoProfile -File scripts/verify-windows-client.ps1 -SkipGuiSmoke`
 
 Expected: 两条命令均以 0 退出；Windows 构建为 0 warnings / 0 errors。
 
-- [ ] **Step 5: 提交验证与文档**
+- [x] **Step 5: 提交验证与文档**
 
 ```powershell
 git add scripts README.md crates/clipboard-core/tests/sync_foundation.rs crates/clipboard-sync/tests

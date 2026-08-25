@@ -1,5 +1,9 @@
 # 方向键选择视觉状态修复 Implementation Plan
 
+> **回填状态：** 截至 2026-08-25，已按 `codex/phase4-image-sync` 的 `2e4c3f6` 回填。
+> `[x]` 表示该步骤的最终交付结果可由当前代码、提交或自动测试证明；不重新声称历史红灯命令的原始输出仍可复现。
+> 真实可见焦点框、虚拟化和 DPI 验收转入阶段五；当前总状态见 [Clipboard 开发状态](../../STATUS.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** 移除列表重复方向键处理，使每次按键只移动一格且只保留一个选中视觉状态。
@@ -16,11 +20,11 @@
 - Modify: `tests/Clipboard.Windows.Tests/Views/XamlResourceConfigurationTests.cs`
 - Test fixture: `tests/Clipboard.Windows.Tests/Fixtures/MainWindow.xaml`
 
-- [ ] **Step 1: 修改断言，要求历史列表不注册 PreviewKeyDown**
+- [x] **Step 1: 修改断言，要求历史列表不注册 PreviewKeyDown**
 
 将测试 `History_list_intercepts_direction_keys_before_its_default_navigation` 改为：读取根 `Grid` 和 `ListView`，断言根元素仍为 `KeyDown="Root_KeyDown"`，并断言 `list.Attribute("PreviewKeyDown")` 为 `null`。测试名称改为 `History_list_uses_root_keyboard_navigation_without_duplicate_preview_handler`。
 
-- [ ] **Step 2: 运行测试确认当前实现失败**
+- [x] **Step 2: 运行测试确认当前实现失败**
 
 运行：
 
@@ -35,7 +39,7 @@ dotnet test tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj --filte
 **Files:**
 - Modify: `src/Clipboard.Windows/Views/MainWindow.xaml:247-259`
 
-- [ ] **Step 1: 删除 ListView 的重复 PreviewKeyDown 属性**
+- [x] **Step 1: 删除 ListView 的重复 PreviewKeyDown 属性**
 
 从 `HistoryList` 的 XAML 属性中删除以下行，保留根 `Grid` 的 `KeyDown="Root_KeyDown"`：
 
@@ -43,7 +47,7 @@ dotnet test tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj --filte
 PreviewKeyDown="Root_KeyDown"
 ```
 
-- [ ] **Step 2: 运行回归测试确认通过**
+- [x] **Step 2: 运行回归测试确认通过**
 
 运行：
 
@@ -53,7 +57,7 @@ dotnet test tests/Clipboard.Windows.Tests/Clipboard.Windows.Tests.csproj --filte
 
 预期：测试通过，且不再报告重复预览键盘处理。
 
-- [ ] **Step 3: 运行 Windows 客户端相关测试和构建**
+- [x] **Step 3: 运行 Windows 客户端相关测试和构建**
 
 运行：
 
@@ -64,7 +68,7 @@ dotnet build src/Clipboard.Windows/Clipboard.Windows.csproj --configuration Debu
 
 预期：所有筛选测试通过，Windows 客户端构建成功。
 
-- [ ] **Step 4: 检查差异并提交实现**
+- [x] **Step 4: 检查差异并提交实现**
 
 运行 `git diff --check`，确认仅包含测试断言和 XAML 事件绑定变更后提交：
 

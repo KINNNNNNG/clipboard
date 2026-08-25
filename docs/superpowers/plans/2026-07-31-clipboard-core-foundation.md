@@ -1,5 +1,9 @@
 # Clipboard Core Foundation Implementation Plan
 
+> **回填状态：** 截至 2026-08-25，已按 `codex/phase4-image-sync` 的 `2e4c3f6` 回填。
+> `[x]` 表示该步骤的最终交付结果可由当前代码、提交或自动测试证明；不重新声称历史红灯命令的原始输出仍可复现。
+> 当前总状态见 [Clipboard 开发状态](../../STATUS.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 建立可由 Windows 和未来 macOS 原生客户端复用的 Rust 剪贴板内核，并通过稳定 C ABI 在 .NET 冒烟程序中完成本地写入、持久化和搜索。
@@ -42,7 +46,7 @@ tests/fixtures/                         非敏感固定测试数据
 - Create: `.editorconfig`
 - Create: `scripts/verify-toolchain.ps1`
 
-- [ ] **Step 1: 写入工具链版本文件**
+- [x] **Step 1: 写入工具链版本文件**
 
 ```toml
 # rust-toolchain.toml
@@ -80,7 +84,7 @@ indent_size = 2
 indent_size = 4
 ```
 
-- [ ] **Step 2: 写入会在当前机器失败的前置检查**
+- [x] **Step 2: 写入会在当前机器失败的前置检查**
 
 ```powershell
 # scripts/verify-toolchain.ps1
@@ -104,13 +108,13 @@ if ($targetList -notcontains 'x86_64-pc-windows-msvc') {
 Write-Host 'Toolchain verification passed.'
 ```
 
-- [ ] **Step 3: 运行检查并确认当前环境失败原因**
+- [x] **Step 3: 运行检查并确认当前环境失败原因**
 
 Run: `pwsh -NoProfile -File scripts/verify-toolchain.ps1`
 
 Expected before setup: FAIL，指出当前 Rust 为 `1.73.0`，并且没有 .NET 8 SDK。不得把“只有 .NET 8 Runtime”当作 SDK 通过。
 
-- [ ] **Step 4: 安装缺失工具链**
+- [x] **Step 4: 安装缺失工具链**
 
 Run: `rustup toolchain install 1.88.0-x86_64-pc-windows-msvc --profile minimal --component clippy,rustfmt`
 
@@ -120,13 +124,13 @@ Run: `winget install --id Microsoft.DotNet.SDK.8 --exact --accept-package-agreem
 
 Expected: .NET 8 SDK 安装成功。若系统要求管理员确认，只批准该精确包，不安装预览 SDK。
 
-- [ ] **Step 5: 重新运行检查**
+- [x] **Step 5: 重新运行检查**
 
 Run: `pwsh -NoProfile -File scripts/verify-toolchain.ps1`
 
 Expected: `Toolchain verification passed.`
 
-- [ ] **Step 6: 提交工具链基线**
+- [x] **Step 6: 提交工具链基线**
 
 ```powershell
 git add rust-toolchain.toml global.json .editorconfig scripts/verify-toolchain.ps1
@@ -150,7 +154,7 @@ git commit -m "build: pin core toolchains"
 - Create: `crates/clipboard-ffi/Cargo.toml`
 - Create: `crates/clipboard-ffi/src/lib.rs`
 
-- [ ] **Step 1: 写 workspace 清单**
+- [x] **Step 1: 写 workspace 清单**
 
 ```toml
 [workspace]
@@ -190,7 +194,7 @@ uuid = { version = "1.17", features = ["serde", "v4", "v7"] }
 zeroize = { version = "1.8", features = ["derive"] }
 ```
 
-- [ ] **Step 2: 为每个 crate 写完整最小清单**
+- [x] **Step 2: 为每个 crate 写完整最小清单**
 
 ```toml
 # crates/clipboard-domain/Cargo.toml
@@ -327,7 +331,7 @@ pub const CRATE_READY: bool = true;
 pub const CRATE_READY: bool = true;
 ```
 
-- [ ] **Step 3: 格式化并验证 workspace**
+- [x] **Step 3: 格式化并验证 workspace**
 
 Run: `cargo fmt --all --check`
 
@@ -337,7 +341,7 @@ Run: `cargo test --workspace --all-targets`
 
 Expected: 6 个 crate 编译成功，测试结果均为 `ok`。
 
-- [ ] **Step 4: 提交 workspace**
+- [x] **Step 4: 提交 workspace**
 
 ```powershell
 git add Cargo.toml Cargo.lock crates
@@ -352,7 +356,7 @@ git commit -m "build: scaffold clipboard core workspace"
 - Modify: `crates/clipboard-domain/src/lib.rs`
 - Test: `crates/clipboard-domain/tests/item_model.rs`
 
-- [ ] **Step 1: 先写领域模型失败测试**
+- [x] **Step 1: 先写领域模型失败测试**
 
 ```rust
 use clipboard_domain::{ClipboardContent, ClipboardItem, FileBundle, FileEntry, SyncScope};
@@ -389,13 +393,13 @@ fn text_and_image_are_vault_scoped() {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cargo test -p clipboard-domain --test item_model`
 
 Expected: FAIL，`ClipboardItem`、`FileBundle` 等类型尚不存在。
 
-- [ ] **Step 3: 实现最小领域类型**
+- [x] **Step 3: 实现最小领域类型**
 
 ```rust
 // crates/clipboard-domain/src/file_bundle.rs
@@ -478,13 +482,13 @@ impl ClipboardItem {
 
 `lib.rs` 明确声明 `mod file_bundle; mod item;`，并重新导出 `ClipboardContent`、`ClipboardItem`、`FileBundle`、`FileBundleError`、`FileEntry`、`FileEntryKind` 和 `SyncScope`。
 
-- [ ] **Step 4: 运行领域测试**
+- [x] **Step 4: 运行领域测试**
 
 Run: `cargo test -p clipboard-domain --test item_model`
 
 Expected: 2 tests PASS。
 
-- [ ] **Step 5: 提交领域模型**
+- [x] **Step 5: 提交领域模型**
 
 ```powershell
 git add crates/clipboard-domain
@@ -499,7 +503,7 @@ git commit -m "feat(core): add clipboard domain model"
 - Modify: `crates/clipboard-domain/src/lib.rs`
 - Test: `crates/clipboard-domain/tests/merge_properties.rs`
 
-- [ ] **Step 1: 写失败的性质测试**
+- [x] **Step 1: 写失败的性质测试**
 
 ```rust
 use clipboard_domain::{FavoriteState, Hlc};
@@ -526,13 +530,13 @@ proptest! {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cargo test -p clipboard-domain --test merge_properties`
 
 Expected: FAIL，`Hlc::new` 或 `merge` 未定义。
 
-- [ ] **Step 3: 实现全序 HLC 和最后写入合并**
+- [x] **Step 3: 实现全序 HLC 和最后写入合并**
 
 ```rust
 // crates/clipboard-domain/src/hlc.rs
@@ -577,13 +581,13 @@ impl DeleteState {
 }
 ```
 
-- [ ] **Step 4: 运行全部领域测试**
+- [x] **Step 4: 运行全部领域测试**
 
 Run: `cargo test -p clipboard-domain`
 
 Expected: item model 与性质测试全部 PASS。
 
-- [ ] **Step 5: 提交合并规则**
+- [x] **Step 5: 提交合并规则**
 
 ```powershell
 git add crates/clipboard-domain
@@ -599,7 +603,7 @@ git commit -m "feat(core): add deterministic clipboard state merging"
 - Modify: `crates/clipboard-crypto/src/lib.rs`
 - Test: `crates/clipboard-crypto/tests/object_cipher.rs`
 
-- [ ] **Step 1: 写失败的加密测试**
+- [x] **Step 1: 写失败的加密测试**
 
 ```rust
 use clipboard_crypto::{KeyPurpose, ObjectCipher, VaultKey};
@@ -620,13 +624,13 @@ fn ciphertext_round_trips_and_detects_tampering() {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cargo test -p clipboard-crypto --test object_cipher`
 
 Expected: FAIL，公开加密类型未定义。
 
-- [ ] **Step 3: 实现零化主密钥、HKDF 和 XChaCha20-Poly1305**
+- [x] **Step 3: 实现零化主密钥、HKDF 和 XChaCha20-Poly1305**
 
 `VaultKey` 必须使用 `Zeroize`/`ZeroizeOnDrop`，并且只提供按用途派生方法。`KeyPurpose` 使用固定 ASCII 标签：`database-v1`、`journal-v1`、`image-v1`、`file-cache-v1`、`fingerprint-v1`。`ObjectCipher::seal` 输出格式固定为：1 字节版本、24 字节 nonce、密文和 16 字节 tag。
 
@@ -643,7 +647,7 @@ let ciphertext = cipher.encrypt(nonce, payload).map_err(|_| CryptoError::Authent
 
 随机 nonce 使用 `OsRng`，不得从时间戳、UUID 或对象 ID 派生。
 
-- [ ] **Step 4: 运行加密测试和 Clippy**
+- [x] **Step 4: 运行加密测试和 Clippy**
 
 Run: `cargo test -p clipboard-crypto`
 
@@ -653,7 +657,7 @@ Run: `cargo clippy -p clipboard-crypto --all-targets -- -D warnings`
 
 Expected: exit 0。
 
-- [ ] **Step 5: 提交加密基元**
+- [x] **Step 5: 提交加密基元**
 
 ```powershell
 git add crates/clipboard-crypto
@@ -672,7 +676,7 @@ git commit -m "feat(core): add vault key derivation and object encryption"
 - Test: `crates/clipboard-storage/tests/encrypted_database.rs`
 - Test: `crates/clipboard-storage/tests/local_only_outbox.rs`
 
-- [ ] **Step 1: 写错误密钥和文件拒绝测试**
+- [x] **Step 1: 写错误密钥和文件拒绝测试**
 
 ```rust
 use clipboard_domain::{ClipboardContent, ClipboardItem, FileBundle, FileEntry};
@@ -698,13 +702,13 @@ fn local_file_bundle_cannot_enter_outbox() {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cargo test -p clipboard-storage --test encrypted_database --test local_only_outbox`
 
 Expected: FAIL，`Database` 和仓储 API 未定义。
 
-- [ ] **Step 3: 写数据库迁移**
+- [x] **Step 3: 写数据库迁移**
 
 ```sql
 PRAGMA foreign_keys = ON;
@@ -742,7 +746,7 @@ BEGIN
 END;
 ```
 
-- [ ] **Step 4: 实现数据库打开顺序和仓储**
+- [x] **Step 4: 实现数据库打开顺序和仓储**
 
 `Database::open` 必须在执行任何模式查询前设置 SQLCipher key：
 
@@ -756,13 +760,13 @@ connection.execute_batch(include_str!("../migrations/001_initial.sql"))?;
 
 `ItemRepository::insert` 使用显式事务写入 `clipboard_items`。`OutboxRepository::enqueue_item` 先检查 `item.is_syncable()` 返回领域错误，再依赖数据库 trigger 做第二道防线。
 
-- [ ] **Step 5: 运行存储测试**
+- [x] **Step 5: 运行存储测试**
 
 Run: `cargo test -p clipboard-storage`
 
 Expected: 错误密钥测试 PASS；文件 outbox 返回 `OutboxError::LocalOnly`；数据库 trigger 直接插入时也拒绝。
 
-- [ ] **Step 6: 提交加密存储**
+- [x] **Step 6: 提交加密存储**
 
 ```powershell
 git add crates/clipboard-storage
@@ -778,7 +782,7 @@ git commit -m "feat(core): add encrypted clipboard storage"
 - Modify: `crates/clipboard-search/src/lib.rs`
 - Test: `crates/clipboard-search/tests/search.rs`
 
-- [ ] **Step 1: 写文本、文件路径和无效正则测试**
+- [x] **Step 1: 写文本、文件路径和无效正则测试**
 
 ```rust
 use clipboard_search::{SearchEngine, SearchMode, SearchQuery};
@@ -803,13 +807,13 @@ fn invalid_regex_is_reported_without_replacing_previous_results() {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cargo test -p clipboard-search --test search`
 
 Expected: FAIL，搜索 API 未定义。
 
-- [ ] **Step 3: 实现搜索引擎**
+- [x] **Step 3: 实现搜索引擎**
 
 普通搜索为 `text.to_lowercase().contains(&pattern.to_lowercase())`；正则使用：
 
@@ -831,13 +835,13 @@ let regex = regex::RegexBuilder::new(&query.pattern)
 
 每个文档只组合可搜索正文、文件名和本机路径。图片不得加入 OCR 文本。结果保持输入的最近使用排序，不在搜索层重新打乱。
 
-- [ ] **Step 4: 运行搜索测试**
+- [x] **Step 4: 运行搜索测试**
 
 Run: `cargo test -p clipboard-search`
 
 Expected: 3 tests PASS。
 
-- [ ] **Step 5: 提交搜索能力**
+- [x] **Step 5: 提交搜索能力**
 
 ```powershell
 git add crates/clipboard-search
@@ -851,7 +855,7 @@ git commit -m "feat(core): add clipboard text and path search"
 - Modify: `crates/clipboard-domain/src/lib.rs`
 - Test: `crates/clipboard-domain/tests/retention.rs`
 
-- [ ] **Step 1: 写保留策略失败测试**
+- [x] **Step 1: 写保留策略失败测试**
 
 ```rust
 use clipboard_domain::{RetentionCandidate, RetentionPolicy, plan_retention};
@@ -872,13 +876,13 @@ fn favorites_are_never_auto_deleted_and_oldest_regular_items_are_removed() {
 
 参数中的最后一个布尔值表示是否可同步；本机文件删除只能进入 `delete_local`，文本/图片才进入 `create_tombstones`。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cargo test -p clipboard-domain --test retention`
 
 Expected: FAIL，保留策略类型未定义。
 
-- [ ] **Step 3: 实现纯函数保留计划**
+- [x] **Step 3: 实现纯函数保留计划**
 
 实现要求：
 
@@ -896,13 +900,13 @@ pub struct RetentionPlan {
 
 算法先排除收藏项，再按 `last_used_ms` 升序选出过期项，最后对剩余普通项执行最大条数限制。相同记录只出现一次；可同步项进入墓碑列表，本机文件进入本地删除列表。
 
-- [ ] **Step 4: 运行领域测试**
+- [x] **Step 4: 运行领域测试**
 
 Run: `cargo test -p clipboard-domain`
 
 Expected: 保留、合并和模型测试全部 PASS。
 
-- [ ] **Step 5: 提交保留计划**
+- [x] **Step 5: 提交保留计划**
 
 ```powershell
 git add crates/clipboard-domain
@@ -919,7 +923,7 @@ git commit -m "feat(core): add clipboard retention planning"
 - Modify: `crates/clipboard-core/src/lib.rs`
 - Test: `crates/clipboard-core/tests/local_workflow.rs`
 
-- [ ] **Step 1: 写本地纵向流程失败测试**
+- [x] **Step 1: 写本地纵向流程失败测试**
 
 ```rust
 use clipboard_core::{CoreCommand, CoreService, IngestText, SearchRequest};
@@ -946,13 +950,13 @@ fn ingest_persist_reopen_and_search_text() {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cargo test -p clipboard-core --test local_workflow`
 
 Expected: FAIL，Core 命令服务未定义。
 
-- [ ] **Step 3: 实现版本化命令和服务**
+- [x] **Step 3: 实现版本化命令和服务**
 
 命令使用内部强类型枚举，FFI 序列化时使用 `api_version: 1` 和 `#[serde(tag = "type", content = "payload", rename_all = "snake_case")]`：
 
@@ -1013,7 +1017,7 @@ pub enum CoreError {
 
 `CoreService::execute` 只做用例编排：校验命令、调用仓储、调用搜索/保留纯函数、在事务中写 outbox。它不得包含 SQL 字符串、正则构建或加密算法。
 
-- [ ] **Step 4: 运行 core 纵向测试**
+- [x] **Step 4: 运行 core 纵向测试**
 
 Run: `cargo test -p clipboard-core --test local_workflow`
 
@@ -1023,7 +1027,7 @@ Run: `cargo test --workspace`
 
 Expected: 全 workspace PASS。
 
-- [ ] **Step 5: 提交 Core 服务**
+- [x] **Step 5: 提交 Core 服务**
 
 ```powershell
 git add crates/clipboard-core
@@ -1043,7 +1047,7 @@ git commit -m "feat(core): add local clipboard command service"
 - Create: `src/Clipboard.FfiSmoke/NativeMethods.cs`
 - Create: `src/Clipboard.FfiSmoke/Program.cs`
 
-- [ ] **Step 1: 写 Rust ABI 失败测试**
+- [x] **Step 1: 写 Rust ABI 失败测试**
 
 ```rust
 use clipboard_ffi::{clipboard_core_close, clipboard_core_execute, clipboard_core_free_buffer, clipboard_core_open, CoreBuffer, CoreHandle, CoreStatus};
@@ -1065,13 +1069,13 @@ fn abi_opens_executes_and_frees_response() {
 }
 ```
 
-- [ ] **Step 2: 运行 ABI 测试确认失败**
+- [x] **Step 2: 运行 ABI 测试确认失败**
 
 Run: `cargo test -p clipboard-ffi --test abi`
 
 Expected: FAIL，C ABI 符号未定义。
 
-- [ ] **Step 3: 实现固定 ABI**
+- [x] **Step 3: 实现固定 ABI**
 
 `clipboard-ffi` 设置 `crate-type = ["cdylib", "rlib"]`。只导出以下函数：
 
@@ -1121,13 +1125,13 @@ pub unsafe extern "C" fn clipboard_core_close(handle: *mut CoreHandle);
 
 所有指针先验证 null，`vault_key_len` 必须恰好为 32。panic 使用 `catch_unwind` 转换为 `CoreStatus::Panic`，不能跨 FFI。`CoreBuffer { ptr, len, capacity }` 只能由 `clipboard_core_free_buffer` 释放。
 
-- [ ] **Step 4: 运行 Rust ABI 测试**
+- [x] **Step 4: 运行 Rust ABI 测试**
 
 Run: `cargo test -p clipboard-ffi --test abi`
 
 Expected: open/execute/free/close PASS；另补 null 指针、错误 key 长度、无效 UTF-8 和无效 JSON 测试并全部 PASS。
 
-- [ ] **Step 5: 写 .NET 8 P/Invoke 冒烟程序**
+- [x] **Step 5: 写 .NET 8 P/Invoke 冒烟程序**
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -1282,7 +1286,7 @@ impl ApiRequest {
 }
 ```
 
-- [ ] **Step 6: 构建动态库并运行 .NET 冒烟程序**
+- [x] **Step 6: 构建动态库并运行 .NET 冒烟程序**
 
 Run: `cargo build -p clipboard-ffi`
 
@@ -1292,7 +1296,7 @@ Run: `dotnet run --project src/Clipboard.FfiSmoke/Clipboard.FfiSmoke.csproj`
 
 Expected: `FFI smoke test passed: 1 item found.`。项目文件必须把 `target/debug/clipboard_ffi.dll` 复制到输出目录，不能依赖手工修改 PATH。
 
-- [ ] **Step 7: 提交 FFI 基座**
+- [x] **Step 7: 提交 FFI 基座**
 
 ```powershell
 git add crates/clipboard-ffi src/Clipboard.FfiSmoke
@@ -1306,7 +1310,7 @@ git commit -m "feat(core): expose clipboard core C ABI"
 - Create: `.github/workflows/core.yml`
 - Create: `README.md`
 
-- [ ] **Step 1: 写单一验证脚本**
+- [x] **Step 1: 写单一验证脚本**
 
 ```powershell
 $ErrorActionPreference = 'Stop'
@@ -1321,21 +1325,21 @@ dotnet run --project "$PSScriptRoot/../src/Clipboard.FfiSmoke/Clipboard.FfiSmoke
 Write-Host 'Clipboard core verification passed.'
 ```
 
-- [ ] **Step 2: 运行完整阶段验证**
+- [x] **Step 2: 运行完整阶段验证**
 
 Run: `pwsh -NoProfile -File scripts/test-core.ps1`
 
 Expected final line: `Clipboard core verification passed.`，此前没有 warning、失败测试或未捕获异常。
 
-- [ ] **Step 3: 写 Windows CI**
+- [x] **Step 3: 写 Windows CI**
 
 `core.yml` 使用 `windows-2022`，安装 Rust 1.88 和 .NET 8，执行 `scripts/test-core.ps1`。CI 不上传数据库、日志或测试临时目录；只缓存 Cargo registry 和 target 编译输出。
 
-- [ ] **Step 4: 写 README 阶段说明**
+- [x] **Step 4: 写 README 阶段说明**
 
 README 明确：当前阶段只有共享内核和 FFI 冒烟程序，不是可用的 Windows 剪贴板应用；列出 `scripts/test-core.ps1` 验证命令，并链接设计规格与总路线图。
 
-- [ ] **Step 5: 提交验证入口**
+- [x] **Step 5: 提交验证入口**
 
 ```powershell
 git add scripts/test-core.ps1 .github/workflows/core.yml README.md
@@ -1345,13 +1349,13 @@ git commit -m "ci: verify clipboard core foundation"
 ## 阶段 1 完成检查
 
 - [ ] `git status --short` 无未提交文件。
-- [ ] `pwsh -NoProfile -File scripts/test-core.ps1` 在本机通过。
-- [ ] `file_bundle` 领域测试和数据库 trigger 双重证明其不能进入 outbox。
-- [ ] SQLCipher 错误密钥测试通过，且 `PRAGMA cipher_version` 非空。
-- [ ] 对象密文篡改测试失败关闭，不返回部分明文。
-- [ ] HLC 状态合并满足幂等和交换性质。
-- [ ] 中英文子串、文件路径正则和无效正则测试通过。
-- [ ] .NET FFI 冒烟程序能跨进程边界写入、重开和搜索。
-- [ ] README 未把阶段 1 描述成完整应用。
+- [x] `pwsh -NoProfile -File scripts/test-core.ps1` 在本机通过。
+- [x] `file_bundle` 领域测试和数据库 trigger 双重证明其不能进入 outbox。
+- [x] SQLCipher 错误密钥测试通过，且 `PRAGMA cipher_version` 非空。
+- [x] 对象密文篡改测试失败关闭，不返回部分明文。
+- [x] HLC 状态合并满足幂等和交换性质。
+- [x] 中英文子串、文件路径正则和无效正则测试通过。
+- [x] .NET FFI 冒烟程序能跨进程边界写入、重开和搜索。
+- [x] README 未把阶段 1 描述成完整应用。
 
 完成这些检查后，才编写并执行阶段 2 Windows 客户端计划。
