@@ -17,3 +17,6 @@ data/
 *.key
 *.secret
 .env
+
+# JetBrains IDEA
+.idea/
