@@ -26,7 +26,7 @@
 - macOS 客户端及跨平台同步界面。
 - 已签名的 MSIX 发布包，以及完成后的安装、升级、卸载验收。
 
-阶段五尚未完成：真实 WebDAV/OSS 写入、两设备同步、可见 WinUI 焦点/DPI 矩阵、迁移/崩溃恢复和发布工程仍需关闭。优先级和验收边界见 [阶段五发布收尾路线](docs/superpowers/plans/2026-08-25-stage-five-closure-roadmap.md)。
+阶段五尚未完成：真实 WebDAV/OSS 写入、两设备同步、可见 WinUI 焦点/DPI 矩阵和发布工程仍需关闭。历史加载失败已在本地按锁、密钥不匹配、无法解密、损坏和迁移失败分类并关闭，真实 vault 的可视化恢复流程仍属于发布验收。优先级和验收边界见 [阶段五发布收尾路线](docs/superpowers/plans/2026-08-25-stage-five-closure-roadmap.md)。
 
 ## 验证
 
@@ -64,5 +64,6 @@ pwsh -NoProfile -File scripts/verify-windows-client.ps1
 - [阶段 4 实时同步计划](docs/superpowers/plans/2026-08-07-realtime-sync.md)
 - [阶段 5 发布验证基线](docs/superpowers/plans/2026-08-17-clipboard-release-verification.md)
 - [阶段 5 历史搜索性能门](docs/superpowers/plans/2026-08-24-history-search-performance.md)
+ - [阶段 5 历史加载失败分类计划](docs/superpowers/plans/2026-09-11-history-load-failure-classification.md)
 - [阶段 5 发布收尾路线](docs/superpowers/plans/2026-08-25-stage-five-closure-roadmap.md)
 - [V1 总路线图](docs/superpowers/plans/2026-07-31-clipboard-v1-roadmap.md)
