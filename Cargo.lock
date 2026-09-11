@@ -254,6 +254,7 @@ dependencies = [
  "clipboard-storage",
  "clipboard-sync",
  "hex",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",

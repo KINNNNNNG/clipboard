@@ -113,6 +113,131 @@ public sealed class ClipboardPanelViewModelTests
     }
 
     [Fact]
+    public async Task Classified_history_failures_render_a_specific_message()
+    {
+        (CoreStatus Status, string Message)[] cases =
+        [
+            (CoreStatus.StorageLocked, "剪贴板历史数据库正被占用，请稍后重试。"),
+            (CoreStatus.VaultKeyMismatch, "剪贴板数据库与当前密钥不匹配。"),
+            (CoreStatus.VaultUnreadable, "无法解密剪贴板数据库，可能已损坏或密钥不匹配。"),
+            (CoreStatus.VaultCorrupt, "剪贴板历史数据库已损坏。"),
+            (CoreStatus.StorageMigration, "剪贴板历史数据库版本不受支持。"),
+        ];
+        foreach ((CoreStatus status, string message) in cases)
+        {
+            var core = new FakePanelCore
+            {
+                Handler = (_, _) => Task.FromException<SearchResponseDto>(
+                    new ClipboardCoreException(status)),
+            };
+            var viewModel = new ClipboardPanelViewModel(core, new FakePasteService());
+
+            await viewModel.RefreshAsync();
+
+            Assert.Equal(message, viewModel.ErrorMessage);
+            Assert.Null(viewModel.QueryError);
+            Assert.False(viewModel.HasQueryError);
+        }
+    }
+
+    [Fact]
+    public async Task Transient_history_failures_retry_once_before_succeeding()
+    {
+        CoreStatus[] cases = [CoreStatus.CoreError, CoreStatus.StorageLocked];
+        foreach (CoreStatus status in cases)
+        {
+            int attempts = 0;
+            var core = new FakePanelCore
+            {
+                Handler = (_, _) => ++attempts == 1
+                    ? Task.FromException<SearchResponseDto>(new ClipboardCoreException(status))
+                    : Task.FromResult(Response(TextItem("recovered"))),
+            };
+            var viewModel = new ClipboardPanelViewModel(core, new FakePasteService());
+
+            await viewModel.RefreshAsync();
+
+            Assert.Equal(2, attempts);
+            Assert.Equal("recovered", Assert.Single(viewModel.Items).Preview);
+            Assert.False(viewModel.HasErrorMessage);
+        }
+    }
+
+    [Fact]
+    public async Task Deterministic_history_failures_are_not_retried()
+    {
+        CoreStatus[] cases =
+        [
+            CoreStatus.VaultKeyMismatch,
+            CoreStatus.VaultUnreadable,
+            CoreStatus.VaultCorrupt,
+            CoreStatus.StorageMigration,
+        ];
+        foreach (CoreStatus status in cases)
+        {
+            int attempts = 0;
+            var core = new FakePanelCore
+            {
+                Handler = (_, _) =>
+                {
+                    attempts++;
+                    return Task.FromException<SearchResponseDto>(new ClipboardCoreException(status));
+                },
+            };
+            var viewModel = new ClipboardPanelViewModel(core, new FakePasteService());
+
+            await viewModel.RefreshAsync();
+
+            Assert.Equal(1, attempts);
+            Assert.True(viewModel.HasErrorMessage);
+        }
+    }
+
+    [Fact]
+    public async Task Failed_history_load_keeps_the_last_successful_items()
+    {
+        bool fail = false;
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => fail
+                ? Task.FromException<SearchResponseDto>(
+                    new ClipboardCoreException(CoreStatus.VaultCorrupt))
+                : Task.FromResult(Response(TextItem("preserved"))),
+        };
+        var viewModel = new ClipboardPanelViewModel(core, new FakePasteService());
+        await viewModel.RefreshAsync();
+
+        fail = true;
+        await viewModel.RefreshAsync();
+
+        Assert.Equal("剪贴板历史数据库已损坏。", viewModel.ErrorMessage);
+        Assert.Equal("preserved", Assert.Single(viewModel.Items).Preview);
+    }
+
+    [Fact]
+    public async Task Recovered_history_load_clears_the_classified_error()
+    {
+        bool fail = true;
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => fail
+                ? Task.FromException<SearchResponseDto>(
+                    new ClipboardCoreException(CoreStatus.StorageLocked))
+                : Task.FromResult(Response(TextItem("restored"))),
+        };
+        var viewModel = new ClipboardPanelViewModel(core, new FakePasteService());
+
+        await viewModel.RefreshAsync();
+        Assert.True(viewModel.HasErrorMessage);
+
+        fail = false;
+        await viewModel.RefreshAsync();
+
+        Assert.False(viewModel.HasErrorMessage);
+        Assert.Equal("restored", Assert.Single(viewModel.Items).Preview);
+    }
+
+    [Fact]
     public async Task Combined_filters_are_forwarded_to_the_rust_core()
     {
         var core = new FakePanelCore

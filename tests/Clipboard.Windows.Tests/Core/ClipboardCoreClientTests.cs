@@ -54,6 +54,21 @@ public sealed class ClipboardCoreClientTests
     }
 
     [Fact]
+    public void Open_propagates_a_classified_vault_failure_status()
+    {
+        var native = new FakeNative { OpenStatus = CoreStatus.VaultKeyMismatch };
+        byte[] key = Enumerable.Repeat((byte)0x42, 32).ToArray();
+
+        ClipboardCoreException error = Assert.Throws<ClipboardCoreException>(() =>
+        {
+            ClipboardCoreClient.Open("C:\\\\clipboard-data", Guid.NewGuid(), key, native);
+        });
+
+        Assert.Equal(CoreStatus.VaultKeyMismatch, error.Status);
+        Assert.Equal(0, native.CloseCount);
+    }
+
+    [Fact]
     public async Task Open_uses_v2_and_commands_serialize_with_snake_case()
     {
         var native = new FakeNative
@@ -344,6 +359,7 @@ public sealed class ClipboardCoreClientTests
         public byte[]? LastImageMetadata { get; private set; }
         public bool ImageAbiWasCalled { get; private set; }
         public CoreStatus ExecuteStatus { get; init; } = CoreStatus.Ok;
+        public CoreStatus OpenStatus { get; init; } = CoreStatus.Ok;
         public byte[] ExecuteResponse { get; init; } = Encoding.UTF8.GetBytes(
             "{\"item_id\":\"00000000-0000-0000-0000-000000000001\"}");
 
@@ -355,8 +371,8 @@ public sealed class ClipboardCoreClientTests
         {
             OpenV2Count++;
             OpenVaultId = vaultId.ToArray();
-            handle = 123;
-            return CoreStatus.Ok;
+            handle = OpenStatus == CoreStatus.Ok ? 123 : 0;
+            return OpenStatus;
         }
 
         public CoreStatus Execute(nint handle, ReadOnlySpan<byte> request, out CoreBuffer response)
