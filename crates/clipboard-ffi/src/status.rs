@@ -8,4 +8,9 @@ pub enum CoreStatus {
     CoreError = 4,
     Panic = 5,
     InvalidRegex = 6,
+    StorageLocked = 7,
+    VaultKeyMismatch = 8,
+    VaultUnreadable = 9,
+    VaultCorrupt = 10,
+    StorageMigration = 11,
 }

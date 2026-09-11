@@ -343,6 +343,10 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
             QueryError = "正则表达式无效。";
             ErrorMessage = null;
         }
+        catch (ClipboardCoreException error) when (IsCurrent(version))
+        {
+            ErrorMessage = CoreStatusMessages.ForHistoryLoad(error.Status);
+        }
         catch when (IsCurrent(version))
         {
             ErrorMessage = "无法加载剪贴板历史。";
@@ -375,7 +379,7 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
                 return await _core.SearchAsync(request, cancellationToken);
             }
             catch (ClipboardCoreException error) when (
-                error.Status == CoreStatus.CoreError && attempt == 0)
+                CoreStatusMessages.IsRetryable(error.Status) && attempt == 0)
             {
                 await Task.Delay(HistoryLoadRetryDelay, cancellationToken);
             }

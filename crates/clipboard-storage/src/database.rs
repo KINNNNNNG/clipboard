@@ -1,6 +1,7 @@
-use crate::{ItemRepository, OutboxRepository, StorageError};
+use crate::{ItemRepository, OutboxRepository, StorageError, vault_marker};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{cell::RefCell, path::Path};
+use uuid::Uuid;
 
 const INITIAL_SCHEMA_VERSION: i64 = 1;
 const MIGRATIONS: &[(i64, &str)] = &[
@@ -11,6 +12,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     ),
 ];
 const LATEST_SCHEMA_VERSION: i64 = 3;
+const HISTORY_FILE_NAME: &str = "history.db";
 
 pub struct Database {
     pub(crate) connection: RefCell<Connection>,
@@ -24,6 +26,34 @@ impl Database {
 
     pub fn open_in_memory(key: &[u8; 32]) -> Result<Self, StorageError> {
         Self::initialize(Connection::open_in_memory()?, key)
+    }
+
+    /// Opens the encrypted history database that belongs to `vault_id` inside `data_dir`.
+    ///
+    /// A vault marker that names another vault is rejected before the database is opened, so a
+    /// foreign key never rewrites or clears existing history. When the marker matches the requested
+    /// vault, an unreadable database is damage rather than a key mismatch, because a wrong vault is
+    /// already ruled out by the marker.
+    pub fn open_vault(
+        data_dir: &Path,
+        vault_id: Uuid,
+        key: &[u8; 32],
+    ) -> Result<Self, StorageError> {
+        let marker = vault_marker::read(data_dir)?;
+        if let Some(existing) = marker
+            && existing != vault_id
+        {
+            return Err(StorageError::VaultMismatch);
+        }
+        let database = match Self::open(&data_dir.join(HISTORY_FILE_NAME), key) {
+            Ok(database) => database,
+            Err(StorageError::Unreadable) if marker.is_some() => return Err(StorageError::Corrupt),
+            Err(error) => return Err(error),
+        };
+        if marker.is_none() {
+            let _ = vault_marker::write_if_absent(data_dir, vault_id);
+        }
+        Ok(database)
     }
 
     pub fn cipher_version(&self) -> &str {

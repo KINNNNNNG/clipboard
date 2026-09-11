@@ -144,13 +144,18 @@ public partial class App : Microsoft.UI.Xaml.Application
                 _presenter.Hide();
             }
         }
-        catch
+        catch (Exception error)
         {
+            CoreStatus status = error is ClipboardCoreException coreError
+                ? coreError.Status
+                : CoreStatus.CoreError;
             _globalLog?.Write(LogLevel.Error, "app", "app.exception", new Dictionary<string, string>
             {
-                ["error_category"] = "initialization",
+                ["error_category"] = error is ClipboardCoreException
+                    ? CoreStatusMessages.ForLog(status)
+                    : "initialization",
             });
-            MainWindow.SetStatus("无法初始化剪贴板服务");
+            MainWindow.SetStatus(CoreStatusMessages.ForVaultOpen(status));
         }
     }
 

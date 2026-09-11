@@ -1,5 +1,6 @@
 use crate::{CoreBuffer, CoreStatus};
 use clipboard_core::{ApiRequest, CoreError, CoreService, IngestImage, MAX_IMAGE_BYTES};
+use clipboard_storage::StorageError;
 use clipboard_sync::{
     PairingFileMaterial, RecoveryMaterial, decode_pairing_file, decode_recovery_code,
     encode_pairing_file, encode_recovery_code,
@@ -300,7 +301,7 @@ unsafe fn open_impl(
 
     let service = match CoreService::open(Path::new(data_dir), vault_id, &vault_key) {
         Ok(service) => service,
-        Err(_) => return CoreStatus::CoreError,
+        Err(error) => return status_for_core_error(error),
     };
     let handle = Box::new(CoreHandle {
         service: Mutex::new(service),
@@ -683,6 +684,20 @@ unsafe fn execute_impl(
 fn status_for_core_error(error: CoreError) -> CoreStatus {
     match error {
         CoreError::Search(_) => CoreStatus::InvalidRegex,
+        CoreError::Storage(error) => status_for_storage_error(error),
+        _ => CoreStatus::CoreError,
+    }
+}
+
+fn status_for_storage_error(error: StorageError) -> CoreStatus {
+    match error {
+        StorageError::Locked => CoreStatus::StorageLocked,
+        StorageError::VaultMismatch => CoreStatus::VaultKeyMismatch,
+        StorageError::Unreadable | StorageError::VaultMarkerInvalid => CoreStatus::VaultUnreadable,
+        StorageError::Corrupt => CoreStatus::VaultCorrupt,
+        StorageError::UnsupportedSchemaVersion { .. } | StorageError::InvalidMigrationHistory => {
+            CoreStatus::StorageMigration
+        }
         _ => CoreStatus::CoreError,
     }
 }

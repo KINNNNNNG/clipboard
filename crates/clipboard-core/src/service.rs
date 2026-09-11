@@ -46,7 +46,7 @@ pub struct CoreService {
 impl CoreService {
     pub fn open(data_dir: &Path, vault_id: Uuid, vault_key: &[u8; 32]) -> Result<Self, CoreError> {
         std::fs::create_dir_all(data_dir)?;
-        let database = Database::open(&data_dir.join("history.db"), vault_key)?;
+        let database = Database::open_vault(data_dir, vault_id, vault_key)?;
         let vault_key = VaultKey::from_bytes(*vault_key);
         let image_key = vault_key.derive(vault_id, KeyPurpose::Image)?;
         let object_store = ObjectStore::open(data_dir, vault_id, image_key)?;

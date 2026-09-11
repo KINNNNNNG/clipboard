@@ -499,7 +499,7 @@ internal sealed class SettingsViewModel : ObservableObject
             {
                 ["provider"] = SyncProvider,
                 ["status"] = "failure",
-                ["error_category"] = CoreErrorCategory(error.Status),
+                ["error_category"] = CoreStatusMessages.ForLog(error.Status),
             }, cancellationToken);
         }
         catch
@@ -567,7 +567,7 @@ internal sealed class SettingsViewModel : ObservableObject
             {
                 ["provider"] = SyncProvider,
                 ["status"] = "failure",
-                ["error_category"] = CoreErrorCategory(error.Status),
+                ["error_category"] = CoreStatusMessages.ForLog(error.Status),
             }, cancellationToken);
         }
         catch
@@ -596,16 +596,6 @@ internal sealed class SettingsViewModel : ObservableObject
         _globalLog.Write(level, component, eventName, fields);
         await _globalLog.FlushAsync(cancellationToken);
     }
-
-    private static string CoreErrorCategory(CoreStatus status) => status switch
-    {
-        CoreStatus.InvalidArgument => "invalid_argument",
-        CoreStatus.InvalidJson => "invalid_json",
-        CoreStatus.InvalidUtf8 => "invalid_utf8",
-        CoreStatus.InvalidRegex => "invalid_regex",
-        CoreStatus.Panic => "panic",
-        _ => "core_error",
-    };
 
     private static string? FormatRemoteErrorDetail(string? detail) => SanitizeRemoteErrorDetail(detail) switch
     {
