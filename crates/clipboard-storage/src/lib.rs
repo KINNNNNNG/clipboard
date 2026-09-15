@@ -9,6 +9,7 @@ mod outbox;
 mod vault_marker;
 
 pub use database::Database;
+pub use database::HISTORY_FILE_NAME;
 pub use error::{OutboxError, StorageError};
 pub use item_repository::{CleanupResult, ItemRepository};
 pub use outbox::{OutboxEntry, OutboxRepository};

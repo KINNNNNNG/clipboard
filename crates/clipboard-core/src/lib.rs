@@ -8,6 +8,7 @@ mod file_cache;
 mod object_store;
 mod response;
 mod service;
+mod snapshot;
 mod update;
 
 pub use command::{
@@ -19,6 +20,12 @@ pub use command::{
 pub use error::CoreError;
 pub use response::{CoreResponse, SearchItem, SyncDirectoryResponse};
 pub use service::{CoreService, MAX_IMAGE_BYTES};
+pub use snapshot::{
+    DEFAULT_SNAPSHOT_KEEP, MAX_SNAPSHOT_KEEP, SNAPSHOT_DIRECTORY_PREFIX, SNAPSHOT_FORMAT_VERSION,
+    SNAPSHOT_MANIFEST_FILE_NAME, SnapshotEntry, SnapshotError, SnapshotManifest, SnapshotSummary,
+    clamp_keep, create as create_snapshot, list as list_snapshots, prune as prune_snapshots,
+    restore as restore_snapshot, verify as verify_snapshot,
+};
 pub use update::{
     CHECKSUMS_FILE_NAME, HttpUpdateTransport, MAX_INSTALLER_BYTES, RELEASE_API_URL, ReleaseAssets,
     ReleaseVersion, UpdateCheckOutcome, UpdateDownloadOutcome, UpdateError, UpdateTransport,

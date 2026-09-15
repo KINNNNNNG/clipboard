@@ -12,7 +12,8 @@ const MIGRATIONS: &[(i64, &str)] = &[
     ),
 ];
 const LATEST_SCHEMA_VERSION: i64 = 3;
-const HISTORY_FILE_NAME: &str = "history.db";
+/// File name of the encrypted history database inside a vault data directory.
+pub const HISTORY_FILE_NAME: &str = "history.db";
 
 pub struct Database {
     pub(crate) connection: RefCell<Connection>,
@@ -58,6 +59,34 @@ impl Database {
 
     pub fn cipher_version(&self) -> &str {
         &self.cipher_version
+    }
+
+    /// Runs SQLite's full integrity check and reports whether the database is consistent.
+    pub fn verify_integrity(&self) -> Result<(), StorageError> {
+        let connection = self.connection.borrow();
+        let verdict: String =
+            connection.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
+        if verdict.eq_ignore_ascii_case("ok") {
+            return Ok(());
+        }
+        Err(StorageError::Corrupt)
+    }
+
+    /// Writes a consistent, encrypted copy of this database to `path`.
+    ///
+    /// `VACUUM INTO` is used instead of a file copy so the snapshot stays consistent while the
+    /// application keeps writing, and so the copy keeps the same encryption key.
+    pub fn backup_to(&self, path: &Path) -> Result<(), StorageError> {
+        if path.exists() {
+            return Err(StorageError::Io(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "backup target already exists",
+            )));
+        }
+        let target = path.to_string_lossy().replace('\'', "''");
+        let connection = self.connection.borrow();
+        connection.execute_batch(&format!("VACUUM INTO '{target}';"))?;
+        Ok(())
     }
 
     pub fn items(&self) -> ItemRepository<'_> {
