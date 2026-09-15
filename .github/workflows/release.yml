@@ -62,7 +62,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install Inno Setup
-        uses: ilammy/setup-innosetup@v1
+        shell: pwsh
+        run: winget install --id JRSoftware.InnoSetup --exact --silent --accept-source-agreements --accept-package-agreements
 
       - name: Build Windows installer
         shell: pwsh

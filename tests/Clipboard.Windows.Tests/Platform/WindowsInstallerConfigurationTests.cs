@@ -39,6 +39,7 @@ public sealed class WindowsInstallerConfigurationTests
         Assert.Contains("contents: write", workflow);
         Assert.Contains("package-windows.ps1", workflow);
         Assert.Contains("SHA256SUMS.txt", workflow);
+        Assert.Contains("JRSoftware.InnoSetup", workflow);
     }
 
     private static string ReadFixture(string fileName)
