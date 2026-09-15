@@ -30,6 +30,27 @@ public sealed class WindowsInstallerConfigurationTests
     }
 
     [Fact]
+    public void ClientProjectPublishesCompiledXamlResources()
+    {
+        string project = ReadFixture("Clipboard.Windows.csproj");
+
+        Assert.Contains("PublishWinUIResourceFiles", project);
+        Assert.Contains("AfterTargets=\"Publish\"", project);
+        Assert.Contains("$(TargetName).pri", project);
+        Assert.Contains("*.xbf", project);
+    }
+
+    [Fact]
+    public void PackageScriptRejectsPublishOutputWithoutWinUiResources()
+    {
+        string script = ReadFixture("package-windows.ps1");
+
+        Assert.Contains("发布目录缺少 WinUI 资源文件", script);
+        Assert.Contains("-getProperty:TargetDir", script);
+        Assert.Contains("VerifyPublishedApp", script);
+    }
+
+    [Fact]
     public void ReleaseWorkflowPublishesVersionTagsWithWritePermission()
     {
         string workflow = ReadFixture("release.yml");

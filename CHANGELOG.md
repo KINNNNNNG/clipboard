@@ -16,6 +16,7 @@
 
 - Rust 单元测试覆盖版本比较、Release 解析、URL 白名单、校验文件解析与 SHA-256 校验；命令级测试覆盖版本化命令信封与服务调用。
 - 客户端测试覆盖更新状态机、跳过版本持久化、安装器交接与启动时检查的开关条件。
+- 打包脚本新增发布产物资源校验，并提供 `-VerifyPublishedApp` 开关，用于启动发布版客户端做冒烟。
 
 ### 修复
 
@@ -24,6 +25,7 @@
 - 移除 Windows 发布任务中不必要的 Windows App Runtime 安装步骤。客户端以 Windows App SDK 自包含模式发布，不依赖预装运行时。
 - 移除安装器对 `ChineseSimplified.isl` 的硬依赖。Inno Setup 的 Chocolatey 包不包含该语言文件，会导致编译中止。
 - 修正工具链检查中的 Visual Studio 判定条件。原实现把 vswhere 查询限定为 `BuildTools` 产品，在只安装 Enterprise 或 Community 的机器上返回空值并中断验证；现在要求存在带 MSVC 与 Windows SDK 26100 的任意 Visual Studio 安装。
+- 修正发布产物缺少 WinUI 编译资源导致安装后无法启动的问题。`dotnet publish` 不会复制构建阶段生成的 `Clipboard.Windows.pri` 与 `*.xbf`，客户端因此在 XAML 初始化阶段崩溃并返回 `0xC000027B`；现在发布后显式补齐这些文件，并在打包脚本中逐个校验，缺失即终止打包。
 
 ### 变更
 

@@ -2,7 +2,8 @@ param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
     [string]$Version = '0.1.0',
     [string]$OutputRoot = '',
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+    [switch]$VerifyPublishedApp
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,6 +63,47 @@ try {
 
     if (-not (Test-Path -LiteralPath $executablePath)) {
         throw "发布目录缺少客户端程序：$executablePath"
+    }
+
+    $buildOutputRoot = (& dotnet msbuild $projectPath `
+        -getProperty:TargetDir `
+        -p:Configuration=Release `
+        -p:Platform=x64 `
+        -p:RuntimeIdentifier=win-x64 `
+        -nologo).Trim()
+    if (-not $buildOutputRoot -or -not (Test-Path -LiteralPath $buildOutputRoot)) {
+        throw "无法解析客户端构建输出目录：$buildOutputRoot"
+    }
+
+    $appResourceIndex = "$([System.IO.Path]::GetFileNameWithoutExtension($executablePath)).pri"
+    $buildResources = Get-ChildItem -LiteralPath $buildOutputRoot -Recurse -File |
+        Where-Object {
+            $_.Extension -eq '.xbf' -or
+            ($_.Extension -eq '.pri' -and $_.Name -eq $appResourceIndex)
+        }
+    if (-not $buildResources) {
+        throw "构建输出中没有 WinUI 资源文件：$buildOutputRoot"
+    }
+    foreach ($resource in $buildResources) {
+        $relative = [System.IO.Path]::GetRelativePath($buildOutputRoot, $resource.FullName)
+        if (-not (Test-Path -LiteralPath (Join-Path $publishRoot $relative))) {
+            throw "发布目录缺少 WinUI 资源文件：$relative。缺少该文件时客户端启动即崩溃。"
+        }
+    }
+
+    if ($VerifyPublishedApp) {
+        $smoke = Start-Process -FilePath $executablePath `
+            -ArgumentList '--show' `
+            -WorkingDirectory $publishRoot `
+            -PassThru
+        Start-Sleep -Seconds 8
+        $smoke.Refresh()
+        if ($smoke.HasExited -and $smoke.ExitCode -ne 0) {
+            throw ("发布的客户端启动失败，退出码 0x{0:X8}。" -f $smoke.ExitCode)
+        }
+        if (-not $smoke.HasExited) {
+            Stop-Process -Id $smoke.Id -Force
+        }
     }
 
     $forbiddenExtensions = @('.pfx', '.p12', '.pem', '.key', '.snk')

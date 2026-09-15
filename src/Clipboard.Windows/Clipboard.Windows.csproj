@@ -28,4 +28,21 @@
           Condition="'$(Configuration)' == 'Release'" />
     <Content Include="Assets\Clipboard.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!--
+    WinUI 3 unpackaged apps load their compiled XAML and resource index from loose files next to
+    the executable. The build generates them, but the publish pipeline does not carry them over,
+    so a published or installed app crashes during XAML initialization. Copy them after the
+    publish step, where the build output is guaranteed to exist.
+  -->
+  <Target Name="PublishWinUIResourceFiles" AfterTargets="Publish">
+    <ItemGroup>
+      <_WinUIResourceFile Include="$(TargetDir)$(TargetName).pri" />
+      <_WinUIResourceFile Include="$(TargetDir)**\*.xbf" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(_WinUIResourceFile)"
+      DestinationFiles="@(_WinUIResourceFile->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true" />
+  </Target>
 </Project>

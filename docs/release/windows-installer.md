@@ -28,6 +28,14 @@ pwsh -NoProfile -File scripts/package-windows.ps1 -Version 0.1.0
 pwsh -NoProfile -File scripts/package-windows.ps1 -Version 0.1.0 -SkipInstaller
 ```
 
+打包脚本会在发布完成后校验 WinUI 编译资源是否齐全。`dotnet publish` 不会复制构建阶段生成的 `Clipboard.Windows.pri` 与 `*.xbf`，缺失这些文件的客户端会在启动时崩溃并返回 `0xC000027B`，因此校验失败会直接终止打包。
+
+如需连发布版客户端一起验证，追加 `-VerifyPublishedApp`，脚本会启动发布目录中的客户端并确认它没有以错误码退出：
+
+```powershell
+pwsh -NoProfile -File scripts/package-windows.ps1 -Version 0.1.0 -VerifyPublishedApp
+```
+
 安装器默认安装到 `%LOCALAPPDATA%\Programs\Clipboard`，创建开始菜单入口，并提供可选的桌面快捷方式。卸载只删除程序文件，不删除 `%LOCALAPPDATA%\Clipboard` 下的历史、密钥、设置和日志。
 
 ## GitHub 自动发布
