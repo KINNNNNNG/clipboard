@@ -68,6 +68,12 @@ Once the output matches `SHA256SUMS.txt`, double-click the installer:
 - The app ships with the Windows App SDK in self-contained mode, so the target machine needs no separate Windows App Runtime.
 - The installer is currently unsigned, so Windows SmartScreen may warn about an unknown publisher.
 
+### Updates
+
+The Updates section of the settings page shows the running version. You can check manually, or turn on the startup check. Checks read this repository's GitHub Releases only, and accept nothing but an installer asset named like `Clipboard-Setup-vX.Y.Z.exe`.
+
+After downloading, the installer is verified against the published `SHA256SUMS.txt`; only a matching SHA-256 enables the install action. Once you confirm, the client exits by itself and the installer closes leftover processes, replaces files, and restarts the app. History, keys, and settings are untouched. A newer release can also be skipped.
+
 ## Build from source
 
 ### Prerequisites

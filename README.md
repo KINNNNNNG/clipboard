@@ -68,6 +68,12 @@ Get-FileHash .\Clipboard-Setup-v0.1.0.exe -Algorithm SHA256
 - 应用以 Windows App SDK 自包含模式发布，目标机器无需预装 Windows App Runtime。
 - 当前安装包未做代码签名，Windows SmartScreen 可能提示“未知发布者”。
 
+### 自动更新
+
+设置页的“更新”区域显示当前版本，可手动“检查更新”，也可开启“启动时自动检查更新”。检查只读取本仓库的 GitHub Releases，并且只接受形如 `Clipboard-Setup-vX.Y.Z.exe` 的安装器资产。
+
+下载完成后会依据发布的 `SHA256SUMS.txt` 校验 SHA-256，校验通过才允许“下载并安装”。确认安装后客户端自行退出，由安装器关闭残留进程、替换文件并自动重启应用；历史、密钥与设置保持不变。发现新版本时也可以选择“跳过此版本”。
+
 ## 从源码构建
 
 ### 前置条件
