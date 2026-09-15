@@ -32,7 +32,7 @@ pwsh -NoProfile -File scripts/package-windows.ps1 -Version 0.1.0 -SkipInstaller
 
 ## GitHub 自动发布
 
-工作流文件为 `.github/workflows/release.yml`。它支持两种入口：
+工作流文件为 `.github/workflows/release.yml`，在一个工作流中并行执行 Ubuntu 上的 Rust Core 校验和 Windows 上的客户端安装器构建。它支持两种入口：
 
 1. 推荐在 `main` 分支提交完成后创建并推送版本 Tag：
 

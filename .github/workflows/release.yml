@@ -35,7 +35,8 @@ jobs:
         shell: bash
         run: |
           cargo fmt --all -- --check
-          cargo test --workspace --all-targets
+          cargo test -p clipboard-core --lib
+          cargo test --workspace --all-targets --exclude clipboard-core
           cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   windows-client:
