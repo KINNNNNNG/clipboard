@@ -98,13 +98,23 @@ jobs:
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: pwsh -NoProfile -File scripts/package-windows.ps1 -Version $env:RELEASE_VERSION
 
+      - name: Stage release files
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $staging = 'artifacts/release'
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+          Copy-Item "artifacts/windows/installer/Clipboard-Setup-v$env:RELEASE_VERSION.exe" $staging
+          Copy-Item 'artifacts/windows/SHA256SUMS.txt' $staging
+
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: Clipboard-Windows-v${{ steps.version.outputs.version }}
           path: |
-            artifacts/windows/installer/Clipboard-Setup-v${{ steps.version.outputs.version }}.exe
-            artifacts/windows/SHA256SUMS.txt
+            artifacts/release/Clipboard-Setup-v${{ steps.version.outputs.version }}.exe
+            artifacts/release/SHA256SUMS.txt
           if-no-files-found: error
 
       - name: Upload release files
@@ -112,8 +122,8 @@ jobs:
         with:
           name: Clipboard-Release-Files-v${{ steps.version.outputs.version }}
           path: |
-            artifacts/windows/installer/Clipboard-Setup-v${{ steps.version.outputs.version }}.exe
-            artifacts/windows/SHA256SUMS.txt
+            artifacts/release/Clipboard-Setup-v${{ steps.version.outputs.version }}.exe
+            artifacts/release/SHA256SUMS.txt
           if-no-files-found: error
 
   release:

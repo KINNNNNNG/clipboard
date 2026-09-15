@@ -47,6 +47,8 @@ public sealed class WindowsInstallerConfigurationTests
         Assert.Contains("release:", workflow);
         Assert.Contains("needs: [core, windows-client]", workflow);
         Assert.DoesNotContain("Install Windows App Runtime", workflow);
+        Assert.Contains("artifacts/release/Clipboard-Setup-v${{ steps.version.outputs.version }}.exe", workflow);
+        Assert.DoesNotContain("release-files/installer/", workflow);
     }
 
     private static string ReadFixture(string fileName)
