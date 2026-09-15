@@ -39,7 +39,13 @@ public sealed class WindowsInstallerConfigurationTests
         Assert.Contains("contents: write", workflow);
         Assert.Contains("package-windows.ps1", workflow);
         Assert.Contains("SHA256SUMS.txt", workflow);
-        Assert.Contains("JRSoftware.InnoSetup", workflow);
+        Assert.Contains("choco install innosetup", workflow);
+        Assert.Contains("runs-on: ubuntu-22.04", workflow);
+        Assert.Contains("runs-on: windows-2022", workflow);
+        Assert.Contains("core:", workflow);
+        Assert.Contains("windows-client:", workflow);
+        Assert.Contains("release:", workflow);
+        Assert.Contains("needs: [core, windows-client]", workflow);
     }
 
     private static string ReadFixture(string fileName)

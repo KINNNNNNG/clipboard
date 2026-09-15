@@ -16,11 +16,31 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  core:
+    name: Verify Rust core
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: clippy,rustfmt
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Rust core verification
+        shell: bash
+        run: |
+          cargo fmt --all -- --check
+          cargo test --workspace --all-targets
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  windows-client:
+    name: Build Windows installer
     runs-on: windows-2022
-    outputs:
-      tag: ${{ steps.version.outputs.tag }}
-      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,9 +81,19 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Cache Windows App SDK NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-windows-app-sdk-1.8.260710003
+
+      - name: Install Windows App Runtime
+        shell: pwsh
+        run: winget install --id Microsoft.WindowsAppRuntime.1.8 --exact --silent --accept-source-agreements --accept-package-agreements
+
       - name: Install Inno Setup
         shell: pwsh
-        run: winget install --id JRSoftware.InnoSetup --exact --silent --accept-source-agreements --accept-package-agreements
+        run: choco install innosetup --yes --no-progress --limit-output
 
       - name: Build Windows installer
         shell: pwsh
@@ -80,6 +110,48 @@ jobs:
             artifacts/windows/SHA256SUMS.txt
           if-no-files-found: error
 
+      - name: Upload release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clipboard-Release-Files-v${{ steps.version.outputs.version }}
+          path: |
+            artifacts/windows/installer/Clipboard-Setup-v${{ steps.version.outputs.version }}.exe
+            artifacts/windows/SHA256SUMS.txt
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: [core, windows-client]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            tag="$REF_NAME"
+            [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Tag 格式错误: $tag"; exit 1; }
+            version="${tag#v}"
+          else
+            version="$INPUT_VERSION"
+            [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "版本号格式错误: $version"; exit 1; }
+            tag="v$version"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Download release files
+        uses: actions/download-artifact@v4
+        with:
+          name: Clipboard-Release-Files-v${{ steps.version.outputs.version }}
+          path: release-files
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -88,5 +160,5 @@ jobs:
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: |
-            artifacts/windows/installer/Clipboard-Setup-v${{ steps.version.outputs.version }}.exe
-            artifacts/windows/SHA256SUMS.txt
+            release-files/Clipboard-Setup-v${{ steps.version.outputs.version }}.exe
+            release-files/SHA256SUMS.txt
