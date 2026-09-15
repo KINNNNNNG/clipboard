@@ -20,3 +20,6 @@ data/
 
 # JetBrains IDEA
 .idea/
+
+# Local release artifacts
+artifacts/
