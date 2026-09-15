@@ -723,6 +723,320 @@ fn catch_status(operation: impl FnOnce() -> CoreStatus) -> CoreStatus {
     catch_unwind(AssertUnwindSafe(operation)).unwrap_or(CoreStatus::Panic)
 }
 
+/// One verified snapshot as reported to the client.
+#[derive(serde::Serialize)]
+struct SnapshotView {
+    directory: String,
+    created_ms: i64,
+    file_count: usize,
+    total_bytes: u64,
+}
+
+#[derive(serde::Serialize)]
+struct SnapshotListPayload {
+    snapshots: Vec<SnapshotView>,
+}
+
+/// Writes a verified snapshot of the vault data directory.
+///
+/// # Safety
+///
+/// All non-null input pointers must remain valid for their supplied lengths during this call.
+/// `out_summary` must point to writable `CoreBuffer` storage.
+#[allow(clippy::too_many_arguments)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clipboard_snapshot_create(
+    data_dir_ptr: *const u8,
+    data_dir_len: usize,
+    vault_id_ptr: *const u8,
+    vault_id_len: usize,
+    key_ptr: *const u8,
+    key_len: usize,
+    target_root_ptr: *const u8,
+    target_root_len: usize,
+    created_ms: i64,
+    keep: usize,
+    out_summary: *mut CoreBuffer,
+) -> CoreStatus {
+    catch_status(|| unsafe {
+        snapshot_create_impl(
+            data_dir_ptr,
+            data_dir_len,
+            vault_id_ptr,
+            vault_id_len,
+            key_ptr,
+            key_len,
+            target_root_ptr,
+            target_root_len,
+            created_ms,
+            keep,
+            out_summary,
+        )
+    })
+}
+/// Lists verified snapshots under `root` as JSON, newest first.
+///
+/// # Safety
+///
+/// All non-null input pointers must remain valid for their supplied lengths during this call.
+/// `out_snapshots` must point to writable `CoreBuffer` storage.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clipboard_snapshot_list(
+    root_ptr: *const u8,
+    root_len: usize,
+    vault_id_ptr: *const u8,
+    vault_id_len: usize,
+    key_ptr: *const u8,
+    key_len: usize,
+    out_snapshots: *mut CoreBuffer,
+) -> CoreStatus {
+    catch_status(|| unsafe {
+        snapshot_list_impl(
+            root_ptr,
+            root_len,
+            vault_id_ptr,
+            vault_id_len,
+            key_ptr,
+            key_len,
+            out_snapshots,
+        )
+    })
+}
+
+/// Restores one verified snapshot over `data_dir`, quarantining the current database.
+///
+/// # Safety
+///
+/// All non-null input pointers must remain valid for their supplied lengths during this call.
+/// `out_summary` must point to writable `CoreBuffer` storage.
+#[allow(clippy::too_many_arguments)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clipboard_snapshot_restore(
+    snapshot_dir_ptr: *const u8,
+    snapshot_dir_len: usize,
+    data_dir_ptr: *const u8,
+    data_dir_len: usize,
+    vault_id_ptr: *const u8,
+    vault_id_len: usize,
+    key_ptr: *const u8,
+    key_len: usize,
+    created_ms: i64,
+    out_summary: *mut CoreBuffer,
+) -> CoreStatus {
+    catch_status(|| unsafe {
+        snapshot_restore_impl(
+            snapshot_dir_ptr,
+            snapshot_dir_len,
+            data_dir_ptr,
+            data_dir_len,
+            vault_id_ptr,
+            vault_id_len,
+            key_ptr,
+            key_len,
+            created_ms,
+            out_summary,
+        )
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn snapshot_create_impl(
+    data_dir_ptr: *const u8,
+    data_dir_len: usize,
+    vault_id_ptr: *const u8,
+    vault_id_len: usize,
+    key_ptr: *const u8,
+    key_len: usize,
+    target_root_ptr: *const u8,
+    target_root_len: usize,
+    created_ms: i64,
+    keep: usize,
+    out_summary: *mut CoreBuffer,
+) -> CoreStatus {
+    if out_summary.is_null() {
+        return CoreStatus::InvalidArgument;
+    }
+    let Some(data_dir) = (unsafe { read_utf8(data_dir_ptr, data_dir_len) }) else {
+        return CoreStatus::InvalidUtf8;
+    };
+    let Some(target_root) = (unsafe { read_utf8(target_root_ptr, target_root_len) }) else {
+        return CoreStatus::InvalidUtf8;
+    };
+    let Some(vault_id) = (unsafe { read_vault_id(vault_id_ptr, vault_id_len) }) else {
+        return CoreStatus::InvalidArgument;
+    };
+    let Some(key) = (unsafe { read_vault_key(key_ptr, key_len) }) else {
+        return CoreStatus::InvalidArgument;
+    };
+
+    // A dedicated connection keeps snapshotting independent of the running service.
+    let Ok(database) =
+        clipboard_storage::Database::open_vault(Path::new(&data_dir), vault_id, &key)
+    else {
+        return CoreStatus::SnapshotFailed;
+    };
+    match clipboard_core::create_snapshot(
+        &database,
+        Path::new(&data_dir),
+        vault_id,
+        &key,
+        Path::new(&target_root),
+        created_ms,
+        keep,
+    ) {
+        Ok(summary) => write_snapshot_view(summary, out_summary),
+        Err(_) => CoreStatus::SnapshotFailed,
+    }
+}
+
+fn write_snapshot_view(
+    summary: clipboard_core::SnapshotSummary,
+    out_summary: *mut CoreBuffer,
+) -> CoreStatus {
+    let view = SnapshotView {
+        directory: summary.directory.to_string_lossy().into_owned(),
+        created_ms: summary.created_ms,
+        file_count: summary.file_count,
+        total_bytes: summary.total_bytes,
+    };
+    match serde_json::to_vec(&view) {
+        Ok(json) => {
+            unsafe { ptr::write(out_summary, CoreBuffer::from_vec(json)) };
+            CoreStatus::Ok
+        }
+        Err(_) => CoreStatus::CoreError,
+    }
+}
+
+unsafe fn snapshot_list_impl(
+    root_ptr: *const u8,
+    root_len: usize,
+    vault_id_ptr: *const u8,
+    vault_id_len: usize,
+    key_ptr: *const u8,
+    key_len: usize,
+    out_snapshots: *mut CoreBuffer,
+) -> CoreStatus {
+    if out_snapshots.is_null() {
+        return CoreStatus::InvalidArgument;
+    }
+    let Some(root) = (unsafe { read_utf8(root_ptr, root_len) }) else {
+        return CoreStatus::InvalidUtf8;
+    };
+    let Some(vault_id) = (unsafe { read_vault_id(vault_id_ptr, vault_id_len) }) else {
+        return CoreStatus::InvalidArgument;
+    };
+    let Some(key) = (unsafe { read_vault_key(key_ptr, key_len) }) else {
+        return CoreStatus::InvalidArgument;
+    };
+
+    match clipboard_core::list_snapshots(Path::new(&root), vault_id, &key) {
+        Ok(snapshots) => {
+            let payload = SnapshotListPayload {
+                snapshots: snapshots
+                    .into_iter()
+                    .map(|snapshot| SnapshotView {
+                        directory: snapshot.directory.to_string_lossy().into_owned(),
+                        created_ms: snapshot.created_ms,
+                        file_count: snapshot.file_count,
+                        total_bytes: snapshot.total_bytes,
+                    })
+                    .collect(),
+            };
+            match serde_json::to_vec(&payload) {
+                Ok(json) => {
+                    unsafe { ptr::write(out_snapshots, CoreBuffer::from_vec(json)) };
+                    CoreStatus::Ok
+                }
+                Err(_) => CoreStatus::CoreError,
+            }
+        }
+        Err(_) => CoreStatus::SnapshotFailed,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn snapshot_restore_impl(
+    snapshot_dir_ptr: *const u8,
+    snapshot_dir_len: usize,
+    data_dir_ptr: *const u8,
+    data_dir_len: usize,
+    vault_id_ptr: *const u8,
+    vault_id_len: usize,
+    key_ptr: *const u8,
+    key_len: usize,
+    created_ms: i64,
+    out_summary: *mut CoreBuffer,
+) -> CoreStatus {
+    if out_summary.is_null() {
+        return CoreStatus::InvalidArgument;
+    }
+    let Some(snapshot_dir) = (unsafe { read_utf8(snapshot_dir_ptr, snapshot_dir_len) }) else {
+        return CoreStatus::InvalidUtf8;
+    };
+    let Some(data_dir) = (unsafe { read_utf8(data_dir_ptr, data_dir_len) }) else {
+        return CoreStatus::InvalidUtf8;
+    };
+    let Some(vault_id) = (unsafe { read_vault_id(vault_id_ptr, vault_id_len) }) else {
+        return CoreStatus::InvalidArgument;
+    };
+    let Some(key) = (unsafe { read_vault_key(key_ptr, key_len) }) else {
+        return CoreStatus::InvalidArgument;
+    };
+
+    match clipboard_core::restore_snapshot(
+        Path::new(&snapshot_dir),
+        Path::new(&data_dir),
+        vault_id,
+        &key,
+        created_ms,
+    ) {
+        Ok(summary) => {
+            let view = SnapshotView {
+                directory: summary.directory.to_string_lossy().into_owned(),
+                created_ms: summary.created_ms,
+                file_count: summary.file_count,
+                total_bytes: summary.total_bytes,
+            };
+            match serde_json::to_vec(&view) {
+                Ok(json) => {
+                    unsafe { ptr::write(out_summary, CoreBuffer::from_vec(json)) };
+                    CoreStatus::Ok
+                }
+                Err(_) => CoreStatus::CoreError,
+            }
+        }
+        Err(_) => CoreStatus::SnapshotRestoreFailed,
+    }
+}
+
+/// Reads a UTF-8 string from a raw buffer without validating the surrounding lifetime.
+unsafe fn read_utf8(ptr: *const u8, len: usize) -> Option<String> {
+    if ptr.is_null() {
+        return None;
+    }
+    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
+    str::from_utf8(bytes).ok().map(str::to_owned)
+}
+
+unsafe fn read_vault_id(ptr: *const u8, len: usize) -> Option<Uuid> {
+    if ptr.is_null() || len != 16 {
+        return None;
+    }
+    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
+    Uuid::from_slice(bytes).ok()
+}
+
+unsafe fn read_vault_key(ptr: *const u8, len: usize) -> Option<[u8; 32]> {
+    if ptr.is_null() || len != 32 {
+        return None;
+    }
+    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
+    let mut key = [0u8; 32];
+    key.copy_from_slice(bytes);
+    Some(key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

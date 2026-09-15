@@ -16,4 +16,6 @@ pub enum CoreStatus {
     UpdateCheckFailed = 12,
     UpdateDownloadFailed = 13,
     UpdateChecksumMismatch = 14,
+    SnapshotFailed = 15,
+    SnapshotRestoreFailed = 16,
 }
