@@ -27,6 +27,9 @@ public partial class App : Microsoft.UI.Xaml.Application
     private readonly PreviousInstanceCloser _previousInstanceCloser = new();
     private bool _showOnLaunch;
     private string? _startupNotice;
+    private readonly IVaultSnapshotService _snapshotService = new VaultSnapshotService();
+    private ClientSettings _snapshotSettings = ClientSettings.Default;
+    private DispatcherQueueTimer? _snapshotTimer;
 
     public App()
     {
@@ -79,9 +82,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             _tray.Start();
 
             _vault = new VaultBootstrapper().LoadOrCreate();
-            _core = OpenCoreWithRecovery(_vault);
-            _vault.Dispose();
-            _vault = null;
+            _snapshotSettings = await _settingsStore.LoadAsync();
+            _core = OpenCoreWithRecovery(_vault, _snapshotSettings);
 
             _presenter = new WindowPresenter(MainWindow);
             var writer = new WindowsClipboardWriter();
@@ -114,7 +116,12 @@ public partial class App : Microsoft.UI.Xaml.Application
                 _core,
                 new SourceApplicationResolver(),
                 suppression,
-                new CompositeCaptureObserver(MainWindow, _realtimeSync),
+                new CompositeCaptureObserver(
+                    MainWindow,
+                    _realtimeSync,
+                    new SnapshotWriteCounter(
+                        SnapshotPolicy.WritesPerSnapshot,
+                        () => CreateSnapshotQuietly("write-threshold"))),
                 retentionPolicy: retentionPolicy);
 
             _shortcuts = new GlobalShortcutService(dispatcher, MainWindow.ShowPanel);
@@ -143,6 +150,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 HotkeyChord.Parse(_settingsViewModel.FallbackHotkey));
             MainWindow.SetShortcutState(_shortcuts.State);
             _capture.Start(dispatcher);
+            StartSnapshotTimer(dispatcher);
 
             if (_showOnLaunch)
             {
@@ -179,7 +187,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     /// Only damage is recovered: a marker mismatch means the key belongs to another vault, so that
     /// is reported instead. The damaged file is preserved under a timestamped name.
     /// </remarks>
-    private ClipboardCoreClient OpenCoreWithRecovery(VaultMaterial vault)
+    private ClipboardCoreClient OpenCoreWithRecovery(VaultMaterial vault, ClientSettings settings)
     {
         try
         {
@@ -188,6 +196,17 @@ public partial class App : Microsoft.UI.Xaml.Application
         catch (ClipboardCoreException error) when (
             error.Status is CoreStatus.VaultUnreadable or CoreStatus.VaultCorrupt)
         {
+            if (TryRestoreNewestSnapshot(vault, settings))
+            {
+                _globalLog?.Write(LogLevel.Warn, "app", "vault.restore", new Dictionary<string, string>
+                {
+                    ["error_category"] = CoreStatusMessages.ForLog(error.Status),
+                    ["source"] = "snapshot",
+                });
+                _startupNotice = "剪贴板历史数据库已损坏，已从最近的快照恢复。";
+                return ClipboardCoreClient.Open(vault.DataDirectory, vault.VaultId, vault.VaultKey);
+            }
+
             string? quarantined = VaultRecovery.QuarantineHistory(
                 vault.DataDirectory,
                 DateTimeOffset.UtcNow);
@@ -201,6 +220,68 @@ public partial class App : Microsoft.UI.Xaml.Application
                 : "剪贴板历史数据库无法解密，已备份原文件并重建为空库。";
             return ClipboardCoreClient.Open(vault.DataDirectory, vault.VaultId, vault.VaultKey);
         }
+    }
+
+    /// <summary>
+    /// Restores the newest verified snapshot, or returns false when none can be used.
+    /// </summary>
+    private bool TryRestoreNewestSnapshot(VaultMaterial vault, ClientSettings settings)
+    {
+        try
+        {
+            string root = SnapshotPolicy.ResolveDirectory(settings);
+            foreach (VaultSnapshot snapshot in _snapshotService.List(vault, root))
+            {
+                if (_snapshotService.Restore(
+                    vault,
+                    snapshot.Directory,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()))
+                {
+                    return true;
+                }
+            }
+        }
+        catch
+        {
+            // A failed restore falls back to rebuilding an empty database.
+        }
+        return false;
+    }
+
+    private void StartSnapshotTimer(DispatcherQueue dispatcher)
+    {
+        _snapshotTimer = dispatcher.CreateTimer();
+        _snapshotTimer.Interval = TimeSpan.FromMinutes(_snapshotSettings.SnapshotIntervalMinutes);
+        _snapshotTimer.Tick += (_, _) => CreateSnapshotQuietly("interval");
+        _snapshotTimer.Start();
+    }
+
+    /// <summary>
+    /// Writes a verified snapshot. Failures are logged and never disturb clipboard capture.
+    /// </summary>
+    private void CreateSnapshotQuietly(string trigger)
+    {
+        if (_vault is null)
+        {
+            return;
+        }
+        bool created;
+        try
+        {
+            created = _snapshotService.Create(
+                _vault,
+                SnapshotPolicy.ResolveDirectory(_snapshotSettings),
+                _snapshotSettings.SnapshotKeep) is not null;
+        }
+        catch
+        {
+            created = false;
+        }
+        _globalLog?.Write(LogLevel.Info, "app", "vault.snapshot", new Dictionary<string, string>
+        {
+            ["trigger"] = trigger,
+            ["result"] = created ? "ok" : "failed",
+        });
     }
 
     private async void OpenSettings()
@@ -337,6 +418,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     private void OnExit(object sender, object args)
     {
+        CreateSnapshotQuietly("exit");
         _tray?.Dispose();
         _capture?.Dispose();
         _shortcuts?.Dispose();

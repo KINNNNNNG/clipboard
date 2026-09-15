@@ -12,7 +12,10 @@ internal sealed record ClientSettings(
     SyncSettings? Sync = null,
     LoggingSettings? Logging = null,
     bool UpdateCheckOnStartup = false,
-    string? SkippedUpdateVersion = null)
+    string? SkippedUpdateVersion = null,
+    string? SnapshotDirectory = null,
+    int SnapshotIntervalMinutes = SnapshotPolicy.DefaultIntervalMinutes,
+    int SnapshotKeep = SnapshotPolicy.DefaultKeep)
 {
     public const ulong BytesPerGiB = 1024UL * 1024 * 1024;
     public const ulong DefaultMaxFavoriteFileCacheBytes = 5UL * BytesPerGiB;
@@ -57,6 +60,19 @@ internal sealed record ClientSettings(
         if (SkippedUpdateVersion is not null && !UpdateVersion.IsValid(SkippedUpdateVersion))
         {
             throw new ArgumentOutOfRangeException(nameof(SkippedUpdateVersion));
+        }
+        if (SnapshotIntervalMinutes is < SnapshotPolicy.MinimumIntervalMinutes
+            or > SnapshotPolicy.MaximumIntervalMinutes)
+        {
+            throw new ArgumentOutOfRangeException(nameof(SnapshotIntervalMinutes));
+        }
+        if (SnapshotKeep is < SnapshotPolicy.MinimumKeep or > SnapshotPolicy.MaximumKeep)
+        {
+            throw new ArgumentOutOfRangeException(nameof(SnapshotKeep));
+        }
+        if (!SnapshotPolicy.IsValidDirectory(SnapshotDirectory, SnapshotPolicy.DataDirectory))
+        {
+            throw new ArgumentOutOfRangeException(nameof(SnapshotDirectory));
         }
     }
 }

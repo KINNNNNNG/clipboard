@@ -17,6 +17,8 @@ internal enum CoreStatus : int
     UpdateCheckFailed = 12,
     UpdateDownloadFailed = 13,
     UpdateChecksumMismatch = 14,
+    SnapshotFailed = 15,
+    SnapshotRestoreFailed = 16,
 }
 
 internal sealed class ClipboardCoreException : Exception

@@ -27,7 +27,40 @@ internal interface IClipboardCoreNative
     void Close(nint handle);
 }
 
-internal sealed class PInvokeClipboardCoreNative : IClipboardCoreNative
+/// <summary>
+/// Snapshot calls that must work without an open core handle.
+/// </summary>
+/// <remarks>
+/// Recovery runs before the core can be opened, so these calls live outside
+/// <see cref="IClipboardCoreNative"/> and are injected separately.
+/// </remarks>
+internal interface IClipboardSnapshotNative
+{
+    CoreStatus SnapshotCreate(
+        ReadOnlySpan<byte> dataDirectory,
+        ReadOnlySpan<byte> vaultId,
+        ReadOnlySpan<byte> vaultKey,
+        ReadOnlySpan<byte> targetRoot,
+        long createdMs,
+        nuint keep,
+        out CoreBuffer response);
+
+    CoreStatus SnapshotList(
+        ReadOnlySpan<byte> root,
+        ReadOnlySpan<byte> vaultId,
+        ReadOnlySpan<byte> vaultKey,
+        out CoreBuffer response);
+
+    CoreStatus SnapshotRestore(
+        ReadOnlySpan<byte> snapshotDirectory,
+        ReadOnlySpan<byte> dataDirectory,
+        ReadOnlySpan<byte> vaultId,
+        ReadOnlySpan<byte> vaultKey,
+        long createdMs,
+        out CoreBuffer response);
+}
+
+internal sealed class PInvokeClipboardCoreNative : IClipboardCoreNative, IClipboardSnapshotNative
 {
     public static PInvokeClipboardCoreNative Instance { get; } = new();
 
@@ -229,6 +262,83 @@ internal sealed class PInvokeClipboardCoreNative : IClipboardCoreNative
                 out output);
         }
     }
+
+    public unsafe CoreStatus SnapshotCreate(
+        ReadOnlySpan<byte> dataDirectory,
+        ReadOnlySpan<byte> vaultId,
+        ReadOnlySpan<byte> vaultKey,
+        ReadOnlySpan<byte> targetRoot,
+        long createdMs,
+        nuint keep,
+        out CoreBuffer response)
+    {
+        fixed (byte* dataDirectoryPointer = dataDirectory)
+        fixed (byte* vaultIdPointer = vaultId)
+        fixed (byte* vaultKeyPointer = vaultKey)
+        fixed (byte* targetRootPointer = targetRoot)
+        {
+            return NativeMethods.clipboard_snapshot_create(
+                dataDirectoryPointer,
+                (nuint)dataDirectory.Length,
+                vaultIdPointer,
+                (nuint)vaultId.Length,
+                vaultKeyPointer,
+                (nuint)vaultKey.Length,
+                targetRootPointer,
+                (nuint)targetRoot.Length,
+                createdMs,
+                keep,
+                out response);
+        }
+    }
+
+    public unsafe CoreStatus SnapshotList(
+        ReadOnlySpan<byte> root,
+        ReadOnlySpan<byte> vaultId,
+        ReadOnlySpan<byte> vaultKey,
+        out CoreBuffer response)
+    {
+        fixed (byte* rootPointer = root)
+        fixed (byte* vaultIdPointer = vaultId)
+        fixed (byte* vaultKeyPointer = vaultKey)
+        {
+            return NativeMethods.clipboard_snapshot_list(
+                rootPointer,
+                (nuint)root.Length,
+                vaultIdPointer,
+                (nuint)vaultId.Length,
+                vaultKeyPointer,
+                (nuint)vaultKey.Length,
+                out response);
+        }
+    }
+
+    public unsafe CoreStatus SnapshotRestore(
+        ReadOnlySpan<byte> snapshotDirectory,
+        ReadOnlySpan<byte> dataDirectory,
+        ReadOnlySpan<byte> vaultId,
+        ReadOnlySpan<byte> vaultKey,
+        long createdMs,
+        out CoreBuffer response)
+    {
+        fixed (byte* snapshotPointer = snapshotDirectory)
+        fixed (byte* dataDirectoryPointer = dataDirectory)
+        fixed (byte* vaultIdPointer = vaultId)
+        fixed (byte* vaultKeyPointer = vaultKey)
+        {
+            return NativeMethods.clipboard_snapshot_restore(
+                snapshotPointer,
+                (nuint)snapshotDirectory.Length,
+                dataDirectoryPointer,
+                (nuint)dataDirectory.Length,
+                vaultIdPointer,
+                (nuint)vaultId.Length,
+                vaultKeyPointer,
+                (nuint)vaultKey.Length,
+                createdMs,
+                out response);
+        }
+    }
 }
 
 internal static partial class NativeMethods
@@ -287,6 +397,43 @@ internal static partial class NativeMethods
         byte* password,
         nuint passwordLength,
         out CoreBuffer output);
+
+    [LibraryImport("clipboard_ffi")]
+    internal static unsafe partial CoreStatus clipboard_snapshot_create(
+        byte* dataDirectory,
+        nuint dataDirectoryLength,
+        byte* vaultId,
+        nuint vaultIdLength,
+        byte* vaultKey,
+        nuint vaultKeyLength,
+        byte* targetRoot,
+        nuint targetRootLength,
+        long createdMs,
+        nuint keep,
+        out CoreBuffer response);
+
+    [LibraryImport("clipboard_ffi")]
+    internal static unsafe partial CoreStatus clipboard_snapshot_list(
+        byte* root,
+        nuint rootLength,
+        byte* vaultId,
+        nuint vaultIdLength,
+        byte* vaultKey,
+        nuint vaultKeyLength,
+        out CoreBuffer response);
+
+    [LibraryImport("clipboard_ffi")]
+    internal static unsafe partial CoreStatus clipboard_snapshot_restore(
+        byte* snapshotDirectory,
+        nuint snapshotDirectoryLength,
+        byte* dataDirectory,
+        nuint dataDirectoryLength,
+        byte* vaultId,
+        nuint vaultIdLength,
+        byte* vaultKey,
+        nuint vaultKeyLength,
+        long createdMs,
+        out CoreBuffer response);
 
     [LibraryImport("clipboard_ffi")]
     internal static unsafe partial CoreStatus clipboard_pairing_file_encode(

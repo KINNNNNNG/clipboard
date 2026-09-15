@@ -53,6 +53,16 @@ internal static class CoreStatusMessages
     };
 
     /// <summary>
+    /// Describes a snapshot failure for the settings page.
+    /// </summary>
+    public static string ForSnapshot(CoreStatus status) => status switch
+    {
+        CoreStatus.SnapshotRestoreFailed => "从快照恢复失败，请检查快照目录后重试。",
+        CoreStatus.SnapshotFailed => "创建本地快照失败，请检查快照目录是否可写。",
+        _ => "快照操作失败，请稍后重试。",
+    };
+
+    /// <summary>
     /// Maps a status onto the fixed category written to the global log.
     /// </summary>
     public static string ForLog(CoreStatus status) => status switch
@@ -70,6 +80,8 @@ internal static class CoreStatusMessages
         CoreStatus.UpdateCheckFailed => "update_check_failed",
         CoreStatus.UpdateDownloadFailed => "update_download_failed",
         CoreStatus.UpdateChecksumMismatch => "update_checksum_mismatch",
+        CoreStatus.SnapshotFailed => "snapshot_failed",
+        CoreStatus.SnapshotRestoreFailed => "snapshot_restore_failed",
         _ => "core_error",
     };
 }
