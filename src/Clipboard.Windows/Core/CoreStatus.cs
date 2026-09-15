@@ -14,6 +14,9 @@ internal enum CoreStatus : int
     VaultUnreadable = 9,
     VaultCorrupt = 10,
     StorageMigration = 11,
+    UpdateCheckFailed = 12,
+    UpdateDownloadFailed = 13,
+    UpdateChecksumMismatch = 14,
 }
 
 internal sealed class ClipboardCoreException : Exception

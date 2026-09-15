@@ -43,6 +43,17 @@ internal sealed class SettingsViewModel : ObservableObject
     private string _loggingLevel = "info";
     private int _loggingRetentionDays = 7;
     private ulong _loggingMaxSizeBytes = 200UL * 1024 * 1024;
+    private readonly IUpdateService? _updateService;
+    private readonly IUpdateInstallerLauncher? _installerLauncher;
+    private readonly Action? _requestExit;
+    private bool _updateCheckOnStartup;
+    private string? _skippedUpdateVersion;
+    private string? _latestVersion;
+    private string? _pendingInstallerUrl;
+    private string? _pendingChecksumsUrl;
+    private string _updateStatus = string.Empty;
+    private bool _updateAvailable;
+    private bool _updateBusy;
 
     public SettingsViewModel(
         IClientSettingsStore store,
@@ -55,7 +66,11 @@ internal sealed class SettingsViewModel : ObservableObject
         ClipboardCoreClient? syncCore = null,
         ISyncCredentialStore? credentials = null,
         IGlobalLog? globalLog = null,
-        IRealtimeSyncSettingsNotifier? syncSettingsNotifier = null)
+        IRealtimeSyncSettingsNotifier? syncSettingsNotifier = null,
+        IUpdateService? updateService = null,
+        IUpdateInstallerLauncher? installerLauncher = null,
+        Action? requestExit = null,
+        string? currentVersion = null)
     {
         _store = store;
         _retention = retention;
@@ -68,6 +83,10 @@ internal sealed class SettingsViewModel : ObservableObject
         _credentials = credentials;
         _globalLog = globalLog;
         _syncSettingsNotifier = syncSettingsNotifier;
+        _updateService = updateService;
+        _installerLauncher = installerLauncher;
+        _requestExit = requestExit;
+        CurrentVersion = currentVersion ?? ApplicationVersion.Current;
     }
 
     public bool MaxRegularItemsEnabled
@@ -162,6 +181,202 @@ internal sealed class SettingsViewModel : ObservableObject
     public int LoggingRetentionDays { get => _loggingRetentionDays; set => SetProperty(ref _loggingRetentionDays, value); }
     public ulong LoggingMaxSizeBytes { get => _loggingMaxSizeBytes; private set => SetProperty(ref _loggingMaxSizeBytes, value); }
     public LoggingSettings CurrentLoggingSettings => new(LoggingLevel, LoggingRetentionDays, LoggingMaxSizeBytes);
+
+    /// <summary>
+    /// Version of the running client; update checks compare against this value.
+    /// </summary>
+    public string CurrentVersion { get; }
+
+    public bool UpdateCheckOnStartup
+    {
+        get => _updateCheckOnStartup;
+        set => SetProperty(ref _updateCheckOnStartup, value);
+    }
+
+    public string UpdateStatus
+    {
+        get => _updateStatus;
+        private set => SetProperty(ref _updateStatus, value);
+    }
+
+    public bool UpdateAvailable
+    {
+        get => _updateAvailable;
+        private set
+        {
+            if (SetProperty(ref _updateAvailable, value))
+            {
+                OnPropertyChanged(nameof(CanInstallUpdate));
+                OnPropertyChanged(nameof(CanSkipUpdate));
+            }
+        }
+    }
+
+    public bool CanCheckForUpdates => _updateService is not null && !_updateBusy;
+
+    public bool CanInstallUpdate =>
+        _updateAvailable && _installerLauncher is not null && !_updateBusy;
+
+    public bool CanSkipUpdate => _updateAvailable && !_updateBusy;
+
+    /// <summary>
+    /// Reports whether the startup check should run for this session.
+    /// </summary>
+    public bool ShouldCheckForUpdatesOnStartup => _updateCheckOnStartup && _updateService is not null;
+
+    /// <summary>
+    /// Asks the release feed whether a newer version is published.
+    /// </summary>
+    public async Task CheckForUpdatesAsync(CancellationToken cancellationToken = default)
+    {
+        if (_updateService is null || _updateBusy)
+        {
+            return;
+        }
+
+        SetUpdateBusy(true);
+        try
+        {
+            UpdateStatus = "正在检查更新…";
+            UpdateCheckResponseDto response = await _updateService.CheckUpdateAsync(
+                new CheckUpdateRequestDto(CurrentVersion, IncludePrerelease: false),
+                cancellationToken);
+            _latestVersion = response.LatestVersion;
+            _pendingInstallerUrl = response.InstallerUrl;
+            _pendingChecksumsUrl = response.ChecksumsUrl;
+            bool skipped = _skippedUpdateVersion is not null
+                && string.Equals(
+                    _skippedUpdateVersion,
+                    response.LatestVersion,
+                    StringComparison.Ordinal);
+            UpdateAvailable = response.Available && !skipped;
+            UpdateStatus = response.Available
+                ? skipped
+                    ? $"已跳过版本 {response.LatestVersion}。"
+                    : $"发现新版本 {response.LatestVersion}。"
+                : "当前已是最新版本。";
+            WriteUpdateLog("update.check.end", UpdateAvailable ? "available" : "current");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ClipboardCoreException error)
+        {
+            UpdateAvailable = false;
+            UpdateStatus = CoreStatusMessages.ForUpdate(error.Status);
+            WriteUpdateLog("update.check.failed", CoreStatusMessages.ForLog(error.Status));
+        }
+        catch
+        {
+            UpdateAvailable = false;
+            UpdateStatus = "检查更新失败，请稍后重试。";
+            WriteUpdateLog("update.check.failed", "unexpected");
+        }
+        finally
+        {
+            SetUpdateBusy(false);
+        }
+    }
+
+    /// <summary>
+    /// Downloads the verified installer and hands the session over to it.
+    /// </summary>
+    public async Task DownloadAndInstallUpdateAsync(CancellationToken cancellationToken = default)
+    {
+        if (_updateService is null || _installerLauncher is null || _updateBusy)
+        {
+            return;
+        }
+        if (!_updateAvailable
+            || _latestVersion is null
+            || _pendingInstallerUrl is null
+            || _pendingChecksumsUrl is null)
+        {
+            UpdateStatus = "更新信息不完整，请重新检查更新。";
+            return;
+        }
+
+        SetUpdateBusy(true);
+        try
+        {
+            UpdateStatus = $"正在下载 {_latestVersion}…";
+            UpdateDownloadResponseDto response = await _updateService.DownloadUpdateAsync(
+                new DownloadUpdateRequestDto(
+                    _latestVersion,
+                    _pendingInstallerUrl,
+                    _pendingChecksumsUrl,
+                    UpdatesDirectory),
+                cancellationToken);
+            if (!_installerLauncher.Launch(response.InstallerPath))
+            {
+                UpdateStatus = "无法启动安装程序，请手动运行已下载的安装包。";
+                WriteUpdateLog("update.install.failed", "launch");
+                return;
+            }
+
+            UpdateStatus = "安装程序已启动，客户端即将退出并完成更新。";
+            WriteUpdateLog("update.install.start", "ok");
+            _requestExit?.Invoke();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ClipboardCoreException error)
+        {
+            UpdateStatus = CoreStatusMessages.ForUpdate(error.Status);
+            WriteUpdateLog("update.download.failed", CoreStatusMessages.ForLog(error.Status));
+        }
+        catch
+        {
+            UpdateStatus = "更新失败，请稍后重试。";
+            WriteUpdateLog("update.download.failed", "unexpected");
+        }
+        finally
+        {
+            SetUpdateBusy(false);
+        }
+    }
+
+    /// <summary>
+    /// Remembers the offered version so later checks stay quiet about it.
+    /// </summary>
+    public async Task SkipUpdateAsync(CancellationToken cancellationToken = default)
+    {
+        if (_latestVersion is null)
+        {
+            return;
+        }
+        _skippedUpdateVersion = _latestVersion;
+        UpdateAvailable = false;
+        UpdateStatus = $"已跳过版本 {_latestVersion}。";
+        await SaveAsync(cancellationToken);
+    }
+
+    internal static string UpdatesDirectory => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Clipboard",
+        "updates");
+
+    private void SetUpdateBusy(bool busy)
+    {
+        if (_updateBusy == busy)
+        {
+            return;
+        }
+        _updateBusy = busy;
+        OnPropertyChanged(nameof(CanCheckForUpdates));
+        OnPropertyChanged(nameof(CanInstallUpdate));
+        OnPropertyChanged(nameof(CanSkipUpdate));
+    }
+
+    private void WriteUpdateLog(string eventName, string status) =>
+        _globalLog?.Write(
+            LogLevel.Info,
+            "update",
+            eventName,
+            new Dictionary<string, string> { ["status"] = status });
 
     public async Task LoadAsync(CancellationToken cancellationToken = default)
     {
@@ -295,7 +510,9 @@ internal sealed class SettingsViewModel : ObservableObject
             Theme,
             maxFavoriteFileCacheBytes,
             sync,
-            CurrentLoggingSettings);
+            CurrentLoggingSettings,
+            UpdateCheckOnStartup,
+            _skippedUpdateVersion);
     }
 
     private void Apply(ClientSettings settings)
@@ -331,6 +548,8 @@ internal sealed class SettingsViewModel : ObservableObject
         LoggingLevel = logging.Level;
         LoggingRetentionDays = logging.RetentionDays;
         LoggingMaxSizeBytes = logging.MaxSizeBytes;
+        UpdateCheckOnStartup = settings.UpdateCheckOnStartup;
+        _skippedUpdateVersion = settings.SkippedUpdateVersion;
     }
 
     public async Task<bool> SaveSyncAsync(CancellationToken cancellationToken = default)

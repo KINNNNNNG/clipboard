@@ -118,9 +118,16 @@ public partial class App : Microsoft.UI.Xaml.Application
                 syncCore: _core,
                 credentials: credentials,
                 globalLog: _globalLog,
-                syncSettingsNotifier: _realtimeSync);
+                syncSettingsNotifier: _realtimeSync,
+                updateService: _core,
+                installerLauncher: new UpdateInstallerLauncher(),
+                requestExit: ExitApplication);
             await _settingsViewModel.LoadAsync();
             ApplyTheme(_settingsViewModel.Theme);
+            if (_settingsViewModel.ShouldCheckForUpdatesOnStartup)
+            {
+                _ = CheckForUpdatesOnStartupAsync();
+            }
             _shortcuts.Configure(
                 _settingsViewModel.InterceptWinV,
                 HotkeyChord.Parse(_settingsViewModel.FallbackHotkey));
@@ -236,6 +243,28 @@ public partial class App : Microsoft.UI.Xaml.Application
         _settingsWindows.Current?.Close();
         _logWindows.Current?.Close();
         MainWindow?.Close();
+    }
+
+    /// <summary>
+    /// Runs the optional startup update check without blocking clipboard capture.
+    /// </summary>
+    private async Task CheckForUpdatesOnStartupAsync()
+    {
+        if (_settingsViewModel is null)
+        {
+            return;
+        }
+        try
+        {
+            await _settingsViewModel.CheckForUpdatesAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+            // A failed startup check must never disturb the clipboard client.
+        }
     }
 
     private async Task DisposeRealtimeSyncAsync()

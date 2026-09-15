@@ -42,6 +42,17 @@ internal static class CoreStatusMessages
     };
 
     /// <summary>
+    /// Describes an update failure for the settings page.
+    /// </summary>
+    public static string ForUpdate(CoreStatus status) => status switch
+    {
+        CoreStatus.UpdateChecksumMismatch => "安装包校验失败，已丢弃临时文件。",
+        CoreStatus.UpdateDownloadFailed => "下载安装包失败，请稍后重试。",
+        CoreStatus.UpdateCheckFailed => "检查更新失败，请确认网络连接后重试。",
+        _ => "更新失败，请稍后重试。",
+    };
+
+    /// <summary>
     /// Maps a status onto the fixed category written to the global log.
     /// </summary>
     public static string ForLog(CoreStatus status) => status switch
@@ -56,6 +67,9 @@ internal static class CoreStatusMessages
         CoreStatus.VaultUnreadable => "vault_unreadable",
         CoreStatus.VaultCorrupt => "vault_corrupt",
         CoreStatus.StorageMigration => "storage_migration",
+        CoreStatus.UpdateCheckFailed => "update_check_failed",
+        CoreStatus.UpdateDownloadFailed => "update_download_failed",
+        CoreStatus.UpdateChecksumMismatch => "update_checksum_mismatch",
         _ => "core_error",
     };
 }

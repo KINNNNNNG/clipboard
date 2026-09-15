@@ -60,6 +60,39 @@ internal interface ISettingsRetentionService
         CancellationToken cancellationToken = default);
 }
 
+internal interface IUpdateService
+{
+    Task<UpdateCheckResponseDto> CheckUpdateAsync(
+        CheckUpdateRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<UpdateDownloadResponseDto> DownloadUpdateAsync(
+        DownloadUpdateRequestDto request,
+        CancellationToken cancellationToken = default);
+}
+
+internal sealed record CheckUpdateRequestDto(string CurrentVersion, bool IncludePrerelease);
+
+internal sealed record DownloadUpdateRequestDto(
+    string Version,
+    string InstallerUrl,
+    string ChecksumsUrl,
+    string TargetDir);
+
+internal sealed record UpdateCheckResponseDto(
+    bool Available,
+    string CurrentVersion,
+    string LatestVersion,
+    string? InstallerUrl,
+    string? ChecksumsUrl,
+    string? ReleaseUrl,
+    string? PublishedAt);
+
+internal sealed record UpdateDownloadResponseDto(
+    string Version,
+    string InstallerPath,
+    ulong SizeBytes);
+
 internal enum SearchModeDto
 {
     Substring,

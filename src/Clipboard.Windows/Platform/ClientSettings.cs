@@ -10,7 +10,9 @@ internal sealed record ClientSettings(
     string Theme,
     ulong? MaxFavoriteFileCacheBytes = 5UL * 1024 * 1024 * 1024,
     SyncSettings? Sync = null,
-    LoggingSettings? Logging = null)
+    LoggingSettings? Logging = null,
+    bool UpdateCheckOnStartup = false,
+    string? SkippedUpdateVersion = null)
 {
     public const ulong BytesPerGiB = 1024UL * 1024 * 1024;
     public const ulong DefaultMaxFavoriteFileCacheBytes = 5UL * BytesPerGiB;
@@ -52,6 +54,10 @@ internal sealed record ClientSettings(
         }
         Sync?.Validate();
         Logging?.Validate();
+        if (SkippedUpdateVersion is not null && !UpdateVersion.IsValid(SkippedUpdateVersion))
+        {
+            throw new ArgumentOutOfRangeException(nameof(SkippedUpdateVersion));
+        }
     }
 }
 

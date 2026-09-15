@@ -70,6 +70,8 @@ public sealed partial class SettingsWindow : Window
             "dark" => 2,
             _ => 0,
         };
+        UpdateCheckOnStartupCheckBox.IsChecked = _viewModel.UpdateCheckOnStartup;
+        SyncUpdateControls();
         ErrorText.Text = string.Empty;
         SyncEnabledToggle.IsOn = _viewModel.SyncEnabled;
         SyncProviderComboBox.SelectedIndex = _viewModel.SyncProvider == "oss" ? 1 : 0;
@@ -99,7 +101,36 @@ public sealed partial class SettingsWindow : Window
         _viewModel.StartWithWindows = StartWithWindowsToggle.IsOn;
         _viewModel.Theme = (ThemeComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()
             ?? "system";
+        _viewModel.UpdateCheckOnStartup = UpdateCheckOnStartupCheckBox.IsChecked == true;
         SyncViewModelFromSyncControls();
+    }
+
+    private async void CheckUpdateButton_Click(object sender, RoutedEventArgs args)
+    {
+        SyncViewModelFromControls();
+        await _viewModel.CheckForUpdatesAsync();
+        SyncUpdateControls();
+    }
+
+    private async void InstallUpdateButton_Click(object sender, RoutedEventArgs args)
+    {
+        await _viewModel.DownloadAndInstallUpdateAsync();
+        SyncUpdateControls();
+    }
+
+    private async void SkipUpdateButton_Click(object sender, RoutedEventArgs args)
+    {
+        await _viewModel.SkipUpdateAsync();
+        SyncUpdateControls();
+    }
+
+    private void SyncUpdateControls()
+    {
+        CurrentVersionText.Text = $"当前版本 {_viewModel.CurrentVersion}";
+        UpdateStatusText.Text = _viewModel.UpdateStatus;
+        CheckUpdateButton.IsEnabled = _viewModel.CanCheckForUpdates;
+        InstallUpdateButton.IsEnabled = _viewModel.CanInstallUpdate;
+        SkipUpdateButton.IsEnabled = _viewModel.CanSkipUpdate;
     }
 
     private void SyncViewModelFromSyncControls()

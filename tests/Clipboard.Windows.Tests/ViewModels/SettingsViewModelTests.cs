@@ -676,6 +676,284 @@ public sealed class SettingsViewModelTests
         }
     }
 
+    [Theory]
+    [InlineData("0.1.0", true)]
+    [InlineData("10.20.30", true)]
+    [InlineData("0.2.0", true)]
+    [InlineData("v0.2.0", false)]
+    [InlineData("0.2", false)]
+    [InlineData("01.2.0", false)]
+    [InlineData("latest", false)]
+    [InlineData("", false)]
+    public void Skipped_update_version_must_be_a_strict_release_version(string value, bool valid)
+    {
+        Assert.Equal(valid, UpdateVersion.IsValid(value));
+
+        ClientSettings settings = ClientSettings.Default with { SkippedUpdateVersion = value };
+        if (valid)
+        {
+            settings.Validate();
+            return;
+        }
+        Assert.Throws<ArgumentOutOfRangeException>(settings.Validate);
+    }
+
+    [Fact]
+    public async Task Update_check_reports_an_available_release_and_enables_install()
+    {
+        var store = new MemorySettingsStore(ClientSettings.Default);
+        var update = new FakeUpdateService
+        {
+            CheckResponse = new UpdateCheckResponseDto(
+                true,
+                "0.1.0",
+                "0.2.0",
+                "https://github.com/KINNNNNNG/clipboard/releases/download/v0.2.0/Clipboard-Setup-v0.2.0.exe",
+                "https://github.com/KINNNNNNG/clipboard/releases/download/v0.2.0/SHA256SUMS.txt",
+                "https://github.com/KINNNNNNG/clipboard/releases/tag/v0.2.0",
+                "2026-09-15T00:00:00Z"),
+        };
+        var launcher = new FakeInstallerLauncher();
+        var viewModel = CreateUpdateViewModel(store, update, launcher, out _);
+        await viewModel.LoadAsync();
+
+        Assert.False(viewModel.UpdateAvailable);
+        await viewModel.CheckForUpdatesAsync();
+
+        Assert.True(viewModel.UpdateAvailable);
+        Assert.True(viewModel.CanInstallUpdate);
+        Assert.True(viewModel.CanSkipUpdate);
+        Assert.Contains("0.2.0", viewModel.UpdateStatus, StringComparison.Ordinal);
+        Assert.Equal("0.1.0", update.LastCheckRequest?.CurrentVersion);
+        Assert.False(update.LastCheckRequest?.IncludePrerelease);
+    }
+
+    [Fact]
+    public async Task Update_check_stays_quiet_about_a_skipped_version()
+    {
+        var store = new MemorySettingsStore(
+            ClientSettings.Default with { SkippedUpdateVersion = "0.2.0" });
+        var update = new FakeUpdateService
+        {
+            CheckResponse = new UpdateCheckResponseDto(
+                true,
+                "0.1.0",
+                "0.2.0",
+                "https://github.com/KINNNNNNG/clipboard/releases/download/v0.2.0/Clipboard-Setup-v0.2.0.exe",
+                "https://github.com/KINNNNNNG/clipboard/releases/download/v0.2.0/SHA256SUMS.txt",
+                null,
+                null),
+        };
+        var viewModel = CreateUpdateViewModel(store, update, new FakeInstallerLauncher(), out _);
+        await viewModel.LoadAsync();
+
+        await viewModel.CheckForUpdatesAsync();
+
+        Assert.False(viewModel.UpdateAvailable);
+        Assert.Contains("已跳过", viewModel.UpdateStatus, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Update_check_surfaces_a_core_failure_without_leaking_details()
+    {
+        var store = new MemorySettingsStore(ClientSettings.Default);
+        var update = new FakeUpdateService
+        {
+            CheckError = new ClipboardCoreException(CoreStatus.UpdateCheckFailed),
+        };
+        var viewModel = CreateUpdateViewModel(store, update, new FakeInstallerLauncher(), out _);
+        await viewModel.LoadAsync();
+
+        await viewModel.CheckForUpdatesAsync();
+
+        Assert.False(viewModel.UpdateAvailable);
+        Assert.Equal(CoreStatusMessages.ForUpdate(CoreStatus.UpdateCheckFailed), viewModel.UpdateStatus);
+        Assert.Equal("update_check_failed", CoreStatusMessages.ForLog(CoreStatus.UpdateCheckFailed));
+    }
+
+    [Fact]
+    public async Task Install_downloads_launches_the_installer_and_requests_exit()
+    {
+        var store = new MemorySettingsStore(ClientSettings.Default);
+        var update = new FakeUpdateService
+        {
+            CheckResponse = new UpdateCheckResponseDto(
+                true,
+                "0.1.0",
+                "0.2.0",
+                "https://github.com/KINNNNNNG/clipboard/releases/download/v0.2.0/Clipboard-Setup-v0.2.0.exe",
+                "https://github.com/KINNNNNNG/clipboard/releases/download/v0.2.0/SHA256SUMS.txt",
+                null,
+                null),
+        };
+        var launcher = new FakeInstallerLauncher();
+        var viewModel = CreateUpdateViewModel(store, update, launcher, out ExitSignal exit);
+        await viewModel.LoadAsync();
+        await viewModel.CheckForUpdatesAsync();
+
+        await viewModel.DownloadAndInstallUpdateAsync();
+
+        Assert.Equal(1, exit.Count);
+        Assert.Equal("0.2.0", update.LastDownloadRequest?.Version);
+        Assert.NotNull(launcher.LastPath);
+        Assert.EndsWith("Clipboard-Setup-v0.2.0.exe", launcher.LastPath!, StringComparison.Ordinal);
+        Assert.Contains("退出", viewModel.UpdateStatus, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Install_keeps_the_client_running_when_the_launcher_fails()
+    {
+        var store = new MemorySettingsStore(ClientSettings.Default);
+        var update = new FakeUpdateService
+        {
+            CheckResponse = new UpdateCheckResponseDto(
+                true,
+                "0.1.0",
+                "0.2.0",
+                "https://github.com/KINNNNNNG/clipboard/releases/download/v0.2.0/Clipboard-Setup-v0.2.0.exe",
+                "https://github.com/KINNNNNNG/clipboard/releases/download/v0.2.0/SHA256SUMS.txt",
+                null,
+                null),
+        };
+        var launcher = new FakeInstallerLauncher { Result = false };
+        var viewModel = CreateUpdateViewModel(store, update, launcher, out ExitSignal exit);
+        await viewModel.LoadAsync();
+        await viewModel.CheckForUpdatesAsync();
+
+        await viewModel.DownloadAndInstallUpdateAsync();
+
+        Assert.Equal(0, exit.Count);
+        Assert.Contains("无法启动安装程序", viewModel.UpdateStatus, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Skip_persists_the_offered_version_through_the_settings_store()
+    {
+        var store = new MemorySettingsStore(ClientSettings.Default);
+        var update = new FakeUpdateService
+        {
+            CheckResponse = new UpdateCheckResponseDto(
+                true,
+                "0.1.0",
+                "0.2.0",
+                "https://github.com/KINNNNNNG/clipboard/releases/download/v0.2.0/Clipboard-Setup-v0.2.0.exe",
+                "https://github.com/KINNNNNNG/clipboard/releases/download/v0.2.0/SHA256SUMS.txt",
+                null,
+                null),
+        };
+        var viewModel = CreateUpdateViewModel(store, update, new FakeInstallerLauncher(), out _);
+        await viewModel.LoadAsync();
+        await viewModel.CheckForUpdatesAsync();
+
+        await viewModel.SkipUpdateAsync();
+
+        Assert.Equal("0.2.0", store.Current.SkippedUpdateVersion);
+        Assert.False(viewModel.UpdateAvailable);
+        Assert.False(viewModel.CanInstallUpdate);
+    }
+
+    [Fact]
+    public async Task Startup_check_requires_the_opt_in_setting_and_a_service()
+    {
+        var store = new MemorySettingsStore(
+            ClientSettings.Default with { UpdateCheckOnStartup = true });
+        var update = new FakeUpdateService();
+        var viewModel = CreateUpdateViewModel(store, update, new FakeInstallerLauncher(), out _);
+        await viewModel.LoadAsync();
+
+        Assert.True(viewModel.ShouldCheckForUpdatesOnStartup);
+        Assert.True(viewModel.UpdateCheckOnStartup);
+
+        var withoutService = new SettingsViewModel(
+            new MemorySettingsStore(ClientSettings.Default with { UpdateCheckOnStartup = true }),
+            new FakeRetentionService(),
+            new FakeShortcutConfigurator(),
+            new FakeStartupSettingsService());
+        await withoutService.LoadAsync();
+        Assert.False(withoutService.ShouldCheckForUpdatesOnStartup);
+    }
+
+    private static SettingsViewModel CreateUpdateViewModel(
+        IClientSettingsStore store,
+        IUpdateService update,
+        IUpdateInstallerLauncher launcher,
+        out ExitSignal exit)
+    {
+        var signal = new ExitSignal();
+        exit = signal;
+        return new SettingsViewModel(
+            store,
+            new FakeRetentionService(),
+            new FakeShortcutConfigurator(),
+            new FakeStartupSettingsService(),
+            updateService: update,
+            installerLauncher: launcher,
+            requestExit: signal.Request,
+            currentVersion: "0.1.0");
+    }
+
+    private sealed class ExitSignal
+    {
+        public int Count { get; private set; }
+
+        public void Request() => Count++;
+    }
+
+    private sealed class FakeUpdateService : IUpdateService
+    {
+        public UpdateCheckResponseDto? CheckResponse { get; set; }
+        public Exception? CheckError { get; set; }
+        public Exception? DownloadError { get; set; }
+        public CheckUpdateRequestDto? LastCheckRequest { get; private set; }
+        public DownloadUpdateRequestDto? LastDownloadRequest { get; private set; }
+
+        public Task<UpdateCheckResponseDto> CheckUpdateAsync(
+            CheckUpdateRequestDto request,
+            CancellationToken cancellationToken = default)
+        {
+            LastCheckRequest = request;
+            if (CheckError is not null)
+            {
+                return Task.FromException<UpdateCheckResponseDto>(CheckError);
+            }
+            return Task.FromResult(CheckResponse ?? new UpdateCheckResponseDto(
+                false,
+                request.CurrentVersion,
+                request.CurrentVersion,
+                null,
+                null,
+                null,
+                null));
+        }
+
+        public Task<UpdateDownloadResponseDto> DownloadUpdateAsync(
+            DownloadUpdateRequestDto request,
+            CancellationToken cancellationToken = default)
+        {
+            LastDownloadRequest = request;
+            if (DownloadError is not null)
+            {
+                return Task.FromException<UpdateDownloadResponseDto>(DownloadError);
+            }
+            return Task.FromResult(new UpdateDownloadResponseDto(
+                request.Version,
+                System.IO.Path.Combine(request.TargetDir, $"Clipboard-Setup-v{request.Version}.exe"),
+                1024));
+        }
+    }
+
+    private sealed class FakeInstallerLauncher : IUpdateInstallerLauncher
+    {
+        public bool Result { get; set; } = true;
+        public string? LastPath { get; private set; }
+
+        public bool Launch(string installerPath)
+        {
+            LastPath = installerPath;
+            return Result;
+        }
+    }
+
     private sealed class FakeRetentionService : ISettingsRetentionService
     {
         public List<ApplyRetentionRequestDto> Requests { get; } = [];

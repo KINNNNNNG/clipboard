@@ -12,7 +12,8 @@ internal sealed class ClipboardCoreClient : IDisposable,
     IClipboardItemContentReader,
     ISettingsRetentionService,
     IClipboardPanelCore,
-    IRealtimeSyncClient
+    IRealtimeSyncClient,
+    IUpdateService
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private readonly IClipboardCoreNative _native;
@@ -167,6 +168,16 @@ internal sealed class ClipboardCoreClient : IDisposable,
         ProbeRemoteRequestDto request,
         CancellationToken cancellationToken = default) =>
         ExecuteCommandAsync<RemoteProbeResponseDto, ProbeRemoteRequestDto>("probe_remote", request, cancellationToken);
+
+    public Task<UpdateCheckResponseDto> CheckUpdateAsync(
+        CheckUpdateRequestDto request,
+        CancellationToken cancellationToken = default) =>
+        ExecuteCommandAsync<UpdateCheckResponseDto, CheckUpdateRequestDto>("check_update", request, cancellationToken);
+
+    public Task<UpdateDownloadResponseDto> DownloadUpdateAsync(
+        DownloadUpdateRequestDto request,
+        CancellationToken cancellationToken = default) =>
+        ExecuteCommandAsync<UpdateDownloadResponseDto, DownloadUpdateRequestDto>("download_update", request, cancellationToken);
 
     public Task<MutationResponseDto> IngestImageAsync(
         IngestImageRequestDto request,
