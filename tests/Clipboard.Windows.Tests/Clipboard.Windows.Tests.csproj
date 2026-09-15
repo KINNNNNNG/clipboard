@@ -47,6 +47,15 @@
     <Content Include="..\..\scripts\verify-windows-client-toolchain.ps1"
              Link="Fixtures\verify-windows-client-toolchain.ps1"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\scripts\package-windows.ps1"
+             Link="Fixtures\package-windows.ps1"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\installer\Clipboard.iss"
+             Link="Fixtures\Clipboard.iss"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\.github\workflows\release.yml"
+             Link="Fixtures\release.yml"
+             CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\scripts\measure-history-search.ps1"
              Link="Fixtures\measure-history-search.ps1"
              CopyToOutputDirectory="PreserveNewest" />
