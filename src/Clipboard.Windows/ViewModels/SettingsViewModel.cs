@@ -54,6 +54,9 @@ internal sealed class SettingsViewModel : ObservableObject
     private string _updateStatus = string.Empty;
     private bool _updateAvailable;
     private bool _updateBusy;
+    private string _snapshotDirectory = string.Empty;
+    private int _snapshotIntervalMinutes = SnapshotPolicy.DefaultIntervalMinutes;
+    private int _snapshotKeep = SnapshotPolicy.DefaultKeep;
 
     public SettingsViewModel(
         IClientSettingsStore store,
@@ -223,6 +226,63 @@ internal sealed class SettingsViewModel : ObservableObject
     /// Reports whether the startup check should run for this session.
     /// </summary>
     public bool ShouldCheckForUpdatesOnStartup => _updateCheckOnStartup && _updateService is not null;
+
+    /// <summary>
+    /// Snapshot location; an empty value means the default directory next to the data directory.
+    /// </summary>
+    public string SnapshotDirectory
+    {
+        get => _snapshotDirectory;
+        set => SetProperty(ref _snapshotDirectory, value);
+    }
+
+    public int SnapshotIntervalMinutes
+    {
+        get => _snapshotIntervalMinutes;
+        set => SetProperty(ref _snapshotIntervalMinutes, value);
+    }
+
+    public int SnapshotKeep
+    {
+        get => _snapshotKeep;
+        set => SetProperty(ref _snapshotKeep, value);
+    }
+
+    /// <summary>
+    /// Asks the client to rebuild local history from the configured remote on the next start.
+    /// </summary>
+    /// <remarks>
+    /// The local database is quarantined on the next start, because the running client holds it
+    /// open; the fresh database then pulls the remote history through the normal startup sync.
+    /// </remarks>
+    /// <summary>Starts a fresh client instance so the pending restore can run.</summary>
+    public bool RestartClient() => ClientRestarter.Restart(() => _requestExit?.Invoke());
+
+    public Task<bool> RequestRemoteHistoryRestoreAsync(
+        CancellationToken cancellationToken = default) =>
+        RequestRemoteHistoryRestoreAsync(SnapshotPolicy.LocalRoot, cancellationToken);
+
+    internal Task<bool> RequestRemoteHistoryRestoreAsync(
+        string root,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_persisted.Sync?.Enabled != true)
+        {
+            ErrorMessage = "请先启用并保存同步设置，再从远端恢复历史。";
+            return Task.FromResult(false);
+        }
+        try
+        {
+            VaultRestoreRequest.Write(root);
+            return Task.FromResult(true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            ErrorMessage = "无法写入恢复请求，请检查数据目录权限。";
+            return Task.FromResult(false);
+        }
+    }
 
     /// <summary>
     /// Asks the release feed whether a newer version is published.
@@ -512,7 +572,10 @@ internal sealed class SettingsViewModel : ObservableObject
             sync,
             CurrentLoggingSettings,
             UpdateCheckOnStartup,
-            _skippedUpdateVersion);
+            _skippedUpdateVersion,
+            string.IsNullOrWhiteSpace(SnapshotDirectory) ? null : SnapshotDirectory.Trim(),
+            SnapshotIntervalMinutes,
+            SnapshotKeep);
     }
 
     private void Apply(ClientSettings settings)
@@ -550,6 +613,9 @@ internal sealed class SettingsViewModel : ObservableObject
         LoggingMaxSizeBytes = logging.MaxSizeBytes;
         UpdateCheckOnStartup = settings.UpdateCheckOnStartup;
         _skippedUpdateVersion = settings.SkippedUpdateVersion;
+        SnapshotDirectory = settings.SnapshotDirectory ?? string.Empty;
+        SnapshotIntervalMinutes = settings.SnapshotIntervalMinutes;
+        SnapshotKeep = settings.SnapshotKeep;
     }
 
     public async Task<bool> SaveSyncAsync(CancellationToken cancellationToken = default)

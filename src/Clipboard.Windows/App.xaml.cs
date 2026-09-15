@@ -70,6 +70,20 @@ public partial class App : Microsoft.UI.Xaml.Application
                 "logs"));
             _globalLog.Write(LogLevel.Info, "app", "app.start");
 
+            if (VaultRestoreRequest.Exists(SnapshotPolicy.LocalRoot))
+            {
+                VaultRestoreRequest.Clear(SnapshotPolicy.LocalRoot);
+                string? quarantinedForRestore = VaultRecovery.QuarantineHistory(
+                    SnapshotPolicy.DataDirectory,
+                    DateTimeOffset.UtcNow);
+                _globalLog.Write(LogLevel.Info, "app", "vault.restore", new Dictionary<string, string>
+                {
+                    ["source"] = "remote-request",
+                    ["quarantine"] = quarantinedForRestore is null ? "none" : "history",
+                });
+                _startupNotice = "已清空本地历史，正在从远端恢复。";
+            }
+
             // The tray icon is the only always-available entry point, so create it before
             // anything that can fail: a core failure must not leave an invisible process.
             nint trayHandle = WindowNative.GetWindowHandle(MainWindow);

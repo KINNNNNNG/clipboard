@@ -114,6 +114,20 @@
                     <ComboBoxItem Content="浅色" Tag="light" />
                     <ComboBoxItem Content="深色" Tag="dark" />
                 </ComboBox>
+                <TextBox
+                    x:Name="SnapshotDirectoryTextBox"
+                    Header="快照目录（留空使用默认，可填另一块磁盘）"
+                    PlaceholderText="例如 D:\ClipboardSnapshots" />
+                <NumberBox
+                    x:Name="SnapshotIntervalNumberBox"
+                    Header="快照间隔（分钟）"
+                    Minimum="1"
+                    Maximum="1440" />
+                <NumberBox
+                    x:Name="SnapshotKeepNumberBox"
+                    Header="保留快照份数"
+                    Minimum="1"
+                    Maximum="10" />
             </StackPanel>
             <StackPanel Grid.Row="4" Margin="0,24,0,0" Spacing="12">
                 <TextBlock FontWeight="SemiBold" Text="更新" />
@@ -190,6 +204,10 @@
                         <Button Click="RunSyncButton_Click" Content="立即同步" />
                         <Button Click="SaveSyncButton_Click" Content="保存" />
                     </StackPanel>
+                    <TextBlock FontWeight="SemiBold" Text="恢复" Margin="0,8,0,0" />
+                    <TextBlock TextWrapping="Wrap" Text="清空本地历史并从远端重新拉取。原有本地数据库会备份保留在数据目录中，客户端随后自动重启。" />
+                    <Button Click="RestoreFromRemoteButton_Click" Content="从远端恢复历史" />
+                    <TextBlock x:Name="RestoreStatusText" TextWrapping="Wrap" />
                 </StackPanel>
             </ScrollViewer>
         </TabViewItem>

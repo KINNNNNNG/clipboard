@@ -72,6 +72,10 @@ public sealed partial class SettingsWindow : Window
         };
         UpdateCheckOnStartupCheckBox.IsChecked = _viewModel.UpdateCheckOnStartup;
         SyncUpdateControls();
+        SnapshotDirectoryTextBox.Text = _viewModel.SnapshotDirectory;
+        SnapshotIntervalNumberBox.Value = _viewModel.SnapshotIntervalMinutes;
+        SnapshotKeepNumberBox.Value = _viewModel.SnapshotKeep;
+        RestoreStatusText.Text = string.Empty;
         ErrorText.Text = string.Empty;
         SyncEnabledToggle.IsOn = _viewModel.SyncEnabled;
         SyncProviderComboBox.SelectedIndex = _viewModel.SyncProvider == "oss" ? 1 : 0;
@@ -102,7 +106,38 @@ public sealed partial class SettingsWindow : Window
         _viewModel.Theme = (ThemeComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()
             ?? "system";
         _viewModel.UpdateCheckOnStartup = UpdateCheckOnStartupCheckBox.IsChecked == true;
+        _viewModel.SnapshotDirectory = SnapshotDirectoryTextBox.Text;
+        _viewModel.SnapshotIntervalMinutes = checked((int)SnapshotIntervalNumberBox.Value);
+        _viewModel.SnapshotKeep = checked((int)SnapshotKeepNumberBox.Value);
         SyncViewModelFromSyncControls();
+    }
+
+    private async void RestoreFromRemoteButton_Click(object sender, RoutedEventArgs args)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot,
+            Title = "从远端恢复历史",
+            Content = "将清空本地历史并从远端重新拉取，原有本地数据库会备份保留在数据目录中。是否继续？",
+            PrimaryButtonText = "恢复",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        RestoreStatusText.Text = string.Empty;
+        if (!await _viewModel.RequestRemoteHistoryRestoreAsync())
+        {
+            RestoreStatusText.Text = _viewModel.ErrorMessage ?? "无法发起恢复。";
+            return;
+        }
+        if (!_viewModel.RestartClient())
+        {
+            RestoreStatusText.Text = "已记录恢复请求，请手动重启客户端以执行恢复。";
+        }
     }
 
     private async void CheckUpdateButton_Click(object sender, RoutedEventArgs args)

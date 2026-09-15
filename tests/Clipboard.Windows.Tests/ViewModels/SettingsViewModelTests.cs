@@ -899,6 +899,74 @@ public sealed class SettingsViewModelTests
         public void Request() => Count++;
     }
 
+    [Fact]
+    public async Task Snapshot_settings_round_trip_through_the_store()
+    {
+        var store = new MemorySettingsStore(ClientSettings.Default);
+        var viewModel = new SettingsViewModel(
+            store,
+            new FakeRetentionService(),
+            new FakeShortcutConfigurator(),
+            new FakeStartupSettingsService());
+        await viewModel.LoadAsync();
+        Assert.Equal(string.Empty, viewModel.SnapshotDirectory);
+        Assert.Equal(SnapshotPolicy.DefaultIntervalMinutes, viewModel.SnapshotIntervalMinutes);
+        Assert.Equal(SnapshotPolicy.DefaultKeep, viewModel.SnapshotKeep);
+
+        viewModel.SnapshotDirectory = @"C:\snapshots-elsewhere";
+        viewModel.SnapshotIntervalMinutes = 15;
+        viewModel.SnapshotKeep = 5;
+        Assert.True(await viewModel.SaveAsync());
+
+        Assert.Equal(@"C:\snapshots-elsewhere", store.Current.SnapshotDirectory);
+        Assert.Equal(15, store.Current.SnapshotIntervalMinutes);
+        Assert.Equal(5, store.Current.SnapshotKeep);
+
+        viewModel.SnapshotDirectory = "   ";
+        Assert.True(await viewModel.SaveAsync());
+        Assert.Null(store.Current.SnapshotDirectory);
+    }
+
+    [Fact]
+    public async Task Remote_restore_requires_enabled_sync_and_records_a_request()
+    {
+        using var directory = new TemporaryDirectory();
+        var disabled = new MemorySettingsStore(ClientSettings.Default);
+        var viewModel = new SettingsViewModel(
+            disabled,
+            new FakeRetentionService(),
+            new FakeShortcutConfigurator(),
+            new FakeStartupSettingsService());
+        await viewModel.LoadAsync();
+
+        Assert.False(await viewModel.RequestRemoteHistoryRestoreAsync(directory.Path));
+        Assert.Contains("同步", viewModel.ErrorMessage!, StringComparison.Ordinal);
+
+        ClientSettings enabled = ClientSettings.Default with
+        {
+            Sync = new SyncSettings(
+                true,
+                "webdav",
+                "https://dav.example.test",
+                "/",
+                null,
+                null,
+                null,
+                Guid.NewGuid().ToString(),
+                "profile"),
+        };
+        var configured = new MemorySettingsStore(enabled);
+        var restoring = new SettingsViewModel(
+            configured,
+            new FakeRetentionService(),
+            new FakeShortcutConfigurator(),
+            new FakeStartupSettingsService());
+        await restoring.LoadAsync();
+
+        Assert.True(await restoring.RequestRemoteHistoryRestoreAsync(directory.Path));
+        Assert.True(File.Exists(VaultRestoreRequest.PathFor(directory.Path)));
+    }
+
     private sealed class FakeUpdateService : IUpdateService
     {
         public UpdateCheckResponseDto? CheckResponse { get; set; }
