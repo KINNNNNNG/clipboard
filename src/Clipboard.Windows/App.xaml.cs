@@ -26,6 +26,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private readonly SingleWindowLifetime<LogWindow> _logWindows = new();
     private readonly PreviousInstanceCloser _previousInstanceCloser = new();
     private bool _showOnLaunch;
+    private string? _startupNotice;
 
     public App()
     {
@@ -65,11 +66,20 @@ public partial class App : Microsoft.UI.Xaml.Application
                 "Clipboard",
                 "logs"));
             _globalLog.Write(LogLevel.Info, "app", "app.start");
+
+            // The tray icon is the only always-available entry point, so create it before
+            // anything that can fail: a core failure must not leave an invisible process.
+            nint trayHandle = WindowNative.GetWindowHandle(MainWindow);
+            _tray = new TrayIconService(
+                trayHandle,
+                MainWindow.ShowPanel,
+                OpenSettings,
+                OpenLogs,
+                ExitApplication);
+            _tray.Start();
+
             _vault = new VaultBootstrapper().LoadOrCreate();
-            _core = ClipboardCoreClient.Open(
-                _vault.DataDirectory,
-                _vault.VaultId,
-                _vault.VaultKey);
+            _core = OpenCoreWithRecovery(_vault);
             _vault.Dispose();
             _vault = null;
 
@@ -134,14 +144,6 @@ public partial class App : Microsoft.UI.Xaml.Application
             MainWindow.SetShortcutState(_shortcuts.State);
             _capture.Start(dispatcher);
 
-            nint handle = WindowNative.GetWindowHandle(MainWindow);
-            _tray = new TrayIconService(
-                handle,
-                MainWindow.ShowPanel,
-                OpenSettings,
-                OpenLogs,
-                ExitApplication);
-            _tray.Start();
             if (_showOnLaunch)
             {
                 MainWindow.ShowPanel();
@@ -149,6 +151,10 @@ public partial class App : Microsoft.UI.Xaml.Application
             else
             {
                 _presenter.Hide();
+            }
+            if (_startupNotice is not null)
+            {
+                MainWindow.SetStatus(_startupNotice);
             }
         }
         catch (Exception error)
@@ -163,6 +169,37 @@ public partial class App : Microsoft.UI.Xaml.Application
                     : "initialization",
             });
             MainWindow.SetStatus(CoreStatusMessages.ForVaultOpen(status));
+        }
+    }
+
+    /// <summary>
+    /// Opens the clipboard core, moving a damaged history database aside so the client can start.
+    /// </summary>
+    /// <remarks>
+    /// Only damage is recovered: a marker mismatch means the key belongs to another vault, so that
+    /// is reported instead. The damaged file is preserved under a timestamped name.
+    /// </remarks>
+    private ClipboardCoreClient OpenCoreWithRecovery(VaultMaterial vault)
+    {
+        try
+        {
+            return ClipboardCoreClient.Open(vault.DataDirectory, vault.VaultId, vault.VaultKey);
+        }
+        catch (ClipboardCoreException error) when (
+            error.Status is CoreStatus.VaultUnreadable or CoreStatus.VaultCorrupt)
+        {
+            string? quarantined = VaultRecovery.QuarantineHistory(
+                vault.DataDirectory,
+                DateTimeOffset.UtcNow);
+            _globalLog?.Write(LogLevel.Warn, "app", "vault.rebuild", new Dictionary<string, string>
+            {
+                ["error_category"] = CoreStatusMessages.ForLog(error.Status),
+                ["quarantine"] = quarantined is null ? "none" : "history",
+            });
+            _startupNotice = quarantined is null
+                ? "剪贴板历史数据库无法解密，已重建为空库。"
+                : "剪贴板历史数据库无法解密，已备份原文件并重建为空库。";
+            return ClipboardCoreClient.Open(vault.DataDirectory, vault.VaultId, vault.VaultKey);
         }
     }
 
