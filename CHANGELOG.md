@@ -16,11 +16,13 @@
 - 修正 Windows 发布任务的 Inno Setup 安装方式。GitHub 的 `windows-2022` runner 没有 `winget`，改用预装的 Chocolatey 安装。
 - 移除 Windows 发布任务中不必要的 Windows App Runtime 安装步骤。客户端以 Windows App SDK 自包含模式发布，不依赖预装运行时。
 - 移除安装器对 `ChineseSimplified.isl` 的硬依赖。Inno Setup 的 Chocolatey 包不包含该语言文件，会导致编译中止。
+- 修正工具链检查中的 Visual Studio 判定条件。原实现把 vswhere 查询限定为 `BuildTools` 产品，在只安装 Enterprise 或 Community 的机器上返回空值并中断验证；现在要求存在带 MSVC 与 Windows SDK 26100 的任意 Visual Studio 安装。
 
 ### 变更
 
 - 发布工作流合并为单一流程：`core` 在 Ubuntu 上执行 Rust 格式、Clippy、工作区测试与 `clipboard-core` 库测试，`windows-client` 在 Windows 上构建 Rust Release FFI、自包含客户端与 EXE 安装器，两者都通过后才由 `release` 任务创建 GitHub Release。
 - 客户端版本、安装器名称与 Release 产物统一由版本号驱动。
+- 移除 `main` 分支推送与 Pull Request 的自动 CI 工作流。现在只有推送 `v*` Tag 或手动触发才运行 GitHub Actions，日常验证通过 `scripts/test-core.ps1` 与 `scripts/verify-windows-client.ps1` 本地执行。
 
 ### 文档
 

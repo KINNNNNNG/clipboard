@@ -4,7 +4,6 @@
 
 **Windows 11 上的端到端加密剪贴板历史与跨设备同步。**
 
-[![CI](https://github.com/KINNNNNNG/clipboard/actions/workflows/core.yml/badge.svg)](https://github.com/KINNNNNNG/clipboard/actions/workflows/core.yml)
 [![Release](https://github.com/KINNNNNNG/clipboard/actions/workflows/release.yml/badge.svg)](https://github.com/KINNNNNNG/clipboard/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Windows%2011%20x64-0078D4)
