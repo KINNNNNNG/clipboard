@@ -4,6 +4,9 @@
 
 ## [未发布]
 
+
+## [0.1.1] - 2026-09-15
+
 ### 新增
 
 - 英文 README，供国际用户阅读。
@@ -73,5 +76,6 @@
 - 安装包未做代码签名，Windows SmartScreen 可能提示“未知发布者”。
 - 已签名的 MSIX 发布包尚未提供。
 
-[未发布]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.0...HEAD
+[未发布]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/KINNNNNNG/clipboard/releases/tag/v0.1.0
