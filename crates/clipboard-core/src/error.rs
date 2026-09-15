@@ -38,4 +38,8 @@ pub enum CoreError {
     ImageTooLarge { actual: usize, maximum: usize },
     #[error("invalid command: {0}")]
     InvalidCommand(String),
+    #[error("update check failed: {0}")]
+    UpdateCheck(crate::update::UpdateError),
+    #[error("update download failed: {0}")]
+    UpdateDownload(crate::update::UpdateError),
 }

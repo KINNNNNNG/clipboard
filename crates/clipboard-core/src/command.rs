@@ -38,6 +38,23 @@ pub enum CoreCommand {
     Delete(DeleteRequest),
     ClearUnfavorite,
     ApplyRetention(ApplyRetentionRequest),
+    CheckUpdate(CheckUpdate),
+    DownloadUpdate(DownloadUpdate),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CheckUpdate {
+    pub current_version: String,
+    #[serde(default)]
+    pub include_prerelease: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DownloadUpdate {
+    pub version: String,
+    pub installer_url: String,
+    pub checksums_url: String,
+    pub target_dir: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -1,5 +1,7 @@
 use crate::{CoreBuffer, CoreStatus};
-use clipboard_core::{ApiRequest, CoreError, CoreService, IngestImage, MAX_IMAGE_BYTES};
+use clipboard_core::{
+    ApiRequest, CoreError, CoreService, IngestImage, MAX_IMAGE_BYTES, UpdateError,
+};
 use clipboard_storage::StorageError;
 use clipboard_sync::{
     PairingFileMaterial, RecoveryMaterial, decode_pairing_file, decode_recovery_code,
@@ -685,7 +687,22 @@ fn status_for_core_error(error: CoreError) -> CoreStatus {
     match error {
         CoreError::Search(_) => CoreStatus::InvalidRegex,
         CoreError::Storage(error) => status_for_storage_error(error),
+        CoreError::UpdateCheck(error) => {
+            status_for_update_error(error, CoreStatus::UpdateCheckFailed)
+        }
+        CoreError::UpdateDownload(error) => {
+            status_for_update_error(error, CoreStatus::UpdateDownloadFailed)
+        }
         _ => CoreStatus::CoreError,
+    }
+}
+
+fn status_for_update_error(error: UpdateError, fallback: CoreStatus) -> CoreStatus {
+    match error {
+        UpdateError::ChecksumMismatch { .. } | UpdateError::ChecksumMissing(_) => {
+            CoreStatus::UpdateChecksumMismatch
+        }
+        _ => fallback,
     }
 }
 
@@ -704,4 +721,48 @@ fn status_for_storage_error(error: StorageError) -> CoreStatus {
 
 fn catch_status(operation: impl FnOnce() -> CoreStatus) -> CoreStatus {
     catch_unwind(AssertUnwindSafe(operation)).unwrap_or(CoreStatus::Panic)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_errors_map_to_dedicated_status_codes() {
+        assert_eq!(
+            status_for_core_error(CoreError::UpdateCheck(UpdateError::Transport(
+                "offline".to_owned()
+            ))),
+            CoreStatus::UpdateCheckFailed
+        );
+        assert_eq!(
+            status_for_core_error(CoreError::UpdateDownload(UpdateError::Transport(
+                "offline".to_owned()
+            ))),
+            CoreStatus::UpdateDownloadFailed
+        );
+        assert_eq!(
+            status_for_core_error(CoreError::UpdateDownload(UpdateError::ChecksumMissing(
+                "Clipboard-Setup-v0.2.0.exe".to_owned()
+            ))),
+            CoreStatus::UpdateChecksumMismatch
+        );
+        assert_eq!(
+            status_for_core_error(CoreError::UpdateCheck(UpdateError::ChecksumMismatch {
+                expected: "a".to_owned(),
+                actual: "b".to_owned(),
+            })),
+            CoreStatus::UpdateChecksumMismatch
+        );
+    }
+
+    #[test]
+    fn status_codes_keep_their_published_values() {
+        assert_eq!(CoreStatus::Ok as i32, 0);
+        assert_eq!(CoreStatus::StorageLocked as i32, 7);
+        assert_eq!(CoreStatus::StorageMigration as i32, 11);
+        assert_eq!(CoreStatus::UpdateCheckFailed as i32, 12);
+        assert_eq!(CoreStatus::UpdateDownloadFailed as i32, 13);
+        assert_eq!(CoreStatus::UpdateChecksumMismatch as i32, 14);
+    }
 }

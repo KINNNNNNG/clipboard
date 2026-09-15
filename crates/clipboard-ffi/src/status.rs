@@ -13,4 +13,7 @@ pub enum CoreStatus {
     VaultUnreadable = 9,
     VaultCorrupt = 10,
     StorageMigration = 11,
+    UpdateCheckFailed = 12,
+    UpdateDownloadFailed = 13,
+    UpdateChecksumMismatch = 14,
 }

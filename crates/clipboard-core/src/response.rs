@@ -36,6 +36,20 @@ pub enum CoreResponse {
         error_code: Option<String>,
         error_detail: Option<String>,
     },
+    UpdateCheck {
+        available: bool,
+        current_version: String,
+        latest_version: String,
+        installer_url: Option<String>,
+        checksums_url: Option<String>,
+        release_url: Option<String>,
+        published_at: Option<String>,
+    },
+    UpdateDownload {
+        version: String,
+        installer_path: String,
+        size_bytes: u64,
+    },
     Empty {},
 }
 

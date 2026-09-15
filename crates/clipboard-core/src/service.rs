@@ -1,9 +1,10 @@
 use crate::file_cache::FileCache;
+use crate::update::{self, HttpUpdateTransport, UpdateTransport};
 use crate::{
-    ApplyRetentionRequest, CacheFileBundle, CoreCommand, CoreError, CoreResponse, DeleteRequest,
-    IngestFileBundle, IngestText, MarkUsed, ProbeRemote, ReadFileBundle, SearchFilters, SearchItem,
-    SearchRequest, SetFavorite, SyncDirectory, SyncDirectoryResponse, SyncRemote,
-    UncacheFileBundle,
+    ApplyRetentionRequest, CacheFileBundle, CheckUpdate, CoreCommand, CoreError, CoreResponse,
+    DeleteRequest, DownloadUpdate, IngestFileBundle, IngestText, MarkUsed, ProbeRemote,
+    ReadFileBundle, SearchFilters, SearchItem, SearchRequest, SetFavorite, SyncDirectory,
+    SyncDirectoryResponse, SyncRemote, UncacheFileBundle,
 };
 use crate::{IngestImage, object_store::ObjectStore};
 use clipboard_crypto::{KeyPurpose, ObjectCipher, VaultKey};
@@ -89,7 +90,63 @@ impl CoreService {
             CoreCommand::Delete(request) => self.delete(request),
             CoreCommand::ClearUnfavorite => self.clear_unfavorite(),
             CoreCommand::ApplyRetention(request) => self.apply_retention(request),
+            CoreCommand::CheckUpdate(request) => self.check_update(request),
+            CoreCommand::DownloadUpdate(request) => self.download_update(request),
         }
+    }
+
+    /// Reports whether a newer release than `current_version` is published.
+    pub fn check_update(&self, request: CheckUpdate) -> Result<CoreResponse, CoreError> {
+        let transport = HttpUpdateTransport::new().map_err(CoreError::UpdateCheck)?;
+        self.check_update_with_transport(request, &transport)
+    }
+
+    pub fn check_update_with_transport(
+        &self,
+        request: CheckUpdate,
+        transport: &dyn UpdateTransport,
+    ) -> Result<CoreResponse, CoreError> {
+        let outcome = update::check_update(
+            &request.current_version,
+            request.include_prerelease,
+            transport,
+        )
+        .map_err(CoreError::UpdateCheck)?;
+        Ok(CoreResponse::UpdateCheck {
+            available: outcome.available,
+            current_version: outcome.current_version,
+            latest_version: outcome.latest_version,
+            installer_url: outcome.installer_url,
+            checksums_url: outcome.checksums_url,
+            release_url: outcome.release_url,
+            published_at: outcome.published_at,
+        })
+    }
+
+    /// Downloads the installer into `target_dir` and keeps it only when its checksum matches.
+    pub fn download_update(&self, request: DownloadUpdate) -> Result<CoreResponse, CoreError> {
+        let transport = HttpUpdateTransport::new().map_err(CoreError::UpdateDownload)?;
+        self.download_update_with_transport(request, &transport)
+    }
+
+    pub fn download_update_with_transport(
+        &self,
+        request: DownloadUpdate,
+        transport: &dyn UpdateTransport,
+    ) -> Result<CoreResponse, CoreError> {
+        let outcome = update::download_update(
+            &request.version,
+            &request.installer_url,
+            &request.checksums_url,
+            Path::new(&request.target_dir),
+            transport,
+        )
+        .map_err(CoreError::UpdateDownload)?;
+        Ok(CoreResponse::UpdateDownload {
+            version: outcome.version.to_string(),
+            installer_path: outcome.installer_path.to_string_lossy().into_owned(),
+            size_bytes: outcome.size_bytes,
+        })
     }
 
     pub fn set_directory_device_active(
