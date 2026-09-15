@@ -50,6 +50,9 @@
     <Content Include="..\..\scripts\package-windows.ps1"
              Link="Fixtures\package-windows.ps1"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\scripts\verify-toolchain.ps1"
+             Link="Fixtures\verify-toolchain.ps1"
+             CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\installer\Clipboard.iss"
              Link="Fixtures\Clipboard.iss"
              CopyToOutputDirectory="PreserveNewest" />

@@ -20,15 +20,16 @@ if (-not (Test-Path -LiteralPath $vswhere)) {
     throw 'Visual Studio Installer vswhere.exe is required.'
 }
 
-$buildTools = (& $vswhere -latest -products Microsoft.VisualStudio.Product.BuildTools `
+$visualStudio = & $vswhere -latest `
     -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
     Microsoft.VisualStudio.Component.Windows11SDK.26100 `
-    -property installationPath).Trim()
-if (-not $buildTools) {
-    throw 'Visual Studio 2022 Build Tools with MSVC and Windows SDK 26100 is required.'
+    -property installationPath
+$visualStudioPath = if ($visualStudio) { $visualStudio.Trim() } else { '' }
+if (-not $visualStudioPath) {
+    throw 'A Visual Studio installation with MSVC and Windows SDK 26100 is required.'
 }
 
-$msbuild = Join-Path $buildTools 'MSBuild\Current\Bin\MSBuild.exe'
+$msbuild = Join-Path $visualStudioPath 'MSBuild\Current\Bin\MSBuild.exe'
 $sdkResourceCompiler = 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\rc.exe'
 if (-not (Test-Path -LiteralPath $msbuild)) {
     throw "MSBuild was not found at $msbuild"
@@ -46,6 +47,6 @@ if (-not $perl -or -not (Test-Path -LiteralPath $perl)) {
 }
 
 Write-Host "Rust: $rustVersion"
-Write-Host "Visual Studio Build Tools: $buildTools"
+Write-Host "Visual Studio: $visualStudioPath"
 Write-Host "OpenSSL Perl: $perl"
 Write-Host 'Toolchain verification passed.'
