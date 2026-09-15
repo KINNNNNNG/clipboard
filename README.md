@@ -24,7 +24,7 @@
 
 - 文件历史的跨设备同步（文件束仍严格 local-only）。
 - macOS 客户端及跨平台同步界面。
-- 已签名的 MSIX 发布包，以及完成后的安装、升级、卸载验收。
+- 已签名的 MSIX 发布包；当前提供 Windows x64 自包含 EXE 安装包，安装、升级、卸载验收仍需人工完成。
 
 阶段五尚未完成：真实 WebDAV/OSS 写入、两设备同步、可见 WinUI 焦点/DPI 矩阵和发布工程仍需关闭。历史加载失败已在本地按锁、密钥不匹配、无法解密、损坏和迁移失败分类并关闭，真实 vault 的可视化恢复流程仍属于发布验收。优先级和验收边界见 [阶段五发布收尾路线](docs/superpowers/plans/2026-08-25-stage-five-closure-roadmap.md)。
 
@@ -46,6 +46,16 @@ pwsh -NoProfile -File scripts/verify-windows-client.ps1
     pwsh -NoProfile -File scripts/measure-windows-history-diagnostics.ps1
 
 第一条命令在 10,000 条合成文本历史上执行 Release Rust 搜索门：子串和组合筛选各采样 30 次，P95 都必须不超过 200 ms；10,000 条空查询只报告趋势。第二条命令输出真实 FFI、ViewModel、固定容量图片 LRU 和进程内存趋势，不设置机器相关的内存阈值，也不代表 WinUI ListView 的可见首帧。日常 cargo test 与 scripts/verify-windows-client.ps1 不执行这些性能样本。
+
+## Windows 安装包
+
+当前版本可通过 `scripts/package-windows.ps1` 生成自包含的 Windows x64 EXE 安装包：
+
+```powershell
+pwsh -NoProfile -File scripts/package-windows.ps1 -Version 0.1.0
+```
+
+该命令需要 Rust 1.88、.NET 8 SDK 和 Inno Setup 6，产物位于 `artifacts/windows/installer/Clipboard-Setup-v0.1.0.exe`，同目录上级的 `SHA256SUMS.txt` 用于校验。安装器使用当前用户目录，不需要管理员权限，也不会在卸载时删除剪贴板历史和设置。发布 Tag、GitHub Actions 和安装使用说明见 [Windows 安装器发布指南](docs/release/windows-installer.md)。
 
 ## 文档
 
