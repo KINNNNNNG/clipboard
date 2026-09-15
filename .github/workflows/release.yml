@@ -62,7 +62,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install Inno Setup
-        uses: ilammy/setup-innosetup@v2
+        uses: ilammy/setup-innosetup@v1
 
       - name: Build Windows installer
         shell: pwsh
