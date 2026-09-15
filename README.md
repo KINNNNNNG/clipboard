@@ -1,5 +1,7 @@
 # Clipboard
 
+[简体中文](README.md) | [English](README.en.md)
+
 **Windows 11 上的端到端加密剪贴板历史与跨设备同步。**
 
 [![CI](https://github.com/KINNNNNNG/clipboard/actions/workflows/core.yml/badge.svg)](https://github.com/KINNNNNNG/clipboard/actions/workflows/core.yml)
@@ -180,6 +182,7 @@ git push origin v0.1.0
 ## 文档
 
 - [开发状态、证据与优先级](docs/STATUS.md)
+- [版本更新日志](CHANGELOG.md)
 - [Windows 安装器发布指南](docs/release/windows-installer.md)
 - [产品与架构设计](docs/superpowers/specs/2026-07-31-cross-device-clipboard-design.md)
 - [V1 总路线图](docs/superpowers/plans/2026-07-31-clipboard-v1-roadmap.md)

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安装、构建与使用说明
+    url: https://github.com/KINNNNNNG/clipboard/blob/main/README.md
+    about: 请先查阅 README 的下载安装、从源码构建与测试验证章节。
+  - name: 开发状态与已知限制
+    url: https://github.com/KINNNNNNG/clipboard/blob/main/docs/STATUS.md
+    about: 已实现范围、待外部验收项与已知限制都在这里。

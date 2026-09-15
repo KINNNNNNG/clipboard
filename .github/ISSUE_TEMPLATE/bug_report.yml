@@ -1,0 +1,83 @@
+name: 缺陷报告
+description: 报告一个可复现的缺陷
+title: "[缺陷] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告问题。提交前请确认已在最新版本复现，并搜索过现有 Issue。
+        请勿粘贴真实剪贴板内容、文件路径、账号或密钥。
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 客户端版本号或提交哈希。
+      placeholder: 例如 0.1.0 或 9d6cf1c
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      multiple: true
+      options:
+        - 面板与快捷键
+        - 文本或图片历史
+        - 文件与文件夹历史
+        - 搜索与筛选
+        - 保留策略
+        - 同步与配对
+        - 设置与日志
+        - 构建、安装或升级
+        - 文档
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 环境
+      description: Windows 版本、缩放比例、显示器数量，以及是否启用高分屏或多显示器。
+      placeholder: 例如 Windows 11 26100，150% 缩放，双显示器
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请给出最小且可重复的操作序列。
+      placeholder: |
+        1. 打开面板
+        2. 复制一段文本
+        3. 观察结果
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志与截图
+      description: 日志位于 %LOCALAPPDATA%\Clipboard\logs。请先删除或打码剪贴板内容、文件路径、账号与密钥。
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 已移除日志与截图中的剪贴板内容、文件路径、账号和密钥。
+          required: true
+        - label: 已在最新版本上复现，并确认没有重复的现有 Issue。
+          required: true
