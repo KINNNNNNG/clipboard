@@ -46,6 +46,7 @@ public sealed class WindowsInstallerConfigurationTests
         Assert.Contains("windows-client:", workflow);
         Assert.Contains("release:", workflow);
         Assert.Contains("needs: [core, windows-client]", workflow);
+        Assert.DoesNotContain("Install Windows App Runtime", workflow);
     }
 
     private static string ReadFixture(string fileName)

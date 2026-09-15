@@ -87,10 +87,6 @@ jobs:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-windows-app-sdk-1.8.260710003
 
-      - name: Install Windows App Runtime
-        shell: pwsh
-        run: winget install --id Microsoft.WindowsAppRuntime.1.8 --exact --silent --accept-source-agreements --accept-package-agreements
-
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --yes --no-progress --limit-output
