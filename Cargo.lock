@@ -204,7 +204,7 @@ dependencies = [
 
 [[package]]
 name = "clipboard-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clipboard-crypto",
  "clipboard-domain",
@@ -225,7 +225,7 @@ dependencies = [
 
 [[package]]
 name = "clipboard-crypto"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "argon2",
  "blake3",
@@ -240,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "clipboard-domain"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "proptest",
  "serde",
@@ -250,7 +250,7 @@ dependencies = [
 
 [[package]]
 name = "clipboard-ffi"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clipboard-core",
  "clipboard-crypto",
@@ -267,7 +267,7 @@ dependencies = [
 
 [[package]]
 name = "clipboard-search"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clipboard-domain",
  "regex",
@@ -277,7 +277,7 @@ dependencies = [
 
 [[package]]
 name = "clipboard-storage"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clipboard-crypto",
  "clipboard-domain",
@@ -292,7 +292,7 @@ dependencies = [
 
 [[package]]
 name = "clipboard-sync"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "argon2",
  "base64",
