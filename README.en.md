@@ -44,6 +44,12 @@ Clipboard shows a native WinUI 3 panel next to the caret, takes over `Win+V`, an
 - Image objects are uploaded first and referenced by the log afterwards; the receiving side commits history only after AEAD verification passes.
 - Background realtime sync drains a persistent outbox on startup and uses exponential backoff with 0%-25% jitter. Invalid credentials pause automatic retries until sync is re-enabled.
 
+**Local redundancy and recovery**
+
+- Verified local snapshots are written on a write threshold, a time interval, or client exit, and cover the history database, encrypted image objects, and the favorite file bundle cache.
+- When the database is damaged or missing, the newest verified snapshot is restored first; only when no snapshot is usable does the client back up the old database and rebuild an empty one.
+- The snapshot directory may point at another disk. On the same volume the client prefers hard links, so snapshots cost almost nothing extra.
+
 ## Privacy and security model
 
 - **Encrypted at rest:** history lives in a SQLCipher database. Keys are purpose-separated with HKDF-SHA-256, and image and sync objects use XChaCha20-Poly1305.
@@ -73,6 +79,12 @@ Once the output matches `SHA256SUMS.txt`, double-click the installer:
 The Updates section of the settings page shows the running version. You can check manually, or turn on the startup check. Checks read this repository's GitHub Releases only, and accept nothing but an installer asset named like `Clipboard-Setup-vX.Y.Z.exe`.
 
 After downloading, the installer is verified against the published `SHA256SUMS.txt`; only a matching SHA-256 enables the install action. Once you confirm, the client exits by itself and the installer closes leftover processes, replaces files, and restarts the app. History, keys, and settings are untouched. A newer release can also be skipped.
+
+### Local backup and recovery
+
+The Application section of the settings page configures the snapshot directory (default `%LOCALAPPDATA%\Clipboard\snapshots`, and it may point at another disk), the interval (1-1440 minutes), and how many snapshots to keep (1-10). Snapshots are written after 500 captured items, when the interval elapses, or on exit. A snapshot only counts once it passes decryption verification and per-file hash comparison; copies that fail are skipped, and pruning removes objects and cached files that no retained snapshot references.
+
+The Sync section offers "restore history from remote": it clears local history, then the restarted client pulls and merges the remote copy, keeping the previous local database as a backup.
 
 ## Build from source
 
