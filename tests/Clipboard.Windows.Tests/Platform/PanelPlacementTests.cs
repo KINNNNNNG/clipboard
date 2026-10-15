@@ -109,6 +109,84 @@ public sealed class PanelPlacementTests
     }
 
     [Fact]
+    public async Task Window_presenter_restores_source_window_before_hiding_panel()
+    {
+        var events = new List<string>();
+        var backend = new FakeWindowBackend
+        {
+            Events = events,
+            PanelWindow = new nint(7),
+            ForegroundWindow = new nint(99),
+            Cursor = new PixelPoint(100, 100),
+            Monitor = new MonitorSnapshot(WorkArea, 96),
+        };
+        var foreground = new FakeForegroundWindowService(events);
+        var presenter = new WindowPresenter(backend, LogicalPanelSize, foreground);
+
+        presenter.Show();
+        events.Clear();
+
+        bool restored = await presenter.RestoreAndHideAsync();
+
+        Assert.True(restored);
+        Assert.Equal([new nint(99)], foreground.RestoredWindows);
+        Assert.Equal(["restore", "hide"], events);
+    }
+
+    [Fact]
+    public async Task Delayed_close_does_not_hide_new_panel_session()
+    {
+        var events = new List<string>();
+        var backend = new FakeWindowBackend
+        {
+            Events = events,
+            PanelWindow = new nint(7),
+            ForegroundWindow = new nint(99),
+            Cursor = new PixelPoint(100, 100),
+            Monitor = new MonitorSnapshot(WorkArea, 96),
+        };
+        var foreground = new DelayedForegroundWindowService(events);
+        var presenter = new WindowPresenter(backend, LogicalPanelSize, foreground);
+
+        presenter.Show();
+        Task<bool> closing = presenter.RestoreAndHideAsync();
+        await foreground.RestoreStarted.Task;
+
+        presenter.Show();
+        foreground.CompleteRestore(true);
+
+        Assert.False(await closing);
+        Assert.True(presenter.IsVisible);
+        Assert.Equal(0, backend.HideCalls);
+    }
+
+    [Fact]
+    public async Task Deactivated_panel_does_not_replace_current_foreground_window()
+    {
+        var events = new List<string>();
+        var backend = new FakeWindowBackend
+        {
+            Events = events,
+            PanelWindow = new nint(7),
+            ForegroundWindow = new nint(99),
+            Cursor = new PixelPoint(100, 100),
+            Monitor = new MonitorSnapshot(WorkArea, 96),
+        };
+        var foreground = new FakeForegroundWindowService(events);
+        var presenter = new WindowPresenter(backend, LogicalPanelSize, foreground);
+
+        presenter.Show();
+        presenter.HandleDeactivated();
+        events.Clear();
+
+        bool restored = await presenter.RestoreAndHideAsync();
+
+        Assert.False(restored);
+        Assert.Empty(foreground.RestoredWindows);
+        Assert.Empty(events);
+    }
+
+    [Fact]
     public void Deactivation_hides_panel_except_while_settings_are_open_and_escape_always_hides()
     {
         var backend = new FakeWindowBackend
@@ -149,6 +227,44 @@ public sealed class PanelPlacementTests
         Assert.Equal(new nint(99), presenter.OriginalForegroundWindow);
     }
 
+    private sealed class DelayedForegroundWindowService(List<string> events) : IForegroundWindowService
+    {
+        public TaskCompletionSource<bool> RestoreStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _restoreCompletion = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<bool> RestoreAsync(
+            nint originalHwnd,
+            CancellationToken cancellationToken = default)
+        {
+            events.Add("restore");
+            RestoreStarted.TrySetResult(true);
+            return _restoreCompletion.Task.WaitAsync(cancellationToken);
+        }
+
+        public void CompleteRestore(bool restored) => _restoreCompletion.TrySetResult(restored);
+
+        public uint SendPasteInput() => 4;
+    }
+
+    private sealed class FakeForegroundWindowService(List<string> events) : IForegroundWindowService
+    {
+        public bool RestoreResult { get; init; } = true;
+        public List<nint> RestoredWindows { get; } = [];
+
+        public Task<bool> RestoreAsync(
+            nint originalHwnd,
+            CancellationToken cancellationToken = default)
+        {
+            events.Add("restore");
+            RestoredWindows.Add(originalHwnd);
+            return Task.FromResult(RestoreResult);
+        }
+
+        public uint SendPasteInput() => 4;
+    }
+
     private sealed class FakeWindowBackend : IWindowPlacementBackend
     {
         public nint PanelWindow { get; init; }
@@ -164,6 +280,7 @@ public sealed class PanelPlacementTests
         public int ShowCalls { get; private set; }
         public int ForegroundCalls { get; private set; }
         public int HideCalls { get; private set; }
+        public List<string>? Events { get; init; }
         public List<string> Calls { get; } = new();
 
         public nint PanelWindowHandle => PanelWindow;
@@ -201,6 +318,10 @@ public sealed class PanelPlacementTests
             ForegroundCalls++;
         }
 
-        public void Hide() => HideCalls++;
+        public void Hide()
+        {
+            HideCalls++;
+            Events?.Add("hide");
+        }
     }
 }

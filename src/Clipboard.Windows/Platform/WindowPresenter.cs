@@ -37,25 +37,36 @@ internal sealed class WindowPresenter
     private static readonly PanelSize DefaultPanelSize = new(386, 500);
     private readonly IWindowPlacementBackend _backend;
     private readonly PanelSize _logicalSize;
+    private readonly IForegroundWindowService? _foregroundWindow;
     private bool _configured;
+    private long _presentationVersion;
 
     public WindowPresenter(Window window)
-        : this(new WinUiWindowPlacementBackend(window), DefaultPanelSize)
+        : this(new WinUiWindowPlacementBackend(window), DefaultPanelSize, new ForegroundWindowService())
     {
     }
 
-    internal WindowPresenter(IWindowPlacementBackend backend, PanelSize logicalSize)
+    internal WindowPresenter(
+        IWindowPlacementBackend backend,
+        PanelSize logicalSize,
+        IForegroundWindowService? foregroundWindow = null)
     {
         _backend = backend;
         _logicalSize = logicalSize;
+        _foregroundWindow = foregroundWindow;
     }
 
     public nint OriginalForegroundWindow { get; private set; }
+
+    public bool IsVisible { get; private set; }
+
+    public long PresentationVersion => Volatile.Read(ref _presentationVersion);
 
     public bool IsSettingsWindowOpen { get; set; }
 
     public void Show()
     {
+        Interlocked.Increment(ref _presentationVersion);
         nint foreground = _backend.GetForegroundWindow();
         if (foreground != 0 && foreground != _backend.PanelWindowHandle)
         {
@@ -79,9 +90,33 @@ internal sealed class WindowPresenter
         }
         _backend.Show(placement);
         _backend.BringToForeground();
+        IsVisible = true;
     }
 
-    public void Hide() => _backend.Hide();
+    public void Hide()
+    {
+        Interlocked.Increment(ref _presentationVersion);
+        IsVisible = false;
+        _backend.Hide();
+    }
+
+    public async Task<bool> RestoreAndHideAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsVisible)
+        {
+            return false;
+        }
+        long presentationVersion = Volatile.Read(ref _presentationVersion);
+        bool restored = OriginalForegroundWindow != 0
+            && _foregroundWindow is not null
+            && await _foregroundWindow.RestoreAsync(OriginalForegroundWindow, cancellationToken);
+        if (presentationVersion != Volatile.Read(ref _presentationVersion) || !IsVisible)
+        {
+            return false;
+        }
+        Hide();
+        return restored;
+    }
 
     public void HandleEscape() => Hide();
 

@@ -4,6 +4,14 @@
 
 ## [未发布]
 
+## [0.1.3] - 2026-10-15
+
+### 修复
+
+- 修正剪贴板面板关闭时的前台窗口恢复顺序：恢复来源窗口后再隐藏面板，`Esc`、复制与立即粘贴统一恢复焦点；面板已失焦时不再反向抢占当前应用。
+- 修正异步恢复焦点期间重复打开面板的竞态，旧关闭任务不会隐藏新打开的面板。
+- 修正立即粘贴恢复焦点期间重新打开面板的竞态，旧任务不会向旧窗口发送粘贴输入。
+
 
 ## [0.1.2] - 2026-09-15
 
@@ -100,7 +108,8 @@
 - 安装包未做代码签名，Windows SmartScreen 可能提示“未知发布者”。
 - 已签名的 MSIX 发布包尚未提供。
 
-[未发布]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.2...HEAD
+[未发布]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/KINNNNNNG/clipboard/releases/tag/v0.1.0

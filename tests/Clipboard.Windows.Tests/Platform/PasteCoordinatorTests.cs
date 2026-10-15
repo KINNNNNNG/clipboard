@@ -7,7 +7,7 @@ namespace Clipboard.Windows.Tests.Platform;
 public sealed class PasteCoordinatorTests
 {
     [Fact]
-    public async Task Text_paste_writes_hides_restores_and_sends_input_in_order()
+    public async Task Text_paste_writes_restores_hides_and_sends_input_in_order()
     {
         var events = new List<string>();
         var suppression = new ClipboardSuppression();
@@ -31,7 +31,7 @@ public sealed class PasteCoordinatorTests
         Assert.Equal(PasteResultKind.Pasted, result.Kind);
         Assert.Equal(item.Id, result.ItemId);
         Assert.Equal(
-            ["write_text", "hide", "restore", "send_input"],
+            ["write_text", "restore", "hide", "send_input"],
             events);
         Assert.Equal(item.Preview, writer.Text);
         Assert.True(suppression.TryConsumeText(item.Preview));
@@ -91,7 +91,7 @@ public sealed class PasteCoordinatorTests
         PasteResult result = await coordinator.PasteAsync(FileBundleItem(), new nint(42));
 
         Assert.Equal(PasteResultKind.Pasted, result.Kind);
-        Assert.Equal(["read_file_bundle", "write_files", "hide", "restore", "send_input"], events);
+        Assert.Equal(["read_file_bundle", "write_files", "restore", "hide", "send_input"], events);
         Assert.True(suppression.TryConsumeFileBundle(["C:\\a.txt"]));
     }
 
@@ -129,6 +129,65 @@ public sealed class PasteCoordinatorTests
         Assert.DoesNotContain("restore", events);
         Assert.Equal(0, foreground.SendInputCalls);
         Assert.False(suppression.TryConsumeFileBundle(["C:\\missing.txt"]));
+    }
+
+    [Fact]
+    public async Task Delayed_paste_does_not_hide_reopened_panel_or_send_input()
+    {
+        var events = new List<string>();
+        int sessionVersion = 1;
+        var foreground = new FakeForegroundWindowService(events)
+        {
+            RestoreResult = true,
+            SentInputCount = 4,
+            RestoreCompletion = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var coordinator = CreateCoordinator(
+            new FakeContentReader(events),
+            new FakeClipboardWriter(events),
+            foreground,
+            new ClipboardSuppression(),
+            () => events.Add("hide"),
+            panelVisible: () => true,
+            panelSessionVersion: () => sessionVersion);
+
+        Task<PasteResult> pasting = coordinator.PasteAsync(TextItem("保留在剪贴板"), new nint(42));
+        await foreground.RestoreStarted.Task;
+
+        sessionVersion++;
+        foreground.CompleteRestore(true);
+
+        PasteResult result = await pasting;
+
+        Assert.Equal(PasteResultKind.ManualPasteRequired, result.Kind);
+        Assert.Equal(["write_text", "restore"], events);
+        Assert.Equal(0, foreground.SendInputCalls);
+    }
+
+    [Fact]
+    public async Task Deactivated_panel_keeps_clipboard_without_restoring_or_sending_input()
+    {
+        var events = new List<string>();
+        var foreground = new FakeForegroundWindowService(events)
+        {
+            RestoreResult = true,
+            SentInputCount = 4,
+        };
+        var coordinator = CreateCoordinator(
+            new FakeContentReader(events),
+            new FakeClipboardWriter(events),
+            foreground,
+            new ClipboardSuppression(),
+            () => events.Add("hide"),
+            panelVisible: () => false);
+
+        PasteResult result = await coordinator.PasteAsync(TextItem("保留在系统剪贴板"), new nint(42));
+
+        Assert.Equal(PasteResultKind.ManualPasteRequired, result.Kind);
+        Assert.Equal(["write_text", "hide"], events);
+        Assert.Equal(0, foreground.RestoreCalls);
+        Assert.Equal(0, foreground.SendInputCalls);
     }
 
     [Fact]
@@ -271,8 +330,10 @@ public sealed class PasteCoordinatorTests
         IClipboardWriter writer,
         IForegroundWindowService foreground,
         ClipboardSuppression suppression,
-        Action hidePanel) =>
-        new(content, writer, foreground, suppression, hidePanel);
+        Action hidePanel,
+        Func<bool>? panelVisible = null,
+        Func<long>? panelSessionVersion = null) =>
+        new(content, writer, foreground, suppression, hidePanel, panelVisible, panelSessionVersion);
 
     private static ClipboardItemDto TextItem(string text) =>
         new(Guid.NewGuid(), "text", text, "notepad.exe", 100, false, null, null, null);
@@ -359,6 +420,9 @@ public sealed class PasteCoordinatorTests
     {
         public bool RestoreResult { get; init; }
         public uint SentInputCount { get; init; }
+        public TaskCompletionSource<bool>? RestoreCompletion { get; init; }
+        public TaskCompletionSource<bool> RestoreStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         public int RestoreCalls { get; private set; }
         public int SendInputCalls { get; private set; }
 
@@ -366,8 +430,13 @@ public sealed class PasteCoordinatorTests
         {
             events.Add("restore");
             RestoreCalls++;
-            return Task.FromResult(RestoreResult);
+            RestoreStarted.TrySetResult(true);
+            return RestoreCompletion is null
+                ? Task.FromResult(RestoreResult)
+                : RestoreCompletion.Task.WaitAsync(cancellationToken);
         }
+
+        public void CompleteRestore(bool restored) => RestoreCompletion?.TrySetResult(restored);
 
         public uint SendPasteInput()
         {

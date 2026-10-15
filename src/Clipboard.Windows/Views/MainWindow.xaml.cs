@@ -51,7 +51,7 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
             viewModel.ClearOperationError);
         Root.DataContext = viewModel;
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
-        viewModel.CloseRequested += (_, _) => HidePanel();
+        viewModel.CloseRequested += (_, _) => _ = RestoreAndHidePanelAsync();
         SyncHistorySelection();
     }
 
@@ -74,6 +74,14 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
     }
 
     public void HidePanel() => _presenter?.Hide();
+
+    public async Task RestoreAndHidePanelAsync()
+    {
+        if (_presenter is not null)
+        {
+            await _presenter.RestoreAndHideAsync();
+        }
+    }
 
     internal void SetShortcutState(GlobalShortcutState state)
     {
@@ -544,5 +552,7 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         {
             await _clipboardWriter.WriteTextAsync(item.Preview);
         }
+
+        await RestoreAndHidePanelAsync();
     }
 }

@@ -117,7 +117,9 @@ public partial class App : Microsoft.UI.Xaml.Application
                 writer,
                 new ForegroundWindowService(),
                 suppression,
-                MainWindow.HidePanel);
+                MainWindow.HidePanel,
+                () => _presenter.IsVisible,
+                () => _presenter.PresentationVersion);
             var panel = new ClipboardPanelViewModel(
                 _core,
                 paste,

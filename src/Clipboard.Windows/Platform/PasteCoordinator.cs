@@ -27,19 +27,25 @@ internal sealed class PasteCoordinator : IClipboardItemPasteService
     private readonly IForegroundWindowService _foregroundWindow;
     private readonly ClipboardSuppression _suppression;
     private readonly Action _hidePanel;
+    private readonly Func<bool>? _panelVisible;
+    private readonly Func<long>? _panelSessionVersion;
 
     public PasteCoordinator(
         IClipboardItemContentReader contentReader,
         IClipboardWriter clipboardWriter,
         IForegroundWindowService foregroundWindow,
         ClipboardSuppression suppression,
-        Action hidePanel)
+        Action hidePanel,
+        Func<bool>? panelVisible = null,
+        Func<long>? panelSessionVersion = null)
     {
         _contentReader = contentReader;
         _clipboardWriter = clipboardWriter;
         _foregroundWindow = foregroundWindow;
         _suppression = suppression;
         _hidePanel = hidePanel;
+        _panelVisible = panelVisible;
+        _panelSessionVersion = panelSessionVersion;
     }
 
     public async Task<PasteResult> PasteAsync(
@@ -48,6 +54,7 @@ internal sealed class PasteCoordinator : IClipboardItemPasteService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(item);
+        long? panelSessionVersion = _panelSessionVersion?.Invoke();
         ClipboardPayloadKind kind = ParseKind(item.Kind);
 
         switch (kind)
@@ -126,9 +133,26 @@ internal sealed class PasteCoordinator : IClipboardItemPasteService
                 throw new NotSupportedException("This clipboard item type cannot be pasted yet.");
         }
 
-        _hidePanel();
-        if (originalHwnd == nint.Zero
-            || !await _foregroundWindow.RestoreAsync(originalHwnd, cancellationToken))
+        bool panelSessionIsCurrent = _panelSessionVersion is null
+            || _panelSessionVersion() == panelSessionVersion;
+        if (!panelSessionIsCurrent)
+        {
+            return new PasteResult(PasteResultKind.ManualPasteRequired, item.Id);
+        }
+        if (originalHwnd == nint.Zero || _panelVisible?.Invoke() == false)
+        {
+            _hidePanel();
+            return new PasteResult(PasteResultKind.ManualPasteRequired, item.Id);
+        }
+
+        bool restored = await _foregroundWindow.RestoreAsync(originalHwnd, cancellationToken);
+        panelSessionIsCurrent = _panelVisible?.Invoke() != false
+            && (_panelSessionVersion is null || _panelSessionVersion() == panelSessionVersion);
+        if (panelSessionIsCurrent)
+        {
+            _hidePanel();
+        }
+        if (!restored || !panelSessionIsCurrent)
         {
             return new PasteResult(PasteResultKind.ManualPasteRequired, item.Id);
         }
