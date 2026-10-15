@@ -132,6 +132,34 @@ public sealed class PasteCoordinatorTests
     }
 
     [Fact]
+    public async Task Deactivation_during_successful_restore_still_sends_paste_input()
+    {
+        var events = new List<string>();
+        bool panelVisible = true;
+        long presentationVersion = 1;
+        var foreground = new FakeForegroundWindowService(events)
+        {
+            RestoreResult = true,
+            SentInputCount = 4,
+            DuringRestore = () => panelVisible = false,
+        };
+        var coordinator = CreateCoordinator(
+            new FakeContentReader(events),
+            new FakeClipboardWriter(events),
+            foreground,
+            new ClipboardSuppression(),
+            () => events.Add("hide"),
+            panelVisible: () => panelVisible,
+            panelSessionVersion: () => presentationVersion);
+
+        PasteResult result = await coordinator.PasteAsync(TextItem("粘贴到原文本框"), new nint(42));
+
+        Assert.Equal(PasteResultKind.Pasted, result.Kind);
+        Assert.Equal(["write_text", "restore", "send_input"], events);
+        Assert.Equal(1, foreground.SendInputCalls);
+    }
+
+    [Fact]
     public async Task Delayed_paste_does_not_hide_reopened_panel_or_send_input()
     {
         var events = new List<string>();
@@ -421,6 +449,7 @@ public sealed class PasteCoordinatorTests
         public bool RestoreResult { get; init; }
         public uint SentInputCount { get; init; }
         public TaskCompletionSource<bool>? RestoreCompletion { get; init; }
+        public Action? DuringRestore { get; init; }
         public TaskCompletionSource<bool> RestoreStarted { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         public int RestoreCalls { get; private set; }
@@ -430,6 +459,7 @@ public sealed class PasteCoordinatorTests
         {
             events.Add("restore");
             RestoreCalls++;
+            DuringRestore?.Invoke();
             RestoreStarted.TrySetResult(true);
             return RestoreCompletion is null
                 ? Task.FromResult(RestoreResult)

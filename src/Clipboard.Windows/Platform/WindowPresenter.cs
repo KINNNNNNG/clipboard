@@ -93,9 +93,14 @@ internal sealed class WindowPresenter
         IsVisible = true;
     }
 
-    public void Hide()
+    public void Hide() => HidePanel(advancePresentationVersion: true);
+
+    private void HidePanel(bool advancePresentationVersion)
     {
-        Interlocked.Increment(ref _presentationVersion);
+        if (advancePresentationVersion)
+        {
+            Interlocked.Increment(ref _presentationVersion);
+        }
         IsVisible = false;
         _backend.Hide();
     }
@@ -110,11 +115,14 @@ internal sealed class WindowPresenter
         bool restored = OriginalForegroundWindow != 0
             && _foregroundWindow is not null
             && await _foregroundWindow.RestoreAsync(OriginalForegroundWindow, cancellationToken);
-        if (presentationVersion != Volatile.Read(ref _presentationVersion) || !IsVisible)
+        if (presentationVersion != Volatile.Read(ref _presentationVersion))
         {
             return false;
         }
-        Hide();
+        if (IsVisible)
+        {
+            Hide();
+        }
         return restored;
     }
 
@@ -124,7 +132,7 @@ internal sealed class WindowPresenter
     {
         if (!IsSettingsWindowOpen)
         {
-            Hide();
+            HidePanel(advancePresentationVersion: false);
         }
     }
 }

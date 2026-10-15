@@ -176,7 +176,9 @@ public sealed class PanelPlacementTests
         var presenter = new WindowPresenter(backend, LogicalPanelSize, foreground);
 
         presenter.Show();
+        long presentationVersion = presenter.PresentationVersion;
         presenter.HandleDeactivated();
+        Assert.Equal(presentationVersion, presenter.PresentationVersion);
         events.Clear();
 
         bool restored = await presenter.RestoreAndHideAsync();

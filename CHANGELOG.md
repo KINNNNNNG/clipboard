@@ -4,6 +4,13 @@
 
 ## [未发布]
 
+## [0.1.4] - 2026-10-15
+
+### 修复
+
+- 修正恢复原窗口触发面板失焦时被误判为操作取消的问题，现在点击历史条目后会继续向原文本框发送 `Ctrl+V`。
+- 保留面板会话校验：用户显式关闭或重新打开面板时，过期操作不会向其他窗口发送按键。
+
 ## [0.1.3] - 2026-10-15
 
 ### 修复
@@ -108,7 +115,8 @@
 - 安装包未做代码签名，Windows SmartScreen 可能提示“未知发布者”。
 - 已签名的 MSIX 发布包尚未提供。
 
-[未发布]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.3...HEAD
+[未发布]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.0...v0.1.1

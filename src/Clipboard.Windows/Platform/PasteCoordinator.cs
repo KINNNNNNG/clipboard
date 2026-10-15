@@ -146,9 +146,9 @@ internal sealed class PasteCoordinator : IClipboardItemPasteService
         }
 
         bool restored = await _foregroundWindow.RestoreAsync(originalHwnd, cancellationToken);
-        panelSessionIsCurrent = _panelVisible?.Invoke() != false
-            && (_panelSessionVersion is null || _panelSessionVersion() == panelSessionVersion);
-        if (panelSessionIsCurrent)
+        panelSessionIsCurrent = _panelSessionVersion is null
+            || _panelSessionVersion() == panelSessionVersion;
+        if (panelSessionIsCurrent && _panelVisible?.Invoke() != false)
         {
             _hidePanel();
         }
