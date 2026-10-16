@@ -44,6 +44,30 @@ internal static class VaultRecovery
         return quarantined;
     }
 
+    public static bool HasMismatchedSnapshot(string snapshotRoot, Guid vaultId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(snapshotRoot);
+        if (!Directory.Exists(snapshotRoot))
+        {
+            return false;
+        }
+
+        foreach (string directory in Directory.EnumerateDirectories(snapshotRoot, "snapshot-*"))
+        {
+            string markerPath = Path.Combine(directory, "history.vault");
+            if (!File.Exists(markerPath))
+            {
+                continue;
+            }
+            string marker = File.ReadAllText(markerPath).Trim();
+            if (Guid.TryParse(marker, out Guid snapshotVaultId)
+                && snapshotVaultId != vaultId)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
     private static string MakeUnique(string path)
     {
         if (!File.Exists(path))

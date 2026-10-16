@@ -4,6 +4,12 @@
 
 ## [未发布]
 
+## [0.1.6] - 2026-10-16
+
+### 修复
+
+- 修正检测到其他 Vault 快照时自动恢复旧空库的问题，保留损坏数据库并提示使用原密钥恢复，避免历史被静默替换为空库。
+
 ## [0.1.5] - 2026-10-16
 
 ### 修复
@@ -121,7 +127,8 @@
 - 安装包未做代码签名，Windows SmartScreen 可能提示“未知发布者”。
 - 已签名的 MSIX 发布包尚未提供。
 
-[未发布]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.5...HEAD
+[未发布]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.2...v0.1.3

@@ -212,6 +212,18 @@ public partial class App : Microsoft.UI.Xaml.Application
         catch (ClipboardCoreException error) when (
             error.Status is CoreStatus.VaultUnreadable or CoreStatus.VaultCorrupt)
         {
+            if (VaultRecovery.HasMismatchedSnapshot(
+                SnapshotPolicy.ResolveDirectory(settings),
+                vault.VaultId))
+            {
+                _globalLog?.Write(LogLevel.Error, "app", "vault.mismatch", new Dictionary<string, string>
+                {
+                    ["error_category"] = CoreStatusMessages.ForLog(CoreStatus.VaultKeyMismatch),
+                });
+                _startupNotice = "检测到其他 Vault 的历史快照，已停止自动恢复以保护历史数据。请使用原恢复码或密钥恢复。";
+                throw new ClipboardCoreException(CoreStatus.VaultKeyMismatch);
+            }
+
             if (TryRestoreNewestSnapshot(vault, settings))
             {
                 _globalLog?.Write(LogLevel.Warn, "app", "vault.restore", new Dictionary<string, string>

@@ -35,6 +35,20 @@ public sealed class VaultRecoveryTests
     }
 
     [Fact]
+    public void Detects_a_snapshot_from_another_vault_without_modifying_files()
+    {
+        using var directory = new TemporaryDirectory();
+        Guid currentVault = Guid.NewGuid();
+        string snapshot = Directory.CreateDirectory(Path.Combine(directory.Path, "snapshot-20261016-010000")).FullName;
+        Guid otherVault = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(snapshot, "history.vault"), otherVault.ToString());
+
+        bool mismatched = VaultRecovery.HasMismatchedSnapshot(directory.Path, currentVault);
+
+        Assert.True(mismatched);
+        Assert.True(File.Exists(Path.Combine(snapshot, "history.vault")));
+    }
+    [Fact]
     public void Quarantine_returns_null_when_no_database_exists()
     {
         using var directory = new TemporaryDirectory();
