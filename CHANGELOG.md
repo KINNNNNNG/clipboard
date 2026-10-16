@@ -4,6 +4,12 @@
 
 ## [未发布]
 
+## [0.1.5] - 2026-10-16
+
+### 修复
+
+- 修正应用内更新退出时的 UI 死锁，安装程序启动后客户端可以正常退出，不再因等待同步任务而无响应。
+
 ## [0.1.4] - 2026-10-15
 
 ### 修复
@@ -115,7 +121,8 @@
 - 安装包未做代码签名，Windows SmartScreen 可能提示“未知发布者”。
 - 已签名的 MSIX 发布包尚未提供。
 
-[未发布]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.4...HEAD
+[未发布]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.1...v0.1.2

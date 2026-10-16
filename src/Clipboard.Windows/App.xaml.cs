@@ -432,15 +432,18 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
     }
 
-    private void OnExit(object sender, object args)
+    private async void OnExit(object sender, object args)
     {
         CreateSnapshotQuietly("exit");
         _tray?.Dispose();
         _capture?.Dispose();
         _shortcuts?.Dispose();
-        DisposeRealtimeSyncAsync().GetAwaiter().GetResult();
+        await DisposeRealtimeSyncAsync().ConfigureAwait(false);
         _core?.Dispose();
         _vault?.Dispose();
-        _globalLog?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        if (_globalLog is not null)
+        {
+            await _globalLog.DisposeAsync().ConfigureAwait(false);
+        }
     }
 }
