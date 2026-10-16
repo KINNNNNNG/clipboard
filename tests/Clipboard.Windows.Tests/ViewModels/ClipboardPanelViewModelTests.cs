@@ -438,6 +438,64 @@ public sealed class ClipboardPanelViewModelTests
     }
 
     [Fact]
+    public async Task Toggling_favorite_notifies_realtime_sync_for_syncable_item()
+    {
+        ClipboardItemDto item = TextItem("sync favorite");
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(Response(item)),
+        };
+        var notifier = new FakeRealtimeSyncNotifier();
+        var viewModel = new ClipboardPanelViewModel(
+            core,
+            new FakePasteService(),
+            realtimeSync: notifier);
+
+        await viewModel.RefreshAsync();
+        await viewModel.ToggleFavoriteAsync(Assert.Single(viewModel.Items));
+
+        Assert.Equal(["text"], notifier.Kinds);
+    }
+
+    [Fact]
+    public async Task Unfavoriting_image_notifies_realtime_sync_with_image_kind()
+    {
+        ClipboardItemDto item = ImageItem("sync image", favorite: true);
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(Response(item)),
+        };
+        var notifier = new FakeRealtimeSyncNotifier();
+        var viewModel = new ClipboardPanelViewModel(
+            core,
+            new FakePasteService(),
+            realtimeSync: notifier);
+
+        await viewModel.RefreshAsync();
+        await viewModel.ToggleFavoriteAsync(Assert.Single(viewModel.Items));
+
+        Assert.Equal(["image"], notifier.Kinds);
+    }
+
+    [Fact]
+    public async Task Clearing_unfavorite_notifies_realtime_sync_after_core_succeeds()
+    {
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(Response(TextItem("remaining"))),
+        };
+        var notifier = new FakeRealtimeSyncNotifier();
+        var viewModel = new ClipboardPanelViewModel(
+            core,
+            new FakePasteService(),
+            realtimeSync: notifier);
+
+        await viewModel.ClearUnfavoriteAsync();
+
+        Assert.Equal(["startup"], notifier.Kinds);
+    }
+
+    [Fact]
     public async Task Favoriting_a_file_bundle_caches_it_before_persisting_favorite_state()
     {
         ClipboardItemDto item = FileItem("report.txt");
@@ -579,6 +637,9 @@ public sealed class ClipboardPanelViewModelTests
     private static ClipboardItemDto TextItem(string preview) =>
         new(Guid.NewGuid(), "text", preview, "notepad.exe", 100, false, null, null, null);
 
+    private static ClipboardItemDto ImageItem(string preview, bool favorite = false) =>
+        new(Guid.NewGuid(), "image", preview, "paint.exe", 100, favorite, 64, 64, 1024);
+
     private static ClipboardItemDto FileItem(string name, bool favorite = false) =>
         new(Guid.NewGuid(), "file_bundle", name, "explorer.exe", 100, favorite, null, null, null,
             FileCount: 1,
@@ -673,6 +734,13 @@ public sealed class ClipboardPanelViewModelTests
             ClearCalls++;
             return Task.FromResult(new RetentionResponseDto(0, 0));
         }
+    }
+
+    private sealed class FakeRealtimeSyncNotifier : IRealtimeSyncNotifier
+    {
+        public List<string> Kinds { get; } = [];
+
+        public void NotifyChanged(string kind) => Kinds.Add(kind);
     }
 
     private sealed class FakePasteService : IClipboardItemPasteService

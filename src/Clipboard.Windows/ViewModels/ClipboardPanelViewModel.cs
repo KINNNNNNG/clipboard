@@ -224,6 +224,7 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
             new SetFavoriteRequestDto(item.Id, favorite, NextHlc()),
             cancellationToken);
         item.Favorite = favorite;
+        _realtimeSync?.NotifyChanged(item.Kind);
     }
 
     public async Task DeleteAsync(
@@ -248,6 +249,7 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
     public async Task ClearUnfavoriteAsync(CancellationToken cancellationToken = default)
     {
         await _core.ClearUnfavoriteAsync(cancellationToken);
+        _realtimeSync?.NotifyChanged("startup");
         await RefreshAsync(cancellationToken);
     }
 
