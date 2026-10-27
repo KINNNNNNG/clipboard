@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 fn journal_key() -> clipboard_crypto::DerivedKey {
     VaultKey::from_bytes([0x42; 32])
-        .derive(Uuid::from_u128(1), KeyPurpose::Journal)
+        .derive(KeyPurpose::Journal)
         .unwrap()
 }
 

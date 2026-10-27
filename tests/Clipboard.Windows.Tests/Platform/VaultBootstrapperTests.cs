@@ -34,6 +34,51 @@ public sealed class VaultBootstrapperTests : IDisposable
     }
 
     [Fact]
+    public void New_storage_uses_a_versioned_directory_and_keeps_existing_data_separate()
+    {
+        var bootstrapper = new VaultBootstrapper(_root, new DpapiKeyProtector());
+        string oldData = Path.Combine(bootstrapper.RootDirectory, "data");
+        Directory.CreateDirectory(oldData);
+        File.WriteAllText(Path.Combine(oldData, "history.db"), "legacy data stays untouched");
+
+        using VaultMaterial material = bootstrapper.LoadOrCreate();
+
+        Assert.Equal(Path.Combine(bootstrapper.RootDirectory, "data-v2"), material.DataDirectory);
+        Assert.Equal("legacy data stays untouched", File.ReadAllText(Path.Combine(oldData, "history.db")));
+        Assert.True(Directory.Exists(material.DataDirectory));
+    }
+
+    [Fact]
+    public async Task Concurrent_first_launches_keep_one_vault_identity_and_key()
+    {
+        var firstBootstrapper = new VaultBootstrapper(_root, new DpapiKeyProtector());
+        var secondBootstrapper = new VaultBootstrapper(_root, new DpapiKeyProtector());
+        byte[]? firstKey = null;
+        byte[]? secondKey = null;
+        Guid firstId = Guid.Empty;
+        Guid secondId = Guid.Empty;
+
+        await Task.WhenAll(
+            Task.Run(() =>
+            {
+                using VaultMaterial material = firstBootstrapper.LoadOrCreate();
+                firstId = material.VaultId;
+                firstKey = material.VaultKey.ToArray();
+            }),
+            Task.Run(() =>
+            {
+                using VaultMaterial material = secondBootstrapper.LoadOrCreate();
+                secondId = material.VaultId;
+                secondKey = material.VaultKey.ToArray();
+            }));
+
+        Assert.Equal(firstId, secondId);
+        Assert.Equal(firstKey, secondKey);
+        CryptographicOperations.ZeroMemory(firstKey!);
+        CryptographicOperations.ZeroMemory(secondKey!);
+    }
+
+    [Fact]
     public void Has_local_vault_tracks_the_dpapi_vault_file()
     {
         var bootstrapper = new VaultBootstrapper(_root);

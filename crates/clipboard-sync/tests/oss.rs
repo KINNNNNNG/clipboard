@@ -112,7 +112,7 @@ fn read_request(mut stream: TcpStream, status: u16, body: &str) -> RecordedReque
 
 fn header() -> RemoteSegmentHeader {
     RemoteSegmentHeader::try_from(SegmentHeader {
-        protocol_version: 1,
+        protocol_version: 2,
         vault_id: Uuid::from_u128(1),
         device_id: Uuid::from_u128(2),
         segment_id: Uuid::from_u128(3),

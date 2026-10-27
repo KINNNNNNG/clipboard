@@ -1,8 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use clipboard_sync::{PairingFileMaterial, decode_pairing_file, encode_pairing_file};
-use clipboard_sync::{
-    RecoveryMaterial, SYNC_PROTOCOL_VERSION, SyncError, decode_recovery_code, encode_recovery_code,
-};
+use clipboard_sync::{RecoveryMaterial, SyncError, decode_recovery_code, encode_recovery_code};
 use uuid::Uuid;
 
 fn material() -> RecoveryMaterial {
@@ -72,7 +70,7 @@ fn recovery_code_rejects_tampered_protocol_version() {
     let recovery_code = encode_recovery_code(&material()).unwrap();
     let compact = recovery_code.replace('-', "");
     let mut bytes = URL_SAFE_NO_PAD.decode(compact).unwrap();
-    bytes[0] = SYNC_PROTOCOL_VERSION + 1;
+    bytes[0] = 2;
     let checksum = blake3::hash(&bytes[..49]);
     bytes[49..].copy_from_slice(&checksum.as_bytes()[..4]);
     let tampered = group_recovery_code(&URL_SAFE_NO_PAD.encode(bytes));
@@ -80,7 +78,7 @@ fn recovery_code_rejects_tampered_protocol_version() {
     assert!(matches!(
         decode_recovery_code(&tampered),
         Err(SyncError::UnsupportedRecoveryCodeVersion(version))
-            if version == SYNC_PROTOCOL_VERSION + 1
+            if version == 2
     ));
 }
 

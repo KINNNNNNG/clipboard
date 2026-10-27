@@ -208,7 +208,7 @@ fn missing_image_object_does_not_block_text_in_same_remote_segment() {
         segment_id: Uuid::from_u128(0x205),
     };
     let journal_key = VaultKey::from_bytes(KEY)
-        .derive(VAULT_ID, KeyPurpose::Journal)
+        .derive(KeyPurpose::Journal)
         .unwrap();
     let transport = DirectoryTransport::open(remote.path()).unwrap();
     transport
@@ -347,7 +347,7 @@ fn inbound_state_events_merge_without_creating_a_new_outbox_entry() {
         segment_id: Uuid::from_u128(11),
     };
     let journal_key = VaultKey::from_bytes(KEY)
-        .derive(VAULT_ID, KeyPurpose::Journal)
+        .derive(KeyPurpose::Journal)
         .unwrap();
     let events = [
         SyncEvent::Favorite {
@@ -425,7 +425,7 @@ fn delete_event_received_before_upsert_is_preserved() {
         updated: Hlc::new(200, 0, Uuid::from_u128(10)),
     };
     let journal_key = VaultKey::from_bytes(KEY)
-        .derive(VAULT_ID, KeyPurpose::Journal)
+        .derive(KeyPurpose::Journal)
         .unwrap();
     let transport = DirectoryTransport::open(remote.path()).unwrap();
     let delete_header = SegmentHeader {

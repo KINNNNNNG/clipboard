@@ -13,7 +13,7 @@
 Clipboard shows a native WinUI 3 panel next to the caret, takes over `Win+V`, and keeps text, image, and file history in a local SQLCipher database. Cross-device sync runs on a purpose-built end-to-end encrypted log: remotes only ever store ciphertext, while file bundles and file paths stay on the machine.
 
 - Download: [Releases](https://github.com/KINNNNNNG/clipboard/releases/latest)
-- Current version: `0.1.6`
+- Current version: `0.1.7`
 - Status and acceptance boundaries: [docs/STATUS.md](docs/STATUS.md)
 
 ## Features
@@ -60,10 +60,10 @@ Clipboard shows a native WinUI 3 panel next to the caret, takes over `Win+V`, an
 
 ## Download and install
 
-Download `Clipboard-Setup-v0.1.6.exe` and `SHA256SUMS.txt` from [Releases](https://github.com/KINNNNNNG/clipboard/releases/latest), verify the hash, then run the installer:
+Download `Clipboard-Setup-v0.1.7.exe` and `SHA256SUMS.txt` from [Releases](https://github.com/KINNNNNNG/clipboard/releases/latest), verify the hash, then run the installer:
 
 ```powershell
-Get-FileHash .\Clipboard-Setup-v0.1.6.exe -Algorithm SHA256
+Get-FileHash .\Clipboard-Setup-v0.1.7.exe -Algorithm SHA256
 ```
 
 Once the output matches `SHA256SUMS.txt`, double-click the installer:
@@ -116,10 +116,10 @@ The client copies `clipboard_ffi.dll` automatically. Build output lands in `src\
 ### Produce an installer
 
 ```powershell
-pwsh -NoProfile -File scripts/package-windows.ps1 -Version 0.1.6
+pwsh -NoProfile -File scripts/package-windows.ps1 -Version 0.1.7
 ```
 
-Output is `artifacts\windows\installer\Clipboard-Setup-v0.1.6.exe` plus `artifacts\windows\SHA256SUMS.txt`. See the [Windows installer release guide](docs/release/windows-installer.md).
+Output is `artifacts\windows\installer\Clipboard-Setup-v0.1.7.exe` plus `artifacts\windows\SHA256SUMS.txt`. See the [Windows installer release guide](docs/release/windows-installer.md).
 
 ## Testing and verification
 
@@ -174,8 +174,8 @@ docs/                  Design, plan, and status documents
 Pushing a tag that matches `vMAJOR.MINOR.PATCH` triggers the `Windows Release` workflow. It verifies the Rust core on Ubuntu and builds the client installer on Windows in parallel, then creates a GitHub Release with the installer and checksum once both succeed:
 
 ```powershell
-git tag v0.1.6
-git push origin v0.1.6
+git tag v0.1.7
+git push origin v0.1.7
 ```
 
 You can also run the workflow manually from the Actions page and supply a version.

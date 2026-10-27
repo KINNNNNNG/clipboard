@@ -4,8 +4,9 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::{SYNC_PROTOCOL_VERSION, SyncError};
+use crate::SyncError;
 
+const RECOVERY_CODE_VERSION: u8 = 1;
 const RECOVERY_PAYLOAD_LENGTH: usize = 49;
 const RECOVERY_CODE_LENGTH: usize = RECOVERY_PAYLOAD_LENGTH + 4;
 const RECOVERY_COMPACT_LENGTH: usize = 71;
@@ -44,7 +45,7 @@ impl fmt::Debug for RecoveryMaterial {
 
 pub fn encode_recovery_code(material: &RecoveryMaterial) -> Result<String, SyncError> {
     let mut bytes = Zeroizing::new([0_u8; RECOVERY_CODE_LENGTH]);
-    bytes[0] = SYNC_PROTOCOL_VERSION;
+    bytes[0] = RECOVERY_CODE_VERSION;
     bytes[1..17].copy_from_slice(material.vault_id.as_bytes());
     bytes[17..RECOVERY_PAYLOAD_LENGTH].copy_from_slice(&material.master_key);
     let checksum = blake3::hash(&bytes[..RECOVERY_PAYLOAD_LENGTH]);
@@ -91,7 +92,7 @@ pub fn decode_recovery_code(code: &str) -> Result<RecoveryMaterial, SyncError> {
         return Err(SyncError::InvalidRecoveryCode);
     }
 
-    if bytes[0] != SYNC_PROTOCOL_VERSION {
+    if bytes[0] != RECOVERY_CODE_VERSION {
         return Err(SyncError::UnsupportedRecoveryCodeVersion(bytes[0]));
     }
 

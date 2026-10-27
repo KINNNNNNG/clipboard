@@ -38,4 +38,4 @@ pub use remote::{
 pub use transport::{DirectoryTransport, SyncTransport};
 pub use webdav::WebDavStore;
 
-pub const SYNC_PROTOCOL_VERSION: u8 = 1;
+pub const SYNC_PROTOCOL_VERSION: u8 = 2;

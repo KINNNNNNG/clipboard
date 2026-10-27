@@ -4,6 +4,20 @@
 
 ## [未发布]
 
+## [0.1.7] - 2026-10-27
+
+### 变更
+
+- 主密钥独立负责加解密，Vault ID 只作为保险库身份标记；Vault ID 变化不再改变加解密密钥。
+- 新增独立的 `data-v2` 数据目录和 `v2` 快照目录。旧目录保持原样，新版本使用空历史开始，不与旧存储混用。
+- 同步协议升级到 v2，参与同步的设备需要同步升级到兼容版本。
+
+### 修复
+
+- 首次启动使用独占方式创建 `vault.key`，避免并发初始化产生不同的密钥和 Vault ID。
+- 密钥、Vault ID 或数据库标记不一致，以及数据库无法解密或损坏时，停止自动恢复、空库重建和写入，保留全部现场数据。
+- 修复本地打包使用相对输出目录时，Inno Setup 找不到图标和资源的问题。
+
 ## [0.1.6] - 2026-10-16
 
 ### 修复
@@ -127,7 +141,8 @@
 - 安装包未做代码签名，Windows SmartScreen 可能提示“未知发布者”。
 - 已签名的 MSIX 发布包尚未提供。
 
-[未发布]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.6...HEAD
+[未发布]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.3...v0.1.4

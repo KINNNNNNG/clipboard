@@ -1,11 +1,9 @@
 use clipboard_crypto::{CryptoError, KeyPurpose, ObjectCipher, VaultKey};
-use uuid::Uuid;
 
 #[test]
 fn ciphertext_round_trips_and_detects_tampering() {
-    let vault_id = Uuid::from_u128(7);
     let key = VaultKey::from_bytes([0x42; 32]);
-    let cipher = ObjectCipher::new(key.derive(vault_id, KeyPurpose::Image).unwrap());
+    let cipher = ObjectCipher::new(key.derive(KeyPurpose::Image).unwrap());
     let aad = b"vault=7;object=9;type=image;version=1";
 
     let mut sealed = cipher.seal(b"clipboard image bytes", aad).unwrap();
@@ -19,10 +17,9 @@ fn ciphertext_round_trips_and_detects_tampering() {
 
 #[test]
 fn ciphertext_is_bound_to_aad_and_key_purpose() {
-    let vault_id = Uuid::from_u128(7);
     let key = VaultKey::from_bytes([0x42; 32]);
-    let image_cipher = ObjectCipher::new(key.derive(vault_id, KeyPurpose::Image).unwrap());
-    let file_cipher = ObjectCipher::new(key.derive(vault_id, KeyPurpose::FileCache).unwrap());
+    let image_cipher = ObjectCipher::new(key.derive(KeyPurpose::Image).unwrap());
+    let file_cipher = ObjectCipher::new(key.derive(KeyPurpose::FileCache).unwrap());
     let sealed = image_cipher.seal(b"secret", b"image-object").unwrap();
 
     assert_eq!(
@@ -38,7 +35,7 @@ fn ciphertext_is_bound_to_aad_and_key_purpose() {
 #[test]
 fn malformed_or_unknown_ciphertexts_are_rejected() {
     let key = VaultKey::from_bytes([0x42; 32]);
-    let cipher = ObjectCipher::new(key.derive(Uuid::from_u128(7), KeyPurpose::Image).unwrap());
+    let cipher = ObjectCipher::new(key.derive(KeyPurpose::Image).unwrap());
 
     assert_eq!(
         cipher.open(&[1, 2, 3], b"aad"),

@@ -49,10 +49,10 @@ impl CoreService {
         std::fs::create_dir_all(data_dir)?;
         let database = Database::open_vault(data_dir, vault_id, vault_key)?;
         let vault_key = VaultKey::from_bytes(*vault_key);
-        let image_key = vault_key.derive(vault_id, KeyPurpose::Image)?;
-        let object_store = ObjectStore::open(data_dir, vault_id, image_key)?;
-        let file_cache_key = vault_key.derive(vault_id, KeyPurpose::FileCache)?;
-        let file_cache = FileCache::open(data_dir, vault_id, file_cache_key)?;
+        let image_key = vault_key.derive(KeyPurpose::Image)?;
+        let object_store = ObjectStore::open(data_dir, image_key)?;
+        let file_cache_key = vault_key.derive(KeyPurpose::FileCache)?;
+        let file_cache = FileCache::open(data_dir, file_cache_key)?;
         Ok(Self {
             database,
             vault_id,
@@ -156,7 +156,7 @@ impl CoreService {
         active: bool,
     ) -> Result<(), CoreError> {
         let transport = DirectoryTransport::open(remote_path)?;
-        let journal_key = self.vault_key.derive(self.vault_id, KeyPurpose::Journal)?;
+        let journal_key = self.vault_key.derive(KeyPurpose::Journal)?;
         self.set_device_active(&transport, device_id, active, &journal_key)
     }
 
@@ -224,7 +224,7 @@ impl CoreService {
         transport: &dyn RemoteStore,
         diagnostics: &dyn SyncDiagnostics,
     ) -> Result<SyncDirectoryResponse, CoreError> {
-        let journal_key = self.vault_key.derive(self.vault_id, KeyPurpose::Journal)?;
+        let journal_key = self.vault_key.derive(KeyPurpose::Journal)?;
         self.load_processed_state(transport, device_id, &journal_key)?;
         self.preflight_pending_objects()?;
         ensure_remote_header(transport, self.vault_id)?;
@@ -343,7 +343,7 @@ impl CoreService {
                 .collect(),
         };
         let state_json = serde_json::to_vec(&state)?;
-        let aad = device_state_aad(self.vault_id, device_id);
+        let aad = device_state_aad(device_id);
         let state_ciphertext =
             ObjectCipher::new(journal_key.derive_scoped(&aad)?).seal(&state_json, &aad)?;
         transport.put_device_state(device_id, &state_ciphertext)?;
@@ -373,7 +373,7 @@ impl CoreService {
         let Some(ciphertext) = transport.get_device_state(device_id)? else {
             return Err(SyncError::Conflict.into());
         };
-        let aad = device_state_aad(self.vault_id, device_id);
+        let aad = device_state_aad(device_id);
         let plaintext =
             ObjectCipher::new(journal_key.derive_scoped(&aad)?).open(&ciphertext, &aad)?;
         let mut state: DeviceStatePayload = serde_json::from_slice(&plaintext)?;
@@ -396,7 +396,7 @@ impl CoreService {
         let Some(ciphertext) = transport.get_device_state(device_id)? else {
             return Ok(());
         };
-        let aad = device_state_aad(self.vault_id, device_id);
+        let aad = device_state_aad(device_id);
         let plaintext =
             ObjectCipher::new(journal_key.derive_scoped(&aad)?).open(&ciphertext, &aad)?;
         let state: DeviceStatePayload = serde_json::from_slice(&plaintext)?;
@@ -424,7 +424,7 @@ impl CoreService {
             let Some(ciphertext) = transport.get_snapshot(snapshot_id)? else {
                 continue;
             };
-            let aad = snapshot_aad(self.vault_id, snapshot_id);
+            let aad = snapshot_aad(snapshot_id);
             let plaintext =
                 ObjectCipher::new(journal_key.derive_scoped(&aad)?).open(&ciphertext, &aad)?;
             let manifest: SnapshotManifest = serde_json::from_slice(&plaintext)?;
@@ -496,7 +496,7 @@ impl CoreService {
             segments,
         };
         let plaintext = serde_json::to_vec(&manifest)?;
-        let aad = snapshot_aad(self.vault_id, snapshot_id);
+        let aad = snapshot_aad(snapshot_id);
         let ciphertext =
             ObjectCipher::new(journal_key.derive_scoped(&aad)?).seal(&plaintext, &aad)?;
         transport.put_snapshot(snapshot_id, &ciphertext)?;
@@ -513,7 +513,7 @@ impl CoreService {
             let Some(existing_ciphertext) = transport.get_snapshot(existing_snapshot)? else {
                 continue;
             };
-            let existing_aad = snapshot_aad(self.vault_id, existing_snapshot);
+            let existing_aad = snapshot_aad(existing_snapshot);
             let existing_plaintext = ObjectCipher::new(journal_key.derive_scoped(&existing_aad)?)
                 .open(&existing_ciphertext, &existing_aad)?;
             let existing_manifest: SnapshotManifest = serde_json::from_slice(&existing_plaintext)?;
@@ -523,7 +523,7 @@ impl CoreService {
                     acknowledged = false;
                     break;
                 };
-                let state_aad = device_state_aad(self.vault_id, *device);
+                let state_aad = device_state_aad(*device);
                 let state_plaintext = ObjectCipher::new(journal_key.derive_scoped(&state_aad)?)
                     .open(&state_ciphertext, &state_aad)?;
                 let state: DeviceStatePayload = serde_json::from_slice(&state_plaintext)?;
@@ -554,7 +554,7 @@ impl CoreService {
             let Some(ciphertext) = transport.get_device_state(device)? else {
                 continue;
             };
-            let aad = device_state_aad(self.vault_id, device);
+            let aad = device_state_aad(device);
             let plaintext =
                 ObjectCipher::new(journal_key.derive_scoped(&aad)?).open(&ciphertext, &aad)?;
             let state: DeviceStatePayload = serde_json::from_slice(&plaintext)?;
@@ -783,7 +783,7 @@ impl CoreService {
     fn ingest_text(&self, request: IngestText) -> Result<CoreResponse, CoreError> {
         let fingerprint = self
             .vault_key
-            .derive(self.vault_id, KeyPurpose::Fingerprint)?
+            .derive(KeyPurpose::Fingerprint)?
             .keyed_hash(request.text.as_bytes());
         let mut stored_items = self.database.items().list()?;
         if let Some(latest) = stored_items
@@ -823,9 +823,7 @@ impl CoreService {
         bundle.entries.sort_by_key(|entry| entry.path.clone());
         let serialized = stable_file_bundle_bytes(&bundle)?;
         let legacy_serialized = legacy_file_bundle_bytes(&bundle)?;
-        let fingerprint_key = self
-            .vault_key
-            .derive(self.vault_id, KeyPurpose::Fingerprint)?;
+        let fingerprint_key = self.vault_key.derive(KeyPurpose::Fingerprint)?;
         let fingerprint = fingerprint_key.keyed_hash(&serialized);
         let legacy_fingerprint = fingerprint_key.keyed_hash(&legacy_serialized);
         let mut stored_items = self.database.items().list()?;
@@ -927,7 +925,7 @@ impl CoreService {
 
         let fingerprint = self
             .vault_key
-            .derive(self.vault_id, KeyPurpose::Fingerprint)?
+            .derive(KeyPurpose::Fingerprint)?
             .keyed_hash(png);
         let mut stored_items = self.database.items().list()?;
         if let Some(latest) = stored_items
@@ -1223,16 +1221,14 @@ struct DeviceStatePayload {
     acknowledgements: Vec<(SnapshotId, VersionVector)>,
 }
 
-fn device_state_aad(vault_id: Uuid, device_id: Uuid) -> Vec<u8> {
-    let mut aad = b"device-state-v1".to_vec();
-    aad.extend_from_slice(vault_id.as_bytes());
+fn device_state_aad(device_id: Uuid) -> Vec<u8> {
+    let mut aad = b"device-state-v2".to_vec();
     aad.extend_from_slice(device_id.as_bytes());
     aad
 }
 
-fn snapshot_aad(vault_id: Uuid, snapshot_id: SnapshotId) -> Vec<u8> {
-    let mut aad = b"snapshot-v1".to_vec();
-    aad.extend_from_slice(vault_id.as_bytes());
+fn snapshot_aad(snapshot_id: SnapshotId) -> Vec<u8> {
+    let mut aad = b"snapshot-v2".to_vec();
     aad.extend_from_slice(snapshot_id.0.as_bytes());
     aad
 }

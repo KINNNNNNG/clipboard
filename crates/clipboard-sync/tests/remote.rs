@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 fn header() -> SegmentHeader {
     SegmentHeader {
-        protocol_version: 1,
+        protocol_version: 2,
         vault_id: Uuid::from_u128(1),
         device_id: Uuid::from_u128(2),
         segment_id: Uuid::from_u128(3),
@@ -115,7 +115,7 @@ fn object_names_use_completed_suffix_and_pending_names_are_not_completed() {
 
     assert_eq!(
         completed,
-        "01-00000000-0000-0000-0000-000000000001-00000000-0000-0000-0000-000000000002-00000000-0000-0000-0000-000000000003.enc"
+        "02-00000000-0000-0000-0000-000000000001-00000000-0000-0000-0000-000000000002-00000000-0000-0000-0000-000000000003.enc"
     );
     assert_eq!(pending, format!("{completed}.pending"));
     assert_eq!(
@@ -124,12 +124,12 @@ fn object_names_use_completed_suffix_and_pending_names_are_not_completed() {
     );
     assert_eq!(parse_completed_object_name(&pending), None);
     assert_eq!(
-        parse_completed_object_name(&completed.replacen("01-", "1-", 1)),
+        parse_completed_object_name(&completed.replacen("02-", "2-", 1)),
         None
     );
     assert_eq!(
         parse_completed_object_name(
-            "02-00000000-0000-0000-0000-000000000001-00000000-0000-0000-0000-000000000002-00000000-0000-0000-0000-000000000003.enc"
+            "01-00000000-0000-0000-0000-000000000001-00000000-0000-0000-0000-000000000002-00000000-0000-0000-0000-000000000003.enc"
         ),
         None
     );
@@ -138,20 +138,20 @@ fn object_names_use_completed_suffix_and_pending_names_are_not_completed() {
 #[test]
 fn object_names_reject_unsupported_protocol_versions() {
     let unsupported = SegmentHeader {
-        protocol_version: 2,
+        protocol_version: 1,
         ..header()
     };
 
     assert_eq!(
         completed_object_name(&unsupported),
-        Err(SyncError::UnsupportedProtocolVersion(2))
+        Err(SyncError::UnsupportedProtocolVersion(1))
     );
     assert_eq!(
         validate_remote_segment_header(&unsupported),
-        Err(SyncError::UnsupportedProtocolVersion(2))
+        Err(SyncError::UnsupportedProtocolVersion(1))
     );
     assert_eq!(
         RemoteSegmentHeader::try_from(unsupported),
-        Err(SyncError::UnsupportedProtocolVersion(2))
+        Err(SyncError::UnsupportedProtocolVersion(1))
     );
 }

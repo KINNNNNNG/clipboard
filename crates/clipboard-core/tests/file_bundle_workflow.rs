@@ -140,7 +140,7 @@ fn legacy_file_bundle_fingerprint_is_migrated_without_duplicate_item() {
     let vault_id = Uuid::from_u128(203);
     let item_id = Uuid::from_u128(204);
     let legacy_fingerprint = VaultKey::from_bytes(KEY)
-        .derive(vault_id, KeyPurpose::Fingerprint)
+        .derive(KeyPurpose::Fingerprint)
         .unwrap()
         .keyed_hash(br#"[{"path":"c:\\docs\\a.txt","kind":"File","size":42,"modified_ms":100}]"#);
     {
@@ -184,7 +184,7 @@ fn legacy_file_bundle_fingerprint_is_migrated_without_duplicate_item() {
 
     assert_eq!(reused_id, item_id);
     let expected_fingerprint = VaultKey::from_bytes(KEY)
-        .derive(vault_id, KeyPurpose::Fingerprint)
+        .derive(KeyPurpose::Fingerprint)
         .unwrap()
         .keyed_hash(br#"[{"path":"c:\\docs\\a.txt","kind":"file","size":42,"modified_ms":100}]"#);
     let stored = Database::open(&database_path, &KEY)

@@ -1,8 +1,9 @@
 use crate::CryptoError;
 use hkdf::Hkdf;
 use sha2::Sha256;
-use uuid::Uuid;
 use zeroize::{Zeroize, ZeroizeOnDrop};
+
+const KEY_CONTEXT: &[u8] = b"clipboard-vault-key-v2";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyPurpose {
@@ -16,11 +17,11 @@ pub enum KeyPurpose {
 impl KeyPurpose {
     const fn label(self) -> &'static [u8] {
         match self {
-            Self::Database => b"database-v1",
-            Self::Journal => b"journal-v1",
-            Self::Image => b"image-v1",
-            Self::FileCache => b"file-cache-v1",
-            Self::Fingerprint => b"fingerprint-v1",
+            Self::Database => b"database-v2",
+            Self::Journal => b"journal-v2",
+            Self::Image => b"image-v2",
+            Self::FileCache => b"file-cache-v2",
+            Self::Fingerprint => b"fingerprint-v2",
         }
     }
 }
@@ -33,8 +34,8 @@ impl VaultKey {
         Self(bytes)
     }
 
-    pub fn derive(&self, vault_id: Uuid, purpose: KeyPurpose) -> Result<DerivedKey, CryptoError> {
-        let hkdf = Hkdf::<Sha256>::new(Some(vault_id.as_bytes()), &self.0);
+    pub fn derive(&self, purpose: KeyPurpose) -> Result<DerivedKey, CryptoError> {
+        let hkdf = Hkdf::<Sha256>::new(Some(KEY_CONTEXT), &self.0);
         let mut output = [0_u8; 32];
         hkdf.expand(purpose.label(), &mut output)
             .map_err(|_| CryptoError::KeyDerivation)?;
@@ -47,7 +48,7 @@ pub struct DerivedKey([u8; 32]);
 
 impl DerivedKey {
     pub fn derive_scoped(&self, context: &[u8]) -> Result<Self, CryptoError> {
-        let hkdf = Hkdf::<Sha256>::new(Some(b"clipboard-scoped-key-v1"), &self.0);
+        let hkdf = Hkdf::<Sha256>::new(Some(b"clipboard-scoped-key-v2"), &self.0);
         let mut output = [0_u8; 32];
         hkdf.expand(context, &mut output)
             .map_err(|_| CryptoError::KeyDerivation)?;

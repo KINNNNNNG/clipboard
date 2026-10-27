@@ -199,7 +199,7 @@ fn text_does_not_reuse_an_image_with_the_same_fingerprint() {
     let vault_id = Uuid::from_u128(8);
     let image_id = Uuid::from_u128(80);
     let fingerprint = VaultKey::from_bytes(KEY)
-        .derive(vault_id, KeyPurpose::Fingerprint)
+        .derive(KeyPurpose::Fingerprint)
         .unwrap()
         .keyed_hash(b"same bytes");
     {

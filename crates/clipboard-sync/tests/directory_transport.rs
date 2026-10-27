@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 fn header(segment_id: u128) -> SegmentHeader {
     SegmentHeader {
-        protocol_version: 1,
+        protocol_version: 2,
         vault_id: Uuid::from_u128(1),
         device_id: Uuid::from_u128(2),
         segment_id: Uuid::from_u128(segment_id),

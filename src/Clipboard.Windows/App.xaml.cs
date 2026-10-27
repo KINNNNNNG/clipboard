@@ -97,7 +97,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 
             _vault = new VaultBootstrapper().LoadOrCreate();
             _snapshotSettings = await _settingsStore.LoadAsync();
-            _core = OpenCoreWithRecovery(_vault, _snapshotSettings);
+            _core = OpenCoreWithRecovery(_vault);
 
             _presenter = new WindowPresenter(MainWindow);
             var writer = new WindowsClipboardWriter();
@@ -196,84 +196,23 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
     }
 
-    /// <summary>
-    /// Opens the clipboard core, moving a damaged history database aside so the client can start.
-    /// </summary>
-    /// <remarks>
-    /// Only damage is recovered: a marker mismatch means the key belongs to another vault, so that
-    /// is reported instead. The damaged file is preserved under a timestamped name.
-    /// </remarks>
-    private ClipboardCoreClient OpenCoreWithRecovery(VaultMaterial vault, ClientSettings settings)
+    /// <summary>Opens the active storage format without modifying unreadable data.</summary>
+    private ClipboardCoreClient OpenCoreWithRecovery(VaultMaterial vault)
     {
         try
         {
             return ClipboardCoreClient.Open(vault.DataDirectory, vault.VaultId, vault.VaultKey);
         }
         catch (ClipboardCoreException error) when (
-            error.Status is CoreStatus.VaultUnreadable or CoreStatus.VaultCorrupt)
+            error.Status is CoreStatus.VaultUnreadable or CoreStatus.VaultCorrupt or CoreStatus.VaultKeyMismatch)
         {
-            if (VaultRecovery.HasMismatchedSnapshot(
-                SnapshotPolicy.ResolveDirectory(settings),
-                vault.VaultId))
-            {
-                _globalLog?.Write(LogLevel.Error, "app", "vault.mismatch", new Dictionary<string, string>
-                {
-                    ["error_category"] = CoreStatusMessages.ForLog(CoreStatus.VaultKeyMismatch),
-                });
-                _startupNotice = "检测到其他 Vault 的历史快照，已停止自动恢复以保护历史数据。请使用原恢复码或密钥恢复。";
-                throw new ClipboardCoreException(CoreStatus.VaultKeyMismatch);
-            }
-
-            if (TryRestoreNewestSnapshot(vault, settings))
-            {
-                _globalLog?.Write(LogLevel.Warn, "app", "vault.restore", new Dictionary<string, string>
-                {
-                    ["error_category"] = CoreStatusMessages.ForLog(error.Status),
-                    ["source"] = "snapshot",
-                });
-                _startupNotice = "剪贴板历史数据库已损坏，已从最近的快照恢复。";
-                return ClipboardCoreClient.Open(vault.DataDirectory, vault.VaultId, vault.VaultKey);
-            }
-
-            string? quarantined = VaultRecovery.QuarantineHistory(
-                vault.DataDirectory,
-                DateTimeOffset.UtcNow);
-            _globalLog?.Write(LogLevel.Warn, "app", "vault.rebuild", new Dictionary<string, string>
+            _globalLog?.Write(LogLevel.Error, "app", "vault.open_preserved", new Dictionary<string, string>
             {
                 ["error_category"] = CoreStatusMessages.ForLog(error.Status),
-                ["quarantine"] = quarantined is null ? "none" : "history",
             });
-            _startupNotice = quarantined is null
-                ? "剪贴板历史数据库无法解密，已重建为空库。"
-                : "剪贴板历史数据库无法解密，已备份原文件并重建为空库。";
-            return ClipboardCoreClient.Open(vault.DataDirectory, vault.VaultId, vault.VaultKey);
+            _startupNotice = "剪贴板存储无法通过密钥和保险库标记验证，原始数据已保留。请先备份数据并检查密钥。";
+            throw;
         }
-    }
-
-    /// <summary>
-    /// Restores the newest verified snapshot, or returns false when none can be used.
-    /// </summary>
-    private bool TryRestoreNewestSnapshot(VaultMaterial vault, ClientSettings settings)
-    {
-        try
-        {
-            string root = SnapshotPolicy.ResolveDirectory(settings);
-            foreach (VaultSnapshot snapshot in _snapshotService.List(vault, root))
-            {
-                if (_snapshotService.Restore(
-                    vault,
-                    snapshot.Directory,
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()))
-                {
-                    return true;
-                }
-            }
-        }
-        catch
-        {
-            // A failed restore falls back to rebuilding an empty database.
-        }
-        return false;
     }
 
     private void StartSnapshotTimer(DispatcherQueue dispatcher)

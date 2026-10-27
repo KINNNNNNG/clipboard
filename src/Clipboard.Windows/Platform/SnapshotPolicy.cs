@@ -18,7 +18,7 @@ internal static class SnapshotPolicy
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Clipboard");
 
-    public static string DataDirectory => Path.Combine(LocalRoot, "data");
+    public static string DataDirectory => Path.Combine(LocalRoot, "data-v2");
 
     public static string DefaultDirectory => Path.Combine(LocalRoot, "snapshots");
 
@@ -27,8 +27,8 @@ internal static class SnapshotPolicy
     {
         ArgumentNullException.ThrowIfNull(settings);
         return string.IsNullOrWhiteSpace(settings.SnapshotDirectory)
-            ? DefaultDirectory
-            : Path.GetFullPath(settings.SnapshotDirectory);
+            ? Path.Combine(DefaultDirectory, "v2")
+            : Path.Combine(Path.GetFullPath(settings.SnapshotDirectory), "v2");
     }
 
     /// <summary>Reports whether enough items were captured to force a snapshot.</summary>

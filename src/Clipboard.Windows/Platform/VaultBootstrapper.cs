@@ -79,7 +79,7 @@ internal sealed class VaultBootstrapper
             ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         RootDirectory = Path.Combine(root, "Clipboard");
         KeyPath = Path.Combine(RootDirectory, "vault.key");
-        DataDirectory = Path.Combine(RootDirectory, "data");
+        DataDirectory = Path.Combine(RootDirectory, "data-v2");
         _protector = protector;
         _recoveryCodeCodec = recoveryCodeCodec;
         _pairingFileCodec = pairingFileCodec ?? new FfiPairingFileCodec();
@@ -273,10 +273,17 @@ internal sealed class VaultBootstrapper
                 stream.Write(json);
                 stream.Flush(flushToDisk: true);
             }
-            File.Move(temporaryPath, KeyPath, overwrite: true);
-            temporaryPath = null;
-            transferred = true;
-            return new VaultMaterial(file.VaultId, vaultKey, DataDirectory);
+            try
+            {
+                File.Move(temporaryPath, KeyPath);
+                temporaryPath = null;
+                transferred = true;
+                return new VaultMaterial(file.VaultId, vaultKey, DataDirectory);
+            }
+            catch (IOException) when (File.Exists(KeyPath))
+            {
+                return Load();
+            }
         }
         finally
         {
@@ -361,7 +368,7 @@ internal sealed class VaultBootstrapper
                 stream.Write(json);
                 stream.Flush(flushToDisk: true);
             }
-            File.Move(temporaryPath, KeyPath, overwrite: true);
+            File.Move(temporaryPath, KeyPath);
             temporaryPath = null;
         }
         finally

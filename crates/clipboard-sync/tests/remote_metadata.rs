@@ -69,7 +69,7 @@ fn directory_transport_can_delete_a_published_segment_after_compaction_gate() {
     let directory = tempdir().unwrap();
     let transport = DirectoryTransport::open(directory.path()).unwrap();
     let header = SegmentHeader {
-        protocol_version: 1,
+        protocol_version: 2,
         vault_id: Uuid::from_u128(1),
         device_id: Uuid::from_u128(2),
         segment_id: Uuid::from_u128(3),
@@ -89,7 +89,7 @@ fn directory_transport_lists_published_snapshots_without_pending_objects() {
         version_vector: VersionVector::from([(Uuid::from_u128(2), 3)]),
         segments: vec![SnapshotSegment {
             header: SegmentHeader {
-                protocol_version: 1,
+                protocol_version: 2,
                 vault_id: Uuid::from_u128(1),
                 device_id: Uuid::from_u128(2),
                 segment_id: Uuid::from_u128(9),

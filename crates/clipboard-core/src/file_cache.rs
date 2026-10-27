@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 const CHUNK_SIZE: usize = 1024 * 1024;
-const CACHE_FORMAT_VERSION: u8 = 1;
+const CACHE_FORMAT_VERSION: u8 = 2;
 const STAGING_MAX_AGE_MS: i64 = 60 * 60 * 1000;
 const STAGING_STARTUP_MAX_AGE_MS: i64 = 24 * 60 * 60 * 1000;
 
@@ -50,14 +50,12 @@ pub(crate) struct FileCache {
     root: PathBuf,
     pending: PathBuf,
     staging: PathBuf,
-    vault_id: Uuid,
     key: DerivedKey,
 }
 
 impl FileCache {
     pub(crate) fn open(
         data_dir: &Path,
-        vault_id: Uuid,
         key: clipboard_crypto::DerivedKey,
     ) -> Result<Self, CoreError> {
         let root = data_dir.join("objects").join("file-cache");
@@ -67,7 +65,6 @@ impl FileCache {
             root,
             pending,
             staging,
-            vault_id,
             key,
         };
         cache.cleanup_pending()?;
@@ -99,19 +96,12 @@ impl FileCache {
             }
             fs::create_dir_all(&pending_item)?;
             for (index, source) in sources.iter().enumerate() {
-                write_chunks(
-                    &self.key,
-                    self.vault_id,
-                    item_id,
-                    index,
-                    source,
-                    &pending_item,
-                )?;
+                write_chunks(&self.key, item_id, index, source, &pending_item)?;
             }
             let manifest_bytes = serde_json::to_vec(&manifest)?;
             let sealed = self
-                .object_cipher(&manifest_aad(self.vault_id, item_id))?
-                .seal(&manifest_bytes, &manifest_aad(self.vault_id, item_id))?;
+                .object_cipher(&manifest_aad(item_id))?
+                .seal(&manifest_bytes, &manifest_aad(item_id))?;
             let manifest_path = pending_item.join("manifest.clipobj");
             let mut manifest_file = File::create(manifest_path)?;
             manifest_file.write_all(&sealed)?;
@@ -161,14 +151,7 @@ impl FileCache {
                         .ok_or_else(|| {
                             CoreError::InvalidCommand("file cache manifest is incomplete".into())
                         })?;
-                    restore_file(
-                        &self.key,
-                        self.vault_id,
-                        item_id,
-                        file,
-                        &cache_dir,
-                        &output_root,
-                    )?;
+                    restore_file(&self.key, item_id, file, &cache_dir, &output_root)?;
                 }
                 FileEntryKind::Directory => {
                     ensure_directory(&output_root)?;
@@ -177,7 +160,7 @@ impl FileCache {
                         if let Some(parent) = output.parent() {
                             ensure_directory(parent)?;
                         }
-                        restore_file(&self.key, self.vault_id, item_id, file, &cache_dir, &output)?;
+                        restore_file(&self.key, item_id, file, &cache_dir, &output)?;
                     }
                 }
             }
@@ -216,8 +199,8 @@ impl FileCache {
     fn read_manifest(&self, item_id: Uuid, cache_dir: &Path) -> Result<CacheManifest, CoreError> {
         let sealed = fs::read(cache_dir.join("manifest.clipobj"))?;
         let bytes = self
-            .object_cipher(&manifest_aad(self.vault_id, item_id))?
-            .open(&sealed, &manifest_aad(self.vault_id, item_id))?;
+            .object_cipher(&manifest_aad(item_id))?
+            .open(&sealed, &manifest_aad(item_id))?;
         let manifest: CacheManifest = serde_json::from_slice(&bytes)?;
         if manifest.version != CACHE_FORMAT_VERSION {
             return Err(CoreError::InvalidCommand(
@@ -430,7 +413,6 @@ fn scan_directory(
 
 fn write_chunks(
     key: &DerivedKey,
-    vault_id: Uuid,
     item_id: Uuid,
     index: usize,
     source: &SourceFile,
@@ -449,13 +431,7 @@ fn write_chunks(
                 source.source_path.to_string_lossy().into_owned(),
             ));
         }
-        let aad = chunk_aad(
-            vault_id,
-            item_id,
-            index as u32,
-            &source.relative_path,
-            chunk_index,
-        );
+        let aad = chunk_aad(item_id, index as u32, &source.relative_path, chunk_index);
         let sealed = ObjectCipher::new(key.derive_scoped(&aad)?).seal(&buffer[..read], &aad)?;
         let mut output = File::create(chunk_dir.join(format!("{chunk_index:08}.clipobj")))?;
         output.write_all(&sealed)?;
@@ -507,7 +483,6 @@ fn open_checked_source(source: &SourceFile) -> Result<File, CoreError> {
 
 fn restore_file(
     key: &DerivedKey,
-    vault_id: Uuid,
     item_id: Uuid,
     file: &CacheFile,
     cache_dir: &Path,
@@ -523,13 +498,7 @@ fn restore_file(
                 .join(file.index.to_string())
                 .join(format!("{chunk_index:08}.clipobj")),
         )?;
-        let aad = chunk_aad(
-            vault_id,
-            item_id,
-            file.index as u32,
-            &file.relative_path,
-            chunk_index,
-        );
+        let aad = chunk_aad(item_id, file.index as u32, &file.relative_path, chunk_index);
         let bytes = ObjectCipher::new(key.derive_scoped(&aad)?).open(&sealed, &aad)?;
         destination.write_all(&bytes)?;
     }
@@ -597,19 +566,12 @@ fn is_reparse_point(metadata: &fs::Metadata) -> bool {
     }
 }
 
-fn manifest_aad(vault_id: Uuid, item_id: Uuid) -> Vec<u8> {
-    aad(vault_id, item_id, b"manifest", 0, b"", 0)
+fn manifest_aad(item_id: Uuid) -> Vec<u8> {
+    aad(item_id, b"manifest", 0, b"", 0)
 }
 
-fn chunk_aad(
-    vault_id: Uuid,
-    item_id: Uuid,
-    file_index: u32,
-    relative_path: &str,
-    chunk_index: u32,
-) -> Vec<u8> {
+fn chunk_aad(item_id: Uuid, file_index: u32, relative_path: &str, chunk_index: u32) -> Vec<u8> {
     aad(
-        vault_id,
         item_id,
         b"chunk",
         file_index,
@@ -619,7 +581,6 @@ fn chunk_aad(
 }
 
 fn aad(
-    vault_id: Uuid,
     item_id: Uuid,
     kind: &[u8],
     file_index: u32,
@@ -627,9 +588,8 @@ fn aad(
     chunk_index: u32,
 ) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(64 + relative_path.len());
-    bytes.extend_from_slice(b"clipboard-file-cache\0");
+    bytes.extend_from_slice(b"clipboard-file-cache-v2\0");
     bytes.push(CACHE_FORMAT_VERSION);
-    bytes.extend_from_slice(vault_id.as_bytes());
     bytes.extend_from_slice(item_id.as_bytes());
     bytes.extend_from_slice(kind);
     bytes.extend_from_slice(&file_index.to_le_bytes());

@@ -7,21 +7,16 @@ use std::{
 };
 use uuid::Uuid;
 
-const OBJECT_FORMAT_VERSION: u8 = 1;
+const OBJECT_FORMAT_VERSION: u8 = 2;
 
 pub(crate) struct ObjectStore {
     root: PathBuf,
     pending: PathBuf,
-    vault_id: Uuid,
     image_cipher: ObjectCipher,
 }
 
 impl ObjectStore {
-    pub(crate) fn open(
-        data_dir: &Path,
-        vault_id: Uuid,
-        image_key: DerivedKey,
-    ) -> Result<Self, CoreError> {
+    pub(crate) fn open(data_dir: &Path, image_key: DerivedKey) -> Result<Self, CoreError> {
         let root = data_dir.join("objects");
         let pending = root.join(".pending");
         fs::create_dir_all(&pending)?;
@@ -34,15 +29,12 @@ impl ObjectStore {
         Ok(Self {
             root,
             pending,
-            vault_id,
             image_cipher: ObjectCipher::new(image_key),
         })
     }
 
     pub(crate) fn store_image(&self, object_id: Uuid, png: &[u8]) -> Result<(), CoreError> {
-        let encrypted = self
-            .image_cipher
-            .seal(png, &image_aad(self.vault_id, object_id))?;
+        let encrypted = self.image_cipher.seal(png, &image_aad(object_id))?;
         let pending_path = self.pending.join(format!("{object_id}.tmp"));
         let final_path = self.object_path(object_id);
         let result = (|| -> Result<(), CoreError> {
@@ -64,9 +56,7 @@ impl ObjectStore {
 
     pub(crate) fn read_image(&self, object_id: Uuid) -> Result<Vec<u8>, CoreError> {
         let encrypted = fs::read(self.object_path(object_id))?;
-        Ok(self
-            .image_cipher
-            .open(&encrypted, &image_aad(self.vault_id, object_id))?)
+        Ok(self.image_cipher.open(&encrypted, &image_aad(object_id))?)
     }
 
     pub(crate) fn read_encrypted_image(&self, object_id: Uuid) -> Result<Vec<u8>, CoreError> {
@@ -78,7 +68,7 @@ impl ObjectStore {
         object_id: Uuid,
         encrypted: &[u8],
     ) -> Result<(), CoreError> {
-        let aad = image_aad(self.vault_id, object_id);
+        let aad = image_aad(object_id);
         self.image_cipher.open(encrypted, &aad)?;
 
         let final_path = self.object_path(object_id);
@@ -126,10 +116,9 @@ impl ObjectStore {
     }
 }
 
-fn image_aad(vault_id: Uuid, object_id: Uuid) -> Vec<u8> {
-    let mut aad = Vec::with_capacity(57);
-    aad.extend_from_slice(b"clipboard-object\0");
-    aad.extend_from_slice(vault_id.as_bytes());
+fn image_aad(object_id: Uuid) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(41);
+    aad.extend_from_slice(b"clipboard-object-v2\0");
     aad.extend_from_slice(object_id.as_bytes());
     aad.extend_from_slice(b"\0image\0");
     aad.push(OBJECT_FORMAT_VERSION);
@@ -147,11 +136,24 @@ mod tests {
     fn store() -> ObjectStore {
         let directory = tempdir().unwrap();
         let directory = Box::leak(Box::new(directory));
-        let vault_id = Uuid::from_u128(41);
-        let key = VaultKey::from_bytes(KEY)
-            .derive(vault_id, KeyPurpose::Image)
-            .unwrap();
-        ObjectStore::open(directory.path(), vault_id, key).unwrap()
+        let key = VaultKey::from_bytes(KEY).derive(KeyPurpose::Image).unwrap();
+        ObjectStore::open(directory.path(), key).unwrap()
+    }
+
+    #[test]
+    fn vault_id_change_keeps_existing_images_decryptable_with_the_same_key() {
+        let directory = tempdir().unwrap();
+        let image_key = || VaultKey::from_bytes(KEY).derive(KeyPurpose::Image).unwrap();
+        let first = ObjectStore::open(directory.path(), image_key()).unwrap();
+        let object_id = Uuid::from_u128(46);
+        first.store_image(object_id, b"preserved image").unwrap();
+
+        let changed_id = ObjectStore::open(directory.path(), image_key()).unwrap();
+
+        assert_eq!(
+            changed_id.read_image(object_id).unwrap(),
+            b"preserved image"
+        );
     }
 
     #[test]
@@ -173,7 +175,7 @@ mod tests {
         let target_id = Uuid::from_u128(44);
         let encrypted = store
             .image_cipher
-            .seal(b"image bytes", &image_aad(store.vault_id, source_id))
+            .seal(b"image bytes", &image_aad(source_id))
             .unwrap();
 
         assert!(matches!(
@@ -189,7 +191,7 @@ mod tests {
         let object_id = Uuid::from_u128(45);
         let mut encrypted = store
             .image_cipher
-            .seal(b"image bytes", &image_aad(store.vault_id, object_id))
+            .seal(b"image bytes", &image_aad(object_id))
             .unwrap();
         let last_index = encrypted.len() - 1;
         encrypted[last_index] ^= 0x80;

@@ -638,7 +638,7 @@ mod tests {
     fn cstcloud_zotero_endpoint_maps_segments_to_an_isolated_zip_namespace() {
         let endpoint = Url::parse("https://data.cstcloud.cn/dav/").unwrap();
         let header = RemoteSegmentHeader::try_from(SegmentHeader {
-            protocol_version: 1,
+            protocol_version: 2,
             vault_id: Uuid::from_u128(1),
             device_id: Uuid::from_u128(2),
             segment_id: Uuid::from_u128(3),
@@ -731,7 +731,7 @@ mod tests {
     fn cstcloud_zotero_endpoint_keeps_legacy_objects_visible() {
         let endpoint = Url::parse("https://data.cstcloud.cn/dav/").unwrap();
         let header = RemoteSegmentHeader::try_from(SegmentHeader {
-            protocol_version: 1,
+            protocol_version: 2,
             vault_id: Uuid::from_u128(11),
             device_id: Uuid::from_u128(12),
             segment_id: Uuid::from_u128(13),
@@ -765,7 +765,7 @@ mod tests {
         let snapshot_id = SnapshotId(Uuid::from_u128(5));
         let image = RemoteImageObject::new(Uuid::from_u128(6), Uuid::from_u128(7));
         let segment = RemoteSegmentHeader::try_from(SegmentHeader {
-            protocol_version: 1,
+            protocol_version: 2,
             vault_id: Uuid::from_u128(8),
             device_id: Uuid::from_u128(9),
             segment_id: Uuid::from_u128(10),

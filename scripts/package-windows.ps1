@@ -1,6 +1,6 @@
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.1.6',
+    [string]$Version = '0.1.7',
     [string]$OutputRoot = '',
     [switch]$SkipInstaller,
     [switch]$VerifyPublishedApp
@@ -12,6 +12,10 @@ $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $repositoryRoot 'artifacts\windows'
 }
+if (-not [System.IO.Path]::IsPathRooted($OutputRoot)) {
+    $OutputRoot = Join-Path $repositoryRoot $OutputRoot
+}
+$OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
 
 $publishRoot = Join-Path $OutputRoot 'publish'
 $installerRoot = Join-Path $OutputRoot 'installer'

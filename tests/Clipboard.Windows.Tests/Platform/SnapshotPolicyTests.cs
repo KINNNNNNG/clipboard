@@ -39,10 +39,10 @@ public sealed class SnapshotPolicyTests
     public void Resolve_directory_falls_back_to_the_default()
     {
         Assert.Equal(
-            SnapshotPolicy.DefaultDirectory,
+            Path.Combine(SnapshotPolicy.DefaultDirectory, "v2"),
             SnapshotPolicy.ResolveDirectory(ClientSettings.Default));
         Assert.Equal(
-            Path.GetFullPath(@"C:\snapshots-elsewhere"),
+            Path.Combine(Path.GetFullPath(@"C:\snapshots-elsewhere"), "v2"),
             SnapshotPolicy.ResolveDirectory(
                 ClientSettings.Default with { SnapshotDirectory = @"C:\snapshots-elsewhere" }));
     }
