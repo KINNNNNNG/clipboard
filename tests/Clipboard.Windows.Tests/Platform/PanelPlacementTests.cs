@@ -229,6 +229,30 @@ public sealed class PanelPlacementTests
         Assert.Equal(new nint(99), presenter.OriginalForegroundWindow);
     }
 
+    [Fact]
+    public void Window_presenter_raises_hiding_before_a_visible_panel_is_hidden()
+    {
+        var events = new List<string>();
+        var backend = new FakeWindowBackend
+        {
+            Cursor = new PixelPoint(100, 100),
+            Monitor = new MonitorSnapshot(WorkArea, 96),
+            Events = events,
+        };
+        var presenter = new WindowPresenter(backend, LogicalPanelSize);
+        presenter.Hiding += (_, _) => events.Add("clear-search");
+
+        presenter.Hide();
+        Assert.DoesNotContain("clear-search", events);
+
+        presenter.Show();
+        events.Clear();
+        presenter.Hide();
+
+        Assert.Equal(["clear-search", "hide"], events);
+        Assert.False(presenter.IsVisible);
+    }
+
     private sealed class DelayedForegroundWindowService(List<string> events) : IForegroundWindowService
     {
         public TaskCompletionSource<bool> RestoreStarted { get; } = new(

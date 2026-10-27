@@ -264,6 +264,40 @@ public sealed class ClipboardPanelViewModelTests
     }
 
     [Fact]
+    public async Task Resetting_search_cancels_pending_work_and_restores_default_search_scope()
+    {
+        var delay = new ControlledDelay();
+        var core = new FakePanelCore
+        {
+            Handler = (_, _) => Task.FromResult(Response()),
+        };
+        var viewModel = new ClipboardPanelViewModel(core, new FakePasteService(), delay);
+        viewModel.QueryText = "needle";
+        viewModel.UseRegex = true;
+        viewModel.SetFilters(
+            createdAfterMs: 10,
+            createdBeforeMs: 20,
+            sourceApps: ["notepad.exe"],
+            kinds: ["text"]);
+
+        viewModel.ResetSearch();
+
+        Assert.Equal(string.Empty, viewModel.QueryText);
+        Assert.False(viewModel.UseRegex);
+        Assert.All(delay.Entries, entry => Assert.True(entry.CancellationToken.IsCancellationRequested));
+
+        await viewModel.RefreshAsync();
+
+        SearchRequestDto request = Assert.Single(core.Requests);
+        Assert.Equal(string.Empty, request.Pattern);
+        Assert.Equal(SearchModeDto.Substring, request.Mode);
+        Assert.Null(request.Filters.CreatedAfterMs);
+        Assert.Null(request.Filters.CreatedBeforeMs);
+        Assert.Empty(request.Filters.SourceApps);
+        Assert.Empty(request.Filters.Kinds);
+    }
+
+    [Fact]
     public async Task Refresh_cancels_old_request_and_prevents_stale_result_overwrite()
     {
         var firstStarted = new TaskCompletionSource(

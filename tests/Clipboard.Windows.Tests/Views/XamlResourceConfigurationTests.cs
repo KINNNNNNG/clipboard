@@ -155,7 +155,7 @@ public sealed class XamlResourceConfigurationTests
     }
 
     [Fact]
-    public void Show_panel_focuses_the_first_history_item_after_refresh()
+    public void Show_panel_focuses_the_search_box_after_refresh()
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml.cs");
         string source = File.ReadAllText(path);
@@ -167,8 +167,35 @@ public sealed class XamlResourceConfigurationTests
         string showPanel = source[showPanelStart..hidePanelStart];
 
         Assert.Contains("RefreshAsync", showPanel);
-        Assert.Contains("FocusSelectedHistoryItem", showPanel);
-        Assert.DoesNotContain("SearchBox.Focus", showPanel);
+        Assert.Contains("FocusSearchBox", showPanel);
+        Assert.DoesNotContain("FocusSelectedHistoryItem", showPanel);
+    }
+
+    [Fact]
+    public void Panel_hiding_lifecycle_resets_search_presentation_and_view_model()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "MainWindow.xaml.cs");
+        string source = File.ReadAllText(path);
+        int configureStart = source.IndexOf("internal void Configure(", StringComparison.Ordinal);
+        int showPanelStart = source.IndexOf("public void ShowPanel()", configureStart);
+        int hidingStart = source.IndexOf("private void Presenter_Hiding(", StringComparison.Ordinal);
+        int textChangedStart = source.IndexOf(
+            "private void SearchBox_TextChanged(",
+            hidingStart,
+            StringComparison.Ordinal);
+
+        Assert.True(configureStart >= 0);
+        Assert.True(showPanelStart > configureStart);
+        Assert.True(hidingStart > showPanelStart);
+        Assert.True(textChangedStart > hidingStart);
+        string configure = source[configureStart..showPanelStart];
+        string hiding = source[hidingStart..textChangedStart];
+
+        Assert.Contains("_presenter.Hiding += Presenter_Hiding", configure);
+        Assert.Contains("_viewModel?.ResetSearch()", hiding);
+        Assert.Contains("SearchBox.Text = string.Empty", hiding);
+        Assert.Contains("RegexButton.IsChecked = false", hiding);
+        Assert.Contains("TimeFilterComboBox.SelectedIndex = 0", hiding);
     }
 
     [Fact]

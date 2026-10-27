@@ -13,7 +13,7 @@
 Clipboard 用 WinUI 3 在光标附近提供一个原生剪贴板面板，接管 `Win+V`，把文本、图片和文件历史保存在本机 SQLCipher 加密数据库中。跨设备同步基于自研的端到端加密日志：远端只存储密文，文件束与文件路径始终保留在本机。
 
 - 下载安装包：[Releases](https://github.com/KINNNNNNG/clipboard/releases/latest)
-- 当前版本：`0.1.7`
+- 当前版本：`0.1.8`
 - 开发状态与验收边界：[docs/STATUS.md](docs/STATUS.md)
 
 ## 功能特性
@@ -60,10 +60,10 @@ Clipboard 用 WinUI 3 在光标附近提供一个原生剪贴板面板，接管 
 
 ## 下载与安装
 
-从 [Releases](https://github.com/KINNNNNNG/clipboard/releases/latest) 下载 `Clipboard-Setup-v0.1.7.exe` 与 `SHA256SUMS.txt`，校验后再安装：
+从 [Releases](https://github.com/KINNNNNNG/clipboard/releases/latest) 下载 `Clipboard-Setup-v0.1.8.exe` 与 `SHA256SUMS.txt`，校验后再安装：
 
 ```powershell
-Get-FileHash .\Clipboard-Setup-v0.1.7.exe -Algorithm SHA256
+Get-FileHash .\Clipboard-Setup-v0.1.8.exe -Algorithm SHA256
 ```
 
 将输出与 `SHA256SUMS.txt` 比对一致后双击安装器：
@@ -116,10 +116,10 @@ dotnet build src\Clipboard.Windows\Clipboard.Windows.csproj -c Debug -p:Platform
 ### 生成安装包
 
 ```powershell
-pwsh -NoProfile -File scripts/package-windows.ps1 -Version 0.1.7
+pwsh -NoProfile -File scripts/package-windows.ps1 -Version 0.1.8
 ```
 
-产物为 `artifacts\windows\installer\Clipboard-Setup-v0.1.7.exe` 与 `artifacts\windows\SHA256SUMS.txt`。详见 [Windows 安装器发布指南](docs/release/windows-installer.md)。
+产物为 `artifacts\windows\installer\Clipboard-Setup-v0.1.8.exe` 与 `artifacts\windows\SHA256SUMS.txt`。详见 [Windows 安装器发布指南](docs/release/windows-installer.md)。
 
 ## 测试与验证
 
@@ -174,8 +174,8 @@ docs/                  设计、计划与状态文档
 推送符合 `vMAJOR.MINOR.PATCH` 的 Tag 即可触发 `Windows Release` 工作流，它会并行执行 Ubuntu 上的 Rust Core 校验与 Windows 上的客户端安装器构建，全部通过后创建 GitHub Release 并上传安装包与校验文件：
 
 ```powershell
-git tag v0.1.7
-git push origin v0.1.7
+git tag v0.1.8
+git push origin v0.1.8
 ```
 
 也可以在 Actions 页面手动运行该工作流并填写版本号。

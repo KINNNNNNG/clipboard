@@ -64,6 +64,8 @@ internal sealed class WindowPresenter
 
     public bool IsSettingsWindowOpen { get; set; }
 
+    public event EventHandler? Hiding;
+
     public void Show()
     {
         Interlocked.Increment(ref _presentationVersion);
@@ -97,9 +99,14 @@ internal sealed class WindowPresenter
 
     private void HidePanel(bool advancePresentationVersion)
     {
+        bool wasVisible = IsVisible;
         if (advancePresentationVersion)
         {
             Interlocked.Increment(ref _presentationVersion);
+        }
+        if (wasVisible)
+        {
+            Hiding?.Invoke(this, EventArgs.Empty);
         }
         IsVisible = false;
         _backend.Hide();

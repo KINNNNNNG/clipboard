@@ -1,6 +1,6 @@
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.1.7',
+    [string]$Version = '0.1.8',
     [string]$OutputRoot = '',
     [switch]$SkipInstaller,
     [switch]$VerifyPublishedApp

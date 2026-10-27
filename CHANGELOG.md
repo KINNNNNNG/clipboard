@@ -4,6 +4,16 @@
 
 ## [未发布]
 
+## [0.1.8] - 2026-10-27
+
+### 新增
+
+- 面板唤出后自动聚焦搜索框，可直接输入关键词搜索历史记录。
+
+### 修复
+
+- 面板关闭时取消当前搜索并清空搜索词、正则模式、查询错误和筛选条件，下次打开从默认历史列表开始。
+
 ## [0.1.7] - 2026-10-27
 
 ### 变更
@@ -141,8 +151,9 @@
 - 安装包未做代码签名，Windows SmartScreen 可能提示“未知发布者”。
 - 已签名的 MSIX 发布包尚未提供。
 
-[未发布]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.7...HEAD
+[未发布]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.8...HEAD
 [0.1.7]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.6...v0.1.7
+[0.1.8]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.7...v0.1.8
 [0.1.6]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/KINNNNNNG/clipboard/compare/v0.1.3...v0.1.4

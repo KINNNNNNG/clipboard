@@ -42,8 +42,13 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         {
             _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         }
+        if (_presenter is not null)
+        {
+            _presenter.Hiding -= Presenter_Hiding;
+        }
         _viewModel = viewModel;
         _presenter = presenter;
+        _presenter.Hiding += Presenter_Hiding;
         _contentReader = contentReader;
         _clipboardWriter = clipboardWriter;
         _operationRunner = new UiOperationRunner(
@@ -62,15 +67,12 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
             return;
         }
         _presenter.Show();
+        Activate();
         ClipboardPanelViewModel viewModel = _viewModel;
         _ = RunUiOperationAsync(
-            async () =>
-            {
-                await viewModel.RefreshAsync();
-                FocusSelectedHistoryItem();
-            },
+            () => viewModel.RefreshAsync(),
             "无法加载剪贴板历史。");
-        Activate();
+        FocusSearchBox();
     }
 
     public void HidePanel() => _presenter?.Hide();
@@ -116,6 +118,31 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
         {
             _presenter?.HandleDeactivated();
         }
+    }
+
+    private void Presenter_Hiding(object? sender, EventArgs args)
+    {
+        if (DispatcherQueue.HasThreadAccess)
+        {
+            ResetSearchState();
+        }
+        else
+        {
+            DispatcherQueue.TryEnqueue(ResetSearchState);
+        }
+    }
+
+    private void ResetSearchState()
+    {
+        // Control events schedule searches, so reset the backing search scope last.
+        SearchBox.Text = string.Empty;
+        RegexButton.IsChecked = false;
+        TextKindCheckBox.IsChecked = true;
+        ImageKindCheckBox.IsChecked = true;
+        FileKindCheckBox.IsChecked = true;
+        TimeFilterComboBox.SelectedIndex = 0;
+        SourceFilterBox.Text = string.Empty;
+        _viewModel?.ResetSearch();
     }
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs args)
@@ -322,6 +349,17 @@ public sealed partial class MainWindow : Window, IClipboardCaptureObserver
             }
 
             container.Focus(FocusState.Keyboard);
+        });
+    }
+
+    private void FocusSearchBox()
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_presenter?.IsVisible == true)
+            {
+                SearchBox.Focus(FocusState.Keyboard);
+            }
         });
     }
 

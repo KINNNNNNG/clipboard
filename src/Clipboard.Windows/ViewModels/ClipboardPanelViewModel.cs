@@ -160,6 +160,30 @@ internal sealed class ClipboardPanelViewModel : ObservableObject
         return ExecuteSearchAsync(cancellationToken);
     }
 
+    public void ResetSearch()
+    {
+        CancellationTokenSource? debounce;
+        CancellationTokenSource? active;
+        lock (_searchSync)
+        {
+            debounce = _debounceCancellation;
+            _debounceCancellation = null;
+            active = _activeSearchCancellation;
+            _activeSearchCancellation = null;
+            _searchVersion++;
+        }
+        debounce?.Cancel();
+        active?.Cancel();
+        SetProperty(ref _queryText, string.Empty, nameof(QueryText));
+        SetProperty(ref _useRegex, false, nameof(UseRegex));
+        _createdAfterMs = null;
+        _createdBeforeMs = null;
+        _sourceApps = [];
+        _kinds = [];
+        QueryError = null;
+        IsLoading = false;
+    }
+
     public void MoveSelection(int delta)
     {
         if (Items.Count == 0)
